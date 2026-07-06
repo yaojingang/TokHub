@@ -25,6 +25,7 @@ backups/
 
 # Private planning, review, and local agent-operation assets excluded from
 # the first public source release.
+# Versioned, sanitized agent skill packages belong under agent-skills/.
 docs/reviews/
 docs/HANDOFF.md
 docs/BACKEND-DEVELOPMENT-PLAN.md

@@ -1,0 +1,81 @@
+{
+  "recommended_threshold": 0.34,
+  "should_trigger": [
+    {
+      "text": "Use the TokHub admin skill to check production health and verify audit access.",
+      "family": "admin_read"
+    },
+    {
+      "text": "用 TokHub 管理员 skill 帮我 probe 一个平台通道，并确认审计事件。",
+      "family": "cn_admin_operation"
+    },
+    {
+      "text": "Run an admin-agent request to validate channel ch_123 with a reason and idempotency key.",
+      "family": "write_guard"
+    },
+    {
+      "text": "Use scoped admin-agent token access to export admin audit logs.",
+      "family": "export"
+    },
+    {
+      "text": "TokHub 管理员自动化：查看用量、告警和 incident 状态。",
+      "family": "cn_admin_read"
+    },
+    {
+      "text": "用 TokHub admin skill 把本地通道、监控快照和服务商配置同步到线上后台。",
+      "family": "cn_channel_sync"
+    },
+    {
+      "text": "通过本地 TokHub skill 输入远程后台地址、用户名和密码，连接线上管理后台。",
+      "family": "cn_admin_bootstrap"
+    },
+    {
+      "text": "Create a safe TokHub admin operation plan and execute it through TOKHUB_ADMIN_AGENT_TOKEN.",
+      "family": "agent_execution"
+    }
+  ],
+  "should_not_trigger": [
+    {
+      "text": "Implement a new TokHub React admin page and fix TypeScript errors.",
+      "family": "code_development"
+    },
+    {
+      "text": "Call the TokHub gateway model endpoint to send a chat completion.",
+      "family": "gateway_call"
+    },
+    {
+      "text": "Integrate the public /v1/status API from a third-party website.",
+      "family": "public_api"
+    },
+    {
+      "text": "Help an ordinary user manage their console workspace gateway keys.",
+      "family": "console_user"
+    },
+    {
+      "text": "Summarize the TokHub admin API documentation without executing anything.",
+      "family": "docs_only"
+    }
+  ],
+  "near_neighbor": [
+    {
+      "text": "Review the Go code that implements TokHub admin-agent authentication.",
+      "family": "code_review"
+    },
+    {
+      "text": "Write a wiki runbook for admins, but do not execute an admin operation.",
+      "family": "documentation"
+    },
+    {
+      "text": "Use a browser cookie session to click around the TokHub admin UI.",
+      "family": "browser_admin"
+    },
+    {
+      "text": "Use the existing bearer token to create more TokHub admin-agent tokens.",
+      "family": "forbidden_token_chaining"
+    },
+    {
+      "text": "Create a gateway key for a user in the normal console flow.",
+      "family": "console_user"
+    }
+  ]
+}

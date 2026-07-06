@@ -1,0 +1,48 @@
+{
+  "fallback_positive_concepts": ["tokhub_admin", "agent_execution"],
+  "positive_concepts": {
+    "tokhub_admin": {
+      "weight": 0.35,
+      "phrases": ["tokhub admin", "tokhub 管理员", "管理员 skill", "admin skill", "平台通道", "production health"]
+    },
+    "agent_execution": {
+      "weight": 0.3,
+      "phrases": ["admin-agent", "agent token", "scoped token", "bearer token", "tokhub_admin_agent_token", "agent request", "自动化"]
+    },
+    "admin_operations": {
+      "weight": 0.25,
+      "phrases": ["probe", "validate", "audit", "usage", "alerts", "incident", "export", "审计", "用量", "告警"]
+    },
+    "safety_guard": {
+      "weight": 0.2,
+      "phrases": ["scope", "idempotency", "reason", "audit verification", "幂等", "危险操作"]
+    }
+  },
+  "negative_concepts": {
+    "code_development": {
+      "weight": 0.6,
+      "exclusive": true,
+      "phrases": ["implement", "typescript", "react", "go code", "code review", "fix", "debug", "代码"]
+    },
+    "public_api": {
+      "weight": 0.6,
+      "exclusive": true,
+      "phrases": ["/v1/status", "/api/public", "public api", "third-party website", "公开 api"]
+    },
+    "console_user": {
+      "weight": 0.55,
+      "exclusive": true,
+      "phrases": ["/api/console", "ordinary user", "console workspace", "普通用户", "用户工作区"]
+    },
+    "gateway_call": {
+      "weight": 0.6,
+      "exclusive": true,
+      "phrases": ["/gateway/v1", "chat completion", "model endpoint", "gateway model"]
+    },
+    "docs_only": {
+      "weight": 0.45,
+      "exclusive": true,
+      "phrases": ["summarize", "documentation", "wiki", "do not execute", "without executing", "只总结", "不执行"]
+    }
+  }
+}

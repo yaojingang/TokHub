@@ -40,6 +40,21 @@ deploy/scripts/create-admin-agent-token.sh
 
 脚本默认只输出一次性明文 token。生产使用后应写入部署密钥系统或本机临时环境，不要提交到仓库。内部机器合同见 `docs/admin-agent-api.md`。
 
+如果使用仓库内配套的 Codex/AI skill 连接远程后台，可以让操作者只在本机终端输入后台地址、用户名和密码，由脚本换取短期 admin-agent token：
+
+```bash
+node agent-skills/tokhub-admin/scripts/tokhub-admin.mjs bootstrap \
+  --admin-url https://www.tokhub.me/tokhub_admin \
+  --identifier <owner-username-or-email> \
+  --save-env ~/.tokhub-admin.env
+
+source ~/.tokhub-admin.env
+node agent-skills/tokhub-admin/scripts/tokhub-admin.mjs preflight
+node agent-skills/tokhub-admin/scripts/tokhub-admin.mjs request GET /api/admin/channels
+```
+
+`~/.tokhub-admin.env` 只保存在本机并应保持 `0600` 权限；不要把该文件、token、导出的通道 CSV 或 channel-site 包提交到仓库。
+
 ## 生产自托管注意事项
 
 生产环境不要使用 `.env.example` 中的开发默认值。至少需要替换：

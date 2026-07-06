@@ -16,6 +16,7 @@ The first public source release should include:
 - generic deployment assets: `Dockerfile`, `docker-compose.yml`, `deploy/compose/`, `deploy/helm/`, selected `deploy/scripts/`
 - public docs: `README.md`, `docs/API.md`, `docs/DEPLOYMENT.md`, `docs/RELEASE.md`, `docs/RECOVERY-DRILL.md`, `docs/openapi.yaml`
 - English project overview: `docs/README.en.md`
+- sanitized agent skill packages: `agent-skills/`
 - tests and local quality gates: `tests/`, Go tests, `deploy/scripts/security-scan.sh`, `deploy/scripts/open-source-preflight.sh`
 - project governance docs: `LICENSE`, `NOTICE`, `SECURITY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`
 
@@ -26,7 +27,8 @@ Do not publish:
 - `.env`, `.env.production`, or any real deployment environment file
 - `backups/`, `tmp/`, database dumps, SQL dumps, generated restore drills, or local release packages
 - `docs/reviews/` and private phase-review logs
-- `skills/` and local agent-operation packages
+- `skills/` and local agent-operation packages. Versioned public skill packages must live under `agent-skills/`.
+- secret-bearing skill artifacts, including saved env files, admin-agent tokens, exported CSVs, generated channel-site packages, provider keys, or screenshots/logs containing credentials
 - `prototype/` design snapshots until they are separately reviewed and sanitized
 - `web/static/` generated/static recommendation packages until commercial copy and links are reviewed
 - `node_modules/`, `web/dist/`, `test-results/`, `playwright-report/`, `coverage/`
@@ -46,6 +48,7 @@ Recommended first public staging command:
 git add \
   .dockerignore .env.example .env.production.example .github .gitignore \
   CODE_OF_CONDUCT.md CONTRIBUTING.md Dockerfile LICENSE Makefile NOTICE README.md SECURITY.md \
+  agent-skills \
   db deploy/compose deploy/helm deploy/load deploy/scripts docker-compose.yml \
   docs/API.md docs/DEPLOYMENT.md docs/OPEN_SOURCE.md docs/README.en.md docs/RECOVERY-DRILL.md docs/RELEASE.md docs/admin-agent-api.md docs/admin-agent.openapi.yaml docs/openapi.yaml \
   go.mod go.sum internal cmd package.json package-lock.json playwright.config.ts sqlc.yaml tests tsconfig.json vite.config.ts \
@@ -118,6 +121,13 @@ backups/
 tmp/
 docs/reviews/
 skills/
+agent-skills/**/.env
+agent-skills/**/*.env
+agent-skills/**/*.log
+agent-skills/**/*.csv
+agent-skills/**/*.zip
+agent-skills/**/*.tar
+agent-skills/**/*.tar.gz
 prototype/
 web/static/
 node_modules/

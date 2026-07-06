@@ -1,0 +1,954 @@
+{
+  "version": "0.2.0",
+  "basePath": "/api/admin",
+  "source": "internal/api/server.go api.Route(\"/admin\") excluding /api/admin/agent-tokens",
+  "scopes": [
+    "admin:read",
+    "admin:write",
+    "admin:dangerous",
+    "admin:secrets",
+    "admin:export"
+  ],
+  "operations": [
+    {
+      "family": "platform-channels",
+      "method": "GET",
+      "path": "/api/admin/channels",
+      "scopes": [
+        "admin:read"
+      ],
+      "risk": "read",
+      "writeGuard": false
+    },
+    {
+      "family": "platform-channels",
+      "method": "POST",
+      "path": "/api/admin/channels",
+      "scopes": [
+        "admin:write",
+        "admin:secrets"
+      ],
+      "risk": "secret-write",
+      "writeGuard": true
+    },
+    {
+      "family": "platform-channels",
+      "method": "POST",
+      "path": "/api/admin/channels/bulk",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "platform-channels",
+      "method": "POST",
+      "path": "/api/admin/channels/export",
+      "scopes": [
+        "admin:read",
+        "admin:write",
+        "admin:secrets",
+        "admin:export"
+      ],
+      "risk": "secret-export",
+      "writeGuard": true
+    },
+    {
+      "family": "platform-channels",
+      "method": "POST",
+      "path": "/api/admin/channels/import",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous",
+        "admin:secrets"
+      ],
+      "risk": "dangerous-secret",
+      "writeGuard": true
+    },
+    {
+      "family": "platform-channels",
+      "method": "POST",
+      "path": "/api/admin/channels/sync",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous",
+        "admin:secrets"
+      ],
+      "risk": "dangerous-secret",
+      "writeGuard": true
+    },
+    {
+      "family": "platform-channels",
+      "method": "PATCH",
+      "path": "/api/admin/channels/{channelID}",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "platform-channels",
+      "method": "POST",
+      "path": "/api/admin/channels/{channelID}/intro-fetch",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "platform-channels",
+      "method": "POST",
+      "path": "/api/admin/channels/{channelID}/credentials",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous",
+        "admin:secrets"
+      ],
+      "risk": "dangerous-secret",
+      "writeGuard": true
+    },
+    {
+      "family": "platform-channels",
+      "method": "POST",
+      "path": "/api/admin/channels/{channelID}/validate",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "platform-channels",
+      "method": "POST",
+      "path": "/api/admin/channels/{channelID}/disable",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "platform-channels",
+      "method": "POST",
+      "path": "/api/admin/channels/{channelID}/recommend",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "platform-channels",
+      "method": "DELETE",
+      "path": "/api/admin/channels/{channelID}/recommend",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "platform-channels",
+      "method": "DELETE",
+      "path": "/api/admin/channels/{channelID}",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "platform-channels",
+      "method": "POST",
+      "path": "/api/admin/channels/{channelID}/probe-now",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "settings",
+      "method": "GET",
+      "path": "/api/admin/settings",
+      "scopes": [
+        "admin:read"
+      ],
+      "risk": "read",
+      "writeGuard": false
+    },
+    {
+      "family": "settings",
+      "method": "PATCH",
+      "path": "/api/admin/settings",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "governance",
+      "method": "GET",
+      "path": "/api/admin/users",
+      "scopes": [
+        "admin:read"
+      ],
+      "risk": "read",
+      "writeGuard": false
+    },
+    {
+      "family": "governance",
+      "method": "POST",
+      "path": "/api/admin/users",
+      "scopes": [
+        "admin:write",
+        "admin:secrets"
+      ],
+      "risk": "secret-write",
+      "writeGuard": true
+    },
+    {
+      "family": "governance",
+      "method": "PATCH",
+      "path": "/api/admin/users/{userID}",
+      "scopes": [
+        "admin:write",
+        "admin:secrets"
+      ],
+      "risk": "secret-write",
+      "writeGuard": true
+    },
+    {
+      "family": "governance",
+      "method": "PATCH",
+      "path": "/api/admin/users/{userID}/status",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "governance",
+      "method": "DELETE",
+      "path": "/api/admin/users/{userID}",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "governance",
+      "method": "POST",
+      "path": "/api/admin/users/bulk",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "governance",
+      "method": "GET",
+      "path": "/api/admin/orgs",
+      "scopes": [
+        "admin:read"
+      ],
+      "risk": "read",
+      "writeGuard": false
+    },
+    {
+      "family": "governance",
+      "method": "POST",
+      "path": "/api/admin/orgs",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "governance",
+      "method": "PATCH",
+      "path": "/api/admin/orgs/{orgID}",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "governance",
+      "method": "PATCH",
+      "path": "/api/admin/orgs/{orgID}/status",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "governance",
+      "method": "DELETE",
+      "path": "/api/admin/orgs/{orgID}",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "governance",
+      "method": "POST",
+      "path": "/api/admin/orgs/bulk",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "gateways",
+      "method": "GET",
+      "path": "/api/admin/gateways",
+      "scopes": [
+        "admin:read"
+      ],
+      "risk": "read",
+      "writeGuard": false
+    },
+    {
+      "family": "gateways",
+      "method": "POST",
+      "path": "/api/admin/gateways",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "gateways",
+      "method": "POST",
+      "path": "/api/admin/gateways/bulk",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "gateways",
+      "method": "PATCH",
+      "path": "/api/admin/gateways/{gatewayID}",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "gateways",
+      "method": "DELETE",
+      "path": "/api/admin/gateways/{gatewayID}",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "gateway-keys",
+      "method": "GET",
+      "path": "/api/admin/gateway-keys",
+      "scopes": [
+        "admin:read"
+      ],
+      "risk": "read",
+      "writeGuard": false
+    },
+    {
+      "family": "gateway-keys",
+      "method": "POST",
+      "path": "/api/admin/gateway-keys",
+      "scopes": [
+        "admin:write",
+        "admin:secrets"
+      ],
+      "risk": "secret-write",
+      "writeGuard": true
+    },
+    {
+      "family": "gateway-keys",
+      "method": "POST",
+      "path": "/api/admin/gateway-keys/bulk",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "gateway-keys",
+      "method": "PATCH",
+      "path": "/api/admin/gateway-keys/{keyID}",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "gateway-keys",
+      "method": "POST",
+      "path": "/api/admin/gateway-keys/{keyID}/revoke",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "gateway-keys",
+      "method": "DELETE",
+      "path": "/api/admin/gateway-keys/{keyID}",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "governance",
+      "method": "GET",
+      "path": "/api/admin/members",
+      "scopes": [
+        "admin:read"
+      ],
+      "risk": "read",
+      "writeGuard": false
+    },
+    {
+      "family": "governance",
+      "method": "POST",
+      "path": "/api/admin/members",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "governance",
+      "method": "POST",
+      "path": "/api/admin/members/bulk",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "governance",
+      "method": "PATCH",
+      "path": "/api/admin/members/{userID}",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "governance",
+      "method": "DELETE",
+      "path": "/api/admin/members/{userID}",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "usage",
+      "method": "GET",
+      "path": "/api/admin/usage",
+      "scopes": [
+        "admin:read"
+      ],
+      "risk": "read",
+      "writeGuard": false
+    },
+    {
+      "family": "usage",
+      "method": "GET",
+      "path": "/api/admin/usage/export",
+      "scopes": [
+        "admin:read",
+        "admin:export"
+      ],
+      "risk": "export",
+      "writeGuard": false
+    },
+    {
+      "family": "usage",
+      "method": "POST",
+      "path": "/api/admin/usage/rollup/recompute",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "alerts",
+      "method": "GET",
+      "path": "/api/admin/alerts",
+      "scopes": [
+        "admin:read"
+      ],
+      "risk": "read",
+      "writeGuard": false
+    },
+    {
+      "family": "alerts",
+      "method": "POST",
+      "path": "/api/admin/alerts/rules",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "alerts",
+      "method": "POST",
+      "path": "/api/admin/alerts/rules/bulk",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "alerts",
+      "method": "PATCH",
+      "path": "/api/admin/alerts/rules/{ruleID}",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "alerts",
+      "method": "DELETE",
+      "path": "/api/admin/alerts/rules/{ruleID}",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "alerts",
+      "method": "POST",
+      "path": "/api/admin/alerts/evaluate",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "alerts",
+      "method": "POST",
+      "path": "/api/admin/alerts/channels",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "alerts",
+      "method": "POST",
+      "path": "/api/admin/alerts/channels/bulk",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "alerts",
+      "method": "PATCH",
+      "path": "/api/admin/alerts/channels/{channelID}",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "alerts",
+      "method": "POST",
+      "path": "/api/admin/alerts/channels/{channelID}/test",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "alerts",
+      "method": "DELETE",
+      "path": "/api/admin/alerts/channels/{channelID}",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "audit",
+      "method": "GET",
+      "path": "/api/admin/audit",
+      "scopes": [
+        "admin:read"
+      ],
+      "risk": "read",
+      "writeGuard": false
+    },
+    {
+      "family": "audit",
+      "method": "GET",
+      "path": "/api/admin/audit/export",
+      "scopes": [
+        "admin:read",
+        "admin:export"
+      ],
+      "risk": "export",
+      "writeGuard": false
+    },
+    {
+      "family": "audit",
+      "method": "GET",
+      "path": "/api/admin/audit/{auditID}",
+      "scopes": [
+        "admin:read"
+      ],
+      "risk": "read",
+      "writeGuard": false
+    },
+    {
+      "family": "incidents",
+      "method": "GET",
+      "path": "/api/admin/incidents",
+      "scopes": [
+        "admin:read"
+      ],
+      "risk": "read",
+      "writeGuard": false
+    },
+    {
+      "family": "incidents",
+      "method": "POST",
+      "path": "/api/admin/incidents",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "incidents",
+      "method": "POST",
+      "path": "/api/admin/incidents/bulk",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "incidents",
+      "method": "PATCH",
+      "path": "/api/admin/incidents/{incidentID}",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "incidents",
+      "method": "POST",
+      "path": "/api/admin/incidents/{incidentID}/resolve",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "incidents",
+      "method": "POST",
+      "path": "/api/admin/incidents/{incidentID}/reopen",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "incidents",
+      "method": "DELETE",
+      "path": "/api/admin/incidents/{incidentID}",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "governance",
+      "method": "GET",
+      "path": "/api/admin/governance/summary",
+      "scopes": [
+        "admin:read"
+      ],
+      "risk": "read",
+      "writeGuard": false
+    },
+    {
+      "family": "recommendations",
+      "method": "GET",
+      "path": "/api/admin/recommend",
+      "scopes": [
+        "admin:read"
+      ],
+      "risk": "read",
+      "writeGuard": false
+    },
+    {
+      "family": "recommendations",
+      "method": "PUT",
+      "path": "/api/admin/recommend",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "open-api",
+      "method": "GET",
+      "path": "/api/admin/open-api",
+      "scopes": [
+        "admin:read"
+      ],
+      "risk": "read",
+      "writeGuard": false
+    },
+    {
+      "family": "open-api",
+      "method": "POST",
+      "path": "/api/admin/open-api/sites",
+      "scopes": [
+        "admin:write",
+        "admin:secrets"
+      ],
+      "risk": "secret-write",
+      "writeGuard": true
+    },
+    {
+      "family": "open-api",
+      "method": "POST",
+      "path": "/api/admin/open-api/sites/bulk",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "open-api",
+      "method": "PATCH",
+      "path": "/api/admin/open-api/sites/{siteID}",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "open-api",
+      "method": "POST",
+      "path": "/api/admin/open-api/sites/{siteID}/revoke",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "open-api",
+      "method": "DELETE",
+      "path": "/api/admin/open-api/sites/{siteID}",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "channel-sites",
+      "method": "GET",
+      "path": "/api/admin/channel-sites",
+      "scopes": [
+        "admin:read"
+      ],
+      "risk": "read",
+      "writeGuard": false
+    },
+    {
+      "family": "channel-sites",
+      "method": "POST",
+      "path": "/api/admin/channel-sites",
+      "scopes": [
+        "admin:write",
+        "admin:secrets"
+      ],
+      "risk": "secret-write",
+      "writeGuard": true
+    },
+    {
+      "family": "channel-sites",
+      "method": "PATCH",
+      "path": "/api/admin/channel-sites/{siteID}",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "channel-sites",
+      "method": "DELETE",
+      "path": "/api/admin/channel-sites/{siteID}",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "channel-sites",
+      "method": "POST",
+      "path": "/api/admin/channel-sites/{siteID}/rotate-key",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous",
+        "admin:secrets"
+      ],
+      "risk": "dangerous-secret",
+      "writeGuard": true
+    },
+    {
+      "family": "channel-sites",
+      "method": "POST",
+      "path": "/api/admin/channel-sites/{siteID}/build",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous",
+        "admin:secrets"
+      ],
+      "risk": "dangerous-secret",
+      "writeGuard": true
+    },
+    {
+      "family": "channel-sites",
+      "method": "GET",
+      "path": "/api/admin/channel-sites/{siteID}/download",
+      "scopes": [
+        "admin:read",
+        "admin:dangerous",
+        "admin:secrets",
+        "admin:export"
+      ],
+      "risk": "dangerous-secret-export",
+      "writeGuard": true
+    },
+    {
+      "family": "web-config",
+      "method": "GET",
+      "path": "/api/admin/web",
+      "scopes": [
+        "admin:read"
+      ],
+      "risk": "read",
+      "writeGuard": false
+    },
+    {
+      "family": "web-config",
+      "method": "PATCH",
+      "path": "/api/admin/web",
+      "scopes": [
+        "admin:write"
+      ],
+      "risk": "write",
+      "writeGuard": true
+    },
+    {
+      "family": "web-config",
+      "method": "POST",
+      "path": "/api/admin/web/reset",
+      "scopes": [
+        "admin:write",
+        "admin:dangerous"
+      ],
+      "risk": "dangerous",
+      "writeGuard": true
+    },
+    {
+      "family": "production-health",
+      "method": "GET",
+      "path": "/api/admin/production-health",
+      "scopes": [
+        "admin:read"
+      ],
+      "risk": "read",
+      "writeGuard": false
+    }
+  ]
+}

@@ -28,6 +28,9 @@ check_forbidden_path() {
     docs/reviews/*|skills/*|prototype/*)
       fail "private review, skill, or prototype asset must not be published: $path"
       ;;
+    agent-skills/*/.env|agent-skills/*.env|agent-skills/*.csv|agent-skills/*.zip|agent-skills/*.tar|agent-skills/*.tar.gz)
+      fail "secret-bearing skill artifact must not be published: $path"
+      ;;
     *.sql)
       case "$path" in
         db/migrations/*|db/queries/*)
@@ -68,6 +71,8 @@ trap 'rm -f "$scan_file" "$tmp_file"' EXIT
 
 rg -n -I --hidden \
   --with-filename \
+  --glob '!.git' \
+  --glob '!.git/**' \
   --glob '!node_modules/**' \
   --glob '!web/dist/**' \
   --glob '!web/static/**' \
