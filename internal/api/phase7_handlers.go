@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/csv"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -807,6 +808,9 @@ func incidentActionMessage(w http.ResponseWriter, r *http.Request) (string, bool
 		Message string `json:"message"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
+		if errors.Is(err, io.EOF) {
+			return "", true
+		}
 		writeError(w, r, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return "", false
 	}

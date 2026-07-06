@@ -263,6 +263,10 @@
 .set-row .lbl b { font-size: 13.5px; font-weight: 650; display: block; }
 .set-row .lbl small { font-size: 12px; color: var(--text-3); }
 .set-row .ctl { flex: 1; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.analytics-code-row { align-items: flex-start; }
+.analytics-code-control { align-items: stretch !important; flex-direction: column; min-width: 0; }
+.analytics-code-textarea { min-height: 210px; resize: vertical; line-height: 1.5; }
+.analytics-code-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; width: 100%; }
 .set-card.danger .set-h { color: var(--red); }
 
 /* 成本拆分条 */
@@ -424,6 +428,19 @@
 @media (max-width: 1000px) { .gw-hero { grid-template-columns: 1fr; } .gw-hero .l { border-right: none; border-bottom: 1px solid var(--border); } .sidebar { display: none; } .pick-grid, .opt-grid, .stat-row, .ch-grid, .governance-strip { grid-template-columns: 1fr; } .mi-head { flex-wrap: wrap; } }
 
 @media (max-width: 560px) {
+  .set-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .set-row .lbl {
+    width: 100%;
+  }
+
+  .set-row .ctl {
+    width: 100%;
+  }
+
   .steps {
     flex-wrap: wrap;
     overflow: visible;

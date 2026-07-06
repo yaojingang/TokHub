@@ -102,7 +102,8 @@ export function AdminSettingsPage() {
         footerText: draft.footerText,
         defaultGatewayPolicy: draft.defaultGatewayPolicy,
         timezone: draft.timezone,
-        monitorModels: draft.monitorModels
+        monitorModels: draft.monitorModels,
+        ...(viewer?.role === "owner" ? { analyticsCode: draft.analyticsCode } : {})
       });
       setSite(payload.site);
       setDraft(payload.site);
@@ -111,7 +112,7 @@ export function AdminSettingsPage() {
         window.location.href = adminPath("/settings");
         return;
       }
-      setNotice("设置已保存。后台入口、注册入口、登录页和前台 CTA 会同步更新。");
+      setNotice("设置已保存。后台入口、注册入口、登录页、前台 CTA 和公开页统计代码会同步更新。");
     } catch (err) {
       setError(err instanceof Error ? err.message : "保存设置失败");
     } finally {
@@ -332,7 +333,7 @@ export function AdminSettingsPage() {
           onRevokeSessions={() => void revokeSessions()}
         />
       ) : null}
-      {tab === "intg" ? <IntegrationSettings summary={summary} /> : null}
+      {tab === "intg" && draft ? <IntegrationSettings summary={summary} draft={draft} setDraft={setDraft} canManageAnalytics={viewer?.role === "owner"} /> : null}
     </AdminShell>
   );
 }
@@ -531,7 +532,9 @@ function SecuritySettings({
   );
 }
 
-function IntegrationSettings({ summary }: { summary: AdminSettingsSummary | null }) {
+function IntegrationSettings({ summary, draft, setDraft, canManageAnalytics }: { summary: AdminSettingsSummary | null; draft: SiteConfig; setDraft: (site: SiteConfig) => void; canManageAnalytics: boolean }) {
+  const analyticsEnabled = Boolean(draft.analyticsCode?.trim());
+
   return (
     <div className="set-pane">
       <div className="stat-row">
@@ -539,6 +542,33 @@ function IntegrationSettings({ summary }: { summary: AdminSettingsSummary | null
         <SettingsStat label="启用通知渠道" value={String(summary?.enabledNotificationChannels ?? 0)} hint="email/webhook/feishu" />
         <SettingsStat label="Open API 站点" value={String(summary?.openApiSites ?? 0)} hint="active site keys" />
         <SettingsStat label="私有通道" value={String(summary?.privateChannels ?? 0)} hint="用户工作区" />
+        <SettingsStat label="统计代码" value={analyticsEnabled ? "已启用" : "未配置"} hint="public pages" />
+      </div>
+      <div className="card set-card">
+        <div className="set-h">公开页统计代码</div>
+        <div className="set-row analytics-code-row">
+          <div className="lbl">
+            <b>统计代码</b>
+            <small>粘贴百度统计或 Google Analytics 的完整代码。保存后仅公开页面和通道详情页注入，登录页、用户控制台和管理后台不会注入。</small>
+          </div>
+          <div className="ctl analytics-code-control">
+            <textarea
+              className="input mono analytics-code-textarea"
+              aria-label="统计代码"
+              rows={9}
+              value={draft.analyticsCode ?? ""}
+              onChange={(event) => setDraft({ ...draft, analyticsCode: event.target.value })}
+              disabled={!canManageAnalytics}
+              placeholder={`<!-- 百度统计或 Google Analytics 代码 -->\n<script>\n  // paste analytics snippet here\n</script>`}
+            />
+            <div className="analytics-code-actions">
+              <span className="reg-switch-hint">{canManageAnalytics ? `当前长度 ${(draft.analyticsCode ?? "").length} / 20000` : "只有 owner 可以修改统计代码"}</span>
+              <button className="btn btn-ghost btn-sm" type="button" onClick={() => setDraft({ ...draft, analyticsCode: "" })} disabled={!canManageAnalytics || !analyticsEnabled}>
+                清空统计代码
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
       <div className="card set-card">
         <div className="set-h">集成与通知治理</div>
@@ -760,6 +790,7 @@ function validateSettingsDraft(site: SiteConfig) {
   if (Array.from(site.logoMark.trim()).length < 1 || Array.from(site.logoMark.trim()).length > 2) return "Logo 标记必须是 1-2 个字符。";
   if (site.subtitle.length > 80) return "品牌副标题不能超过 80 个字符。";
   if (site.footerText.length > 120) return "版权声明不能超过 120 个字符。";
+  if ((site.analyticsCode ?? "").length > 20000) return "统计代码不能超过 20000 个字符。";
   const adminPathError = validateAdminPathInput(site.adminPath || "/admin");
   if (adminPathError) return adminPathError;
   if (!["latency", "success", "cost"].includes(site.defaultGatewayPolicy)) return "默认路由策略不合法。";

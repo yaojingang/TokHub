@@ -17,13 +17,14 @@ import (
 )
 
 type seoPage struct {
-	Title       string
-	Description string
-	Canonical   string
-	Robots      string
-	Alternate   string
-	BodyHTML    string
-	JSONLD      []any
+	Title         string
+	Description   string
+	Canonical     string
+	Robots        string
+	Alternate     string
+	BodyHTML      string
+	JSONLD        []any
+	AnalyticsCode string
 }
 
 func (s *Server) frontendIndex(w http.ResponseWriter, r *http.Request, file string) {
@@ -55,6 +56,9 @@ func renderFrontendHTML(index string, page seoPage) string {
 	if head != "" {
 		htmlText = strings.Replace(htmlText, "</head>", head+"\n  </head>", 1)
 	}
+	if analytics := renderAnalyticsCode(page.AnalyticsCode); analytics != "" {
+		htmlText = injectBeforeHeadClose(htmlText, analytics)
+	}
 	if page.BodyHTML != "" {
 		if strings.Contains(htmlText, `<div id="root"></div>`) {
 			fallback := `<div id="root"></div>` + "\n    <noscript>\n" + page.BodyHTML + "\n    </noscript>"
@@ -62,6 +66,21 @@ func renderFrontendHTML(index string, page seoPage) string {
 		}
 	}
 	return htmlText
+}
+
+func renderAnalyticsCode(code string) string {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return ""
+	}
+	return "\n    <!-- TokHub analytics -->\n" + code
+}
+
+func injectBeforeHeadClose(htmlText string, snippet string) string {
+	if !strings.Contains(htmlText, "</head>") {
+		return htmlText + snippet
+	}
+	return strings.Replace(htmlText, "</head>", snippet+"\n  </head>", 1)
 }
 
 func replaceHTMLTitle(index string, title string) string {
@@ -128,20 +147,21 @@ func (s *Server) seoForRequest(r *http.Request) seoPage {
 	baseURL := s.publicBaseURL(r, site)
 	canonical := absoluteSiteURL(baseURL, canonicalPath(r.URL.Path))
 	pagePath := cleanPagePath(r.URL.Path)
+	var page seoPage
 	switch {
 	case pagePath == "/":
-		return s.homeSEO(r, site, baseURL, canonical)
+		page = s.homeSEO(r, site, baseURL, canonical)
 	case pagePath == "/dashboard":
-		return s.dashboardSEO(r, site, baseURL, canonical)
+		page = s.dashboardSEO(r, site, baseURL, canonical)
 	case pagePath == "/pricing":
-		return s.pricingSEO(site, baseURL, canonical)
+		page = s.pricingSEO(site, baseURL, canonical)
 	case pagePath == "/recommend":
-		return s.recommendSEO(r, site, baseURL, canonical)
+		page = s.recommendSEO(r, site, baseURL, canonical)
 	case strings.HasPrefix(pagePath, "/channels/"):
 		channelID := strings.TrimPrefix(pagePath, "/channels/")
-		return s.channelSEO(r, site, baseURL, canonical, channelID)
-	case isAdminPagePath(pagePath, site) || strings.HasPrefix(pagePath, "/console") || pagePath == "/login":
-		return seoPage{
+		page = s.channelSEO(r, site, baseURL, canonical, channelID)
+	case isPrivateSEOPagePath(pagePath, site):
+		page = seoPage{
 			Title:       site.BrandName + " 控制台",
 			Description: site.BrandName + " 用户和管理员控制台入口。",
 			Canonical:   canonical,
@@ -149,13 +169,30 @@ func (s *Server) seoForRequest(r *http.Request) seoPage {
 			JSONLD:      []any{s.webSiteJSONLD(site, baseURL)},
 		}
 	default:
-		return seoPage{
+		page = seoPage{
 			Title:       site.BrandName + " API 中转站监控",
 			Description: site.FooterText,
 			Canonical:   canonical,
 			JSONLD:      []any{s.webSiteJSONLD(site, baseURL)},
 		}
 	}
+	return withPublicAnalytics(page, site, pagePath)
+}
+
+func isPrivateSEOPagePath(pagePath string, site store.SiteConfig) bool {
+	return isAdminPagePath(pagePath, site) || strings.HasPrefix(pagePath, "/console") || pagePath == "/login"
+}
+
+func withPublicAnalytics(page seoPage, site store.SiteConfig, pagePath string) seoPage {
+	if isPrivateSEOPagePath(pagePath, site) {
+		return page
+	}
+	return withAnalytics(page, site)
+}
+
+func withAnalytics(page seoPage, site store.SiteConfig) seoPage {
+	page.AnalyticsCode = site.AnalyticsCode
+	return page
 }
 
 func isAdminPagePath(pagePath string, site store.SiteConfig) bool {

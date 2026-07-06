@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { I18nextProvider } from "react-i18next";
@@ -57,20 +57,81 @@ function AppRoutes() {
   }
 
   return (
-    <Routes>
-      {modules.map((module) => {
-        const routeKey = moduleDependsOnAdminPath(module.path) ? `${module.id}:${adminBase}` : module.id;
-        return <Route path={routeWithAdminPath(module.path)} element={moduleElement(module)} key={routeKey} />;
-      })}
-      {adminBase !== DEFAULT_ADMIN_PATH ? (
-        <Route path="/admin/*" element={<LegacyAdminRedirect />} />
-      ) : (
-        <Route path="/admin/*" element={<NotFoundPage />} />
-      )}
-      <Route path={`${adminPath()}/*`} element={<NotFoundPage />} />
-      <Route path="/console/*" element={<NotFoundPage />} />
-      <Route path="*" element={<NotFoundPage />} />
-    </Routes>
+    <>
+      <AnalyticsPageviewTracker />
+      <Routes>
+        {modules.map((module) => {
+          const routeKey = moduleDependsOnAdminPath(module.path) ? `${module.id}:${adminBase}` : module.id;
+          return <Route path={routeWithAdminPath(module.path)} element={moduleElement(module)} key={routeKey} />;
+        })}
+        {adminBase !== DEFAULT_ADMIN_PATH ? (
+          <Route path="/admin/*" element={<LegacyAdminRedirect />} />
+        ) : (
+          <Route path="/admin/*" element={<NotFoundPage />} />
+        )}
+        <Route path={`${adminPath()}/*`} element={<NotFoundPage />} />
+        <Route path="/console/*" element={<NotFoundPage />} />
+        <Route path="*" element={<NotFoundPage />} />
+      </Routes>
+    </>
+  );
+}
+
+type AnalyticsWindow = Window & {
+  gtag?: (...args: unknown[]) => void;
+  _hmt?: unknown[];
+};
+
+function AnalyticsPageviewTracker() {
+  const location = useLocation();
+  const initialPathRef = useRef(`${location.pathname}${location.search}${location.hash}`);
+
+  useEffect(() => {
+    const path = `${location.pathname}${location.search}${location.hash}`;
+    if (initialPathRef.current === path) {
+      initialPathRef.current = "";
+      return;
+    }
+    if (!isAnalyticsPublicPath(location.pathname)) {
+      return;
+    }
+    const analyticsWindow = window as AnalyticsWindow;
+    if (typeof analyticsWindow.gtag === "function") {
+      analyticsWindow.gtag("event", "page_view", {
+        page_location: window.location.href,
+        page_path: `${location.pathname}${location.search}`,
+        page_title: document.title
+      });
+    }
+    if (Array.isArray(analyticsWindow._hmt)) {
+      analyticsWindow._hmt.push(["_trackPageview", `${location.pathname}${location.search}`]);
+    }
+  }, [location.hash, location.pathname, location.search]);
+
+  return null;
+}
+
+function isAnalyticsPublicPath(pathname: string) {
+  const configuredAdminPath = adminPath();
+  return (
+    pathname === "/" ||
+    pathname === "/dashboard" ||
+    pathname === "/pricing" ||
+    pathname === "/recommend" ||
+    pathname.startsWith("/channels/") ||
+    (!isPrivateAppPath(pathname, configuredAdminPath) && !pathname.startsWith("/api/"))
+  );
+}
+
+function isPrivateAppPath(pathname: string, configuredAdminPath: string) {
+  return (
+    pathname === "/login" ||
+    pathname === "/admin" ||
+    pathname.startsWith("/admin/") ||
+    pathname === configuredAdminPath ||
+    pathname.startsWith(`${configuredAdminPath}/`) ||
+    pathname === "/console" ||
+    pathname.startsWith("/console/")
   );
 }
 

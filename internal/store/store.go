@@ -93,6 +93,7 @@ type SiteConfig struct {
 	NavItems                  []NavItem            `json:"navItems"`
 	FooterLinks               []NavItem            `json:"footerLinks"`
 	MonitorModels             []MonitorModelConfig `json:"monitorModels"`
+	AnalyticsCode             string               `json:"analyticsCode"`
 }
 
 type NavItem struct {
@@ -599,10 +600,17 @@ func normalizeSiteConfig(cfg SiteConfig) SiteConfig {
 	}
 	cfg.FooterLinks = normalizeAdminLink(cfg.FooterLinks, cfg.AdminPath)
 	cfg.MonitorModels = normalizeMonitorModels(cfg.MonitorModels)
+	cfg.AnalyticsCode = normalizeAnalyticsCode(cfg.AnalyticsCode)
 	if !cfg.RegistrationOpen {
 		cfg.ShowRegisterCTA = false
 	}
 	return cfg
+}
+
+func normalizeAnalyticsCode(value string) string {
+	value = strings.ReplaceAll(value, "\r\n", "\n")
+	value = strings.ReplaceAll(value, "\r", "\n")
+	return strings.TrimSpace(value)
 }
 
 func NormalizeAdminPath(value string) string {

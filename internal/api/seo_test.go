@@ -34,6 +34,88 @@ func TestRenderFrontendHTMLKeepsReactRootEmpty(t *testing.T) {
 	}
 }
 
+func TestRenderFrontendHTMLInjectsAnalyticsCodeIntoHead(t *testing.T) {
+	index := `<!doctype html><html><head><title>TokHub</title></head><body><div id="root"></div></body></html>`
+	page := seoPage{
+		Title:         "TokHub SEO",
+		AnalyticsCode: `<script>window._hmt=window._hmt||[];</script>`,
+	}
+
+	out := renderFrontendHTML(index, page)
+
+	if !strings.Contains(out, "<!-- TokHub analytics -->") {
+		t.Fatalf("expected analytics marker, got %s", out)
+	}
+	if !strings.Contains(out, `<script>window._hmt=window._hmt||[];</script>`) {
+		t.Fatalf("expected analytics code to be injected, got %s", out)
+	}
+	if strings.Index(out, `<script>window._hmt=window._hmt||[];</script>`) > strings.Index(out, "</head>") {
+		t.Fatalf("expected analytics code before closing head, got %s", out)
+	}
+	if strings.Contains(out, `<div id="root"><script>`) {
+		t.Fatalf("analytics code must not be injected inside React root, got %s", out)
+	}
+
+	withoutAnalytics := renderFrontendHTML(index, seoPage{Title: "TokHub SEO"})
+	if strings.Contains(withoutAnalytics, "TokHub analytics") || strings.Contains(withoutAnalytics, "window._hmt") {
+		t.Fatalf("analytics code should be omitted when page has no analytics code, got %s", withoutAnalytics)
+	}
+}
+
+func TestPublicSiteConfigRedactsAnalyticsCode(t *testing.T) {
+	cfg := store.SiteConfig{AnalyticsCode: `<script>window._hmt=window._hmt||[];</script>`}
+	publicCfg := publicSiteConfig(cfg)
+
+	if publicCfg.AnalyticsCode != "" {
+		t.Fatalf("public analytics code = %q, want empty", publicCfg.AnalyticsCode)
+	}
+	if cfg.AnalyticsCode == "" {
+		t.Fatal("publicSiteConfig should not mutate the source config")
+	}
+}
+
+func TestWithAnalyticsAppliesToPublicAndPrivateRoutes(t *testing.T) {
+	site := store.SiteConfig{AdminPath: "/ops-admin", AnalyticsCode: `<script>window._hmt=window._hmt||[];</script>`}
+	paths := []string{"/", "/dashboard", "/pricing", "/recommend", "/channels/claude", "/missing", "/admin/settings", "/ops-admin/settings", "/console", "/console/keys", "/login"}
+	for _, path := range paths {
+		page := withAnalytics(seoPage{Title: path}, site)
+		if page.AnalyticsCode == "" {
+			t.Fatalf("path %s analytics code = empty, want configured code", path)
+		}
+	}
+}
+
+func TestPrivateSEOPagePathClassifiesPrivateRoutes(t *testing.T) {
+	site := store.SiteConfig{AdminPath: "/ops-admin"}
+	for _, path := range []string{"/admin/settings", "/ops-admin/settings", "/console", "/console/keys", "/login"} {
+		if !isPrivateSEOPagePath(path, site) {
+			t.Fatalf("path %s should be private", path)
+		}
+	}
+	for _, path := range []string{"/", "/dashboard", "/pricing", "/recommend", "/channels/claude", "/missing"} {
+		if isPrivateSEOPagePath(path, site) {
+			t.Fatalf("path %s should be public", path)
+		}
+	}
+}
+
+func TestCleanSiteConfigInputRejectsOversizedAnalyticsCode(t *testing.T) {
+	cfg := store.SiteConfig{
+		RegistrationOpen: true,
+		ShowRegisterCTA:  true,
+		AdminPath:        "/admin",
+		BrandName:        "TokHub",
+		LogoMark:         "T",
+		NavItems:         []store.NavItem{{Label: "首页", Href: "/"}},
+		FooterLinks:      []store.NavItem{{Label: "首页", Href: "/"}},
+		AnalyticsCode:    strings.Repeat("x", 20001),
+	}
+
+	if _, errText := cleanSiteConfigInput(cfg); errText != "统计代码不能超过 20000 个字符" {
+		t.Fatalf("expected oversized analytics code to be rejected, got %q", errText)
+	}
+}
+
 func TestPricingSEOHasDedicatedMetadata(t *testing.T) {
 	server := &Server{cfg: Config{PublicURL: "https://tokhub.example"}}
 	req := httptest.NewRequest(http.MethodGet, "/pricing", nil)

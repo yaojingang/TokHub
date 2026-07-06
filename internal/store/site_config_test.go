@@ -35,6 +35,21 @@ func TestDefaultSiteConfigStillProvidesOptionalTextDefaults(t *testing.T) {
 	if cfg.AdminPath != "/admin" {
 		t.Fatalf("expected default admin path /admin, got %q", cfg.AdminPath)
 	}
+	if cfg.AnalyticsCode != "" {
+		t.Fatalf("expected default analytics code to be empty, got %q", cfg.AnalyticsCode)
+	}
+}
+
+func TestNormalizeSiteConfigCleansAnalyticsCodeLineEndings(t *testing.T) {
+	cfg := normalizeSiteConfig(SiteConfig{
+		RegistrationOpen: true,
+		ShowRegisterCTA:  true,
+		AnalyticsCode:    " \r\n<script>window._hmt=[];</script>\r\n ",
+	})
+
+	if cfg.AnalyticsCode != "<script>window._hmt=[];</script>" {
+		t.Fatalf("expected analytics code to be trimmed and normalized, got %q", cfg.AnalyticsCode)
+	}
 }
 
 func TestNormalizeSiteConfigAdminPath(t *testing.T) {

@@ -117,6 +117,7 @@ func (s *Server) saveAdminWebConfig(w http.ResponseWriter, r *http.Request) {
 	if len(req.MonitorModels) == 0 {
 		req.MonitorModels = current.MonitorModels
 	}
+	req.AnalyticsCode = current.AnalyticsCode
 	req.RegistrationOpen = current.RegistrationOpen
 	if req.ShowRegisterCTA && !req.RegistrationOpen {
 		req.ShowRegisterCTA = false
@@ -157,6 +158,7 @@ func (s *Server) resetAdminWebConfig(w http.ResponseWriter, r *http.Request) {
 	cfg.DefaultGatewayPolicy = current.DefaultGatewayPolicy
 	cfg.Timezone = current.Timezone
 	cfg.MonitorModels = current.MonitorModels
+	cfg.AnalyticsCode = current.AnalyticsCode
 	if err := s.repo.SetSiteConfigBy(r.Context(), cfg, user.ID); err != nil {
 		writeError(w, r, http.StatusInternalServerError, "web_config_reset_failed", "Could not reset site config")
 		return
@@ -179,6 +181,7 @@ func cleanSiteConfigInput(cfg store.SiteConfig) (store.SiteConfig, string) {
 	cfg.LogoMark = strings.TrimSpace(cfg.LogoMark)
 	cfg.Subtitle = strings.TrimSpace(cfg.Subtitle)
 	cfg.FooterText = strings.TrimSpace(cfg.FooterText)
+	cfg.AnalyticsCode = strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(cfg.AnalyticsCode, "\r\n", "\n"), "\r", "\n"))
 	cfg.AdminPath = store.NormalizeAdminPath(cfg.AdminPath)
 	cfg.DefaultGatewayPolicy = strings.TrimSpace(cfg.DefaultGatewayPolicy)
 	cfg.Timezone = strings.TrimSpace(cfg.Timezone)
@@ -193,6 +196,9 @@ func cleanSiteConfigInput(cfg store.SiteConfig) (store.SiteConfig, string) {
 	}
 	if len([]rune(cfg.Subtitle)) > 80 {
 		return cfg, "副标题不能超过 80 个字符"
+	}
+	if len([]rune(cfg.AnalyticsCode)) > 20000 {
+		return cfg, "统计代码不能超过 20000 个字符"
 	}
 	if errText := validateAdminPath(cfg.AdminPath); errText != "" {
 		return cfg, errText

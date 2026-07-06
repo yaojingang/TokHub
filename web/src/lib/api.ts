@@ -396,6 +396,7 @@ export type SiteConfig = {
   navItems: NavItem[];
   footerLinks: NavItem[];
   monitorModels: MonitorModelConfig[];
+  analyticsCode: string;
 };
 
 let siteConfigCache: SiteConfig | null = null;

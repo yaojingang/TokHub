@@ -514,7 +514,12 @@ func (s *Server) siteConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusInternalServerError, "site_config_unavailable", "Could not load site config")
 		return
 	}
-	writeJSON(w, http.StatusOK, cfg)
+	writeJSON(w, http.StatusOK, publicSiteConfig(cfg))
+}
+
+func publicSiteConfig(cfg store.SiteConfig) store.SiteConfig {
+	cfg.AnalyticsCode = ""
+	return cfg
 }
 
 func (s *Server) frontend(w http.ResponseWriter, r *http.Request) {

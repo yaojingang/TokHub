@@ -18,13 +18,18 @@ type adminSettingsRequest struct {
 	DefaultGatewayPolicy      *string                     `json:"defaultGatewayPolicy"`
 	Timezone                  *string                     `json:"timezone"`
 	MonitorModels             *[]store.MonitorModelConfig `json:"monitorModels"`
+	AnalyticsCode             *string                     `json:"analyticsCode"`
 }
 
 func (s *Server) adminSettings(w http.ResponseWriter, r *http.Request) {
+	user, _ := s.userFromRequest(r)
 	cfg, err := s.repo.SiteConfig(r.Context())
 	if err != nil {
 		writeError(w, r, http.StatusInternalServerError, "settings_unavailable", "Could not load settings")
 		return
+	}
+	if user.Role != "owner" {
+		cfg.AnalyticsCode = ""
 	}
 	summary, err := s.repo.AdminSettingsSummary(r.Context())
 	if err != nil {
@@ -83,6 +88,13 @@ func (s *Server) updateAdminSettings(w http.ResponseWriter, r *http.Request) {
 	if req.MonitorModels != nil {
 		cfg.MonitorModels = *req.MonitorModels
 	}
+	if req.AnalyticsCode != nil {
+		if user.Role != "owner" && *req.AnalyticsCode != cfg.AnalyticsCode {
+			writeError(w, r, http.StatusForbidden, "analytics_owner_required", "Only owner can change analytics code")
+			return
+		}
+		cfg.AnalyticsCode = *req.AnalyticsCode
+	}
 	cfg, validationError := cleanSiteConfigInput(cfg)
 	if validationError != "" {
 		writeError(w, r, http.StatusBadRequest, "settings_invalid", validationError)
@@ -108,7 +120,7 @@ func (s *Server) updateAdminSettings(w http.ResponseWriter, r *http.Request) {
 		ObjectID:   "site",
 		IP:         clientIP(r),
 		Result:     "success",
-		Metadata:   map[string]any{"registration_open": cfg.RegistrationOpen, "email_verification_required": cfg.EmailVerificationRequired, "admin_path": cfg.AdminPath, "default_gateway_policy": cfg.DefaultGatewayPolicy, "timezone": cfg.Timezone},
+		Metadata:   map[string]any{"registration_open": cfg.RegistrationOpen, "email_verification_required": cfg.EmailVerificationRequired, "admin_path": cfg.AdminPath, "default_gateway_policy": cfg.DefaultGatewayPolicy, "timezone": cfg.Timezone, "analytics_configured": cfg.AnalyticsCode != ""},
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"site": cfg})
 }
