@@ -92,9 +92,6 @@ function AnalyticsPageviewTracker() {
       initialPathRef.current = "";
       return;
     }
-    if (!isAnalyticsPublicPath(location.pathname)) {
-      return;
-    }
     const analyticsWindow = window as AnalyticsWindow;
     if (typeof analyticsWindow.gtag === "function") {
       analyticsWindow.gtag("event", "page_view", {
@@ -109,30 +106,6 @@ function AnalyticsPageviewTracker() {
   }, [location.hash, location.pathname, location.search]);
 
   return null;
-}
-
-function isAnalyticsPublicPath(pathname: string) {
-  const configuredAdminPath = adminPath();
-  return (
-    pathname === "/" ||
-    pathname === "/dashboard" ||
-    pathname === "/pricing" ||
-    pathname === "/recommend" ||
-    pathname.startsWith("/channels/") ||
-    (!isPrivateAppPath(pathname, configuredAdminPath) && !pathname.startsWith("/api/"))
-  );
-}
-
-function isPrivateAppPath(pathname: string, configuredAdminPath: string) {
-  return (
-    pathname === "/login" ||
-    pathname === "/admin" ||
-    pathname.startsWith("/admin/") ||
-    pathname === configuredAdminPath ||
-    pathname.startsWith(`${configuredAdminPath}/`) ||
-    pathname === "/console" ||
-    pathname.startsWith("/console/")
-  );
 }
 
 function shouldWaitForAdminPath(pathname: string) {

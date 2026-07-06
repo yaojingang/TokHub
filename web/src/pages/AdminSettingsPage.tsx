@@ -112,7 +112,7 @@ export function AdminSettingsPage() {
         window.location.href = adminPath("/settings");
         return;
       }
-      setNotice("设置已保存。后台入口、注册入口、登录页、前台 CTA 和公开页统计代码会同步更新。");
+      setNotice("设置已保存。后台入口、注册入口、登录页、前台 CTA 和全站统计代码会同步更新。");
     } catch (err) {
       setError(err instanceof Error ? err.message : "保存设置失败");
     } finally {
@@ -542,14 +542,14 @@ function IntegrationSettings({ summary, draft, setDraft, canManageAnalytics }: {
         <SettingsStat label="启用通知渠道" value={String(summary?.enabledNotificationChannels ?? 0)} hint="email/webhook/feishu" />
         <SettingsStat label="Open API 站点" value={String(summary?.openApiSites ?? 0)} hint="active site keys" />
         <SettingsStat label="私有通道" value={String(summary?.privateChannels ?? 0)} hint="用户工作区" />
-        <SettingsStat label="统计代码" value={analyticsEnabled ? "已启用" : "未配置"} hint="public pages" />
+        <SettingsStat label="统计代码" value={analyticsEnabled ? "已启用" : "未配置"} hint="site-wide inject" />
       </div>
       <div className="card set-card">
-        <div className="set-h">公开页统计代码</div>
+        <div className="set-h">全站统计代码</div>
         <div className="set-row analytics-code-row">
           <div className="lbl">
             <b>统计代码</b>
-            <small>粘贴百度统计或 Google Analytics 的完整代码。保存后仅公开页面和通道详情页注入，登录页、用户控制台和管理后台不会注入。</small>
+            <small>粘贴百度统计或 Google Analytics 的完整代码。保存后公开页面、通道详情页、登录页、用户控制台和管理后台的 HTML 都会注入。</small>
           </div>
           <div className="ctl analytics-code-control">
             <textarea

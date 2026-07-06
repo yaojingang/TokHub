@@ -176,18 +176,11 @@ func (s *Server) seoForRequest(r *http.Request) seoPage {
 			JSONLD:      []any{s.webSiteJSONLD(site, baseURL)},
 		}
 	}
-	return withPublicAnalytics(page, site, pagePath)
+	return withAnalytics(page, site)
 }
 
 func isPrivateSEOPagePath(pagePath string, site store.SiteConfig) bool {
 	return isAdminPagePath(pagePath, site) || strings.HasPrefix(pagePath, "/console") || pagePath == "/login"
-}
-
-func withPublicAnalytics(page seoPage, site store.SiteConfig, pagePath string) seoPage {
-	if isPrivateSEOPagePath(pagePath, site) {
-		return page
-	}
-	return withAnalytics(page, site)
 }
 
 func withAnalytics(page seoPage, site store.SiteConfig) seoPage {
