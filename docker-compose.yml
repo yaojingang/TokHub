@@ -1,0 +1,107 @@
+services:
+  db:
+    image: timescale/timescaledb:latest-pg17-oss
+    environment:
+      POSTGRES_DB: tokhub
+      POSTGRES_USER: tokhub
+      POSTGRES_PASSWORD: tokhub
+    volumes:
+      - tokhub-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tokhub -d tokhub"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:8-alpine
+    volumes:
+      - tokhub-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  nats:
+    image: nats:2-alpine
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    volumes:
+      - tokhub-nats:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build: .
+    environment:
+      TOKHUB_ROLE: migrate
+      TOKHUB_ENV: ${TOKHUB_ENV:-development}
+      DATABASE_URL: postgres://tokhub:tokhub@db:5432/tokhub?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  seed:
+    build: .
+    environment:
+      TOKHUB_ROLE: seed
+      TOKHUB_ENV: ${TOKHUB_ENV:-development}
+      TOKHUB_PUBLIC_URL: ${TOKHUB_PUBLIC_URL:-http://localhost:8080}
+      TOKHUB_ADMIN_EMAIL: ${TOKHUB_ADMIN_EMAIL:-admin@tokhub.local}
+      TOKHUB_ADMIN_USERNAME: ${TOKHUB_ADMIN_USERNAME:-admin}
+      TOKHUB_ADMIN_PASSWORD: ${TOKHUB_ADMIN_PASSWORD:-ChangeMe123!}
+      TOKHUB_SECRET_KEY: ${TOKHUB_SECRET_KEY:-dev-only-change-this-secret-key-32b}
+      TOKHUB_SEED_MODE: ${TOKHUB_SEED_MODE:-prod}
+      TOKHUB_UPSTREAM_MODE: ${TOKHUB_UPSTREAM_MODE:-mock}
+      TOKHUB_SESSION_SECURE: ${TOKHUB_SESSION_SECURE:-false}
+      TOKHUB_REGISTRATION_OPEN: ${TOKHUB_REGISTRATION_OPEN:-true}
+      TOKHUB_EXPOSE_DEV_TOKENS: ${TOKHUB_EXPOSE_DEV_TOKENS:-}
+      DATABASE_URL: postgres://tokhub:tokhub@db:5432/tokhub?sslmode=disable
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  app:
+    build: .
+    environment:
+      TOKHUB_ROLE: all
+      TOKHUB_ENV: ${TOKHUB_ENV:-development}
+      TOKHUB_PUBLIC_URL: ${TOKHUB_PUBLIC_URL:-http://localhost:8080}
+      TOKHUB_ADMIN_EMAIL: ${TOKHUB_ADMIN_EMAIL:-admin@tokhub.local}
+      TOKHUB_ADMIN_USERNAME: ${TOKHUB_ADMIN_USERNAME:-admin}
+      TOKHUB_SECRET_KEY: ${TOKHUB_SECRET_KEY:-dev-only-change-this-secret-key-32b}
+      TOKHUB_SEED_MODE: ${TOKHUB_SEED_MODE:-prod}
+      TOKHUB_UPSTREAM_MODE: ${TOKHUB_UPSTREAM_MODE:-mock}
+      TOKHUB_SESSION_SECURE: ${TOKHUB_SESSION_SECURE:-false}
+      TOKHUB_REGISTRATION_OPEN: ${TOKHUB_REGISTRATION_OPEN:-true}
+      TOKHUB_EXPOSE_DEV_TOKENS: ${TOKHUB_EXPOSE_DEV_TOKENS:-}
+      DATABASE_URL: postgres://tokhub:tokhub@db:5432/tokhub?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      NATS_URL: nats://nats:4222
+      SMTP_URL: ${SMTP_URL:-}
+    ports:
+      - "${TOKHUB_HOST_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/app/tokhub", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  tokhub-db:
+  tokhub-redis:
+  tokhub-nats:

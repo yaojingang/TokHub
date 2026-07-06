@@ -1,0 +1,143 @@
+services:
+  app:
+    profiles: ["single"]
+
+  api:
+    build:
+      context: .
+    environment:
+      TOKHUB_ROLE: api
+      TOKHUB_ENV: ${TOKHUB_ENV:-development}
+      TOKHUB_PUBLIC_URL: ${TOKHUB_PUBLIC_URL:-http://localhost:8081}
+      TOKHUB_ADMIN_EMAIL: ${TOKHUB_ADMIN_EMAIL:-admin@tokhub.local}
+      TOKHUB_SECRET_KEY: ${TOKHUB_SECRET_KEY:-dev-only-change-this-secret-key-32b}
+      TOKHUB_SEED_MODE: ${TOKHUB_SEED_MODE:-prod}
+      TOKHUB_UPSTREAM_MODE: ${TOKHUB_UPSTREAM_MODE:-mock}
+      TOKHUB_SESSION_SECURE: ${TOKHUB_SESSION_SECURE:-false}
+      TOKHUB_REGISTRATION_OPEN: ${TOKHUB_REGISTRATION_OPEN:-true}
+      TOKHUB_EXPOSE_DEV_TOKENS: ${TOKHUB_EXPOSE_DEV_TOKENS:-}
+      DATABASE_URL: postgres://tokhub:tokhub@db:5432/tokhub?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      NATS_URL: nats://nats:4222
+      SMTP_URL: ${SMTP_URL:-}
+    ports:
+      - "${TOKHUB_API_PORT:-8081}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/app/tokhub", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  gateway:
+    build:
+      context: .
+    environment:
+      TOKHUB_ROLE: gateway
+      TOKHUB_ENV: ${TOKHUB_ENV:-development}
+      TOKHUB_PUBLIC_URL: ${TOKHUB_PUBLIC_URL:-http://localhost:8082}
+      TOKHUB_ADMIN_EMAIL: ${TOKHUB_ADMIN_EMAIL:-admin@tokhub.local}
+      TOKHUB_SECRET_KEY: ${TOKHUB_SECRET_KEY:-dev-only-change-this-secret-key-32b}
+      TOKHUB_SEED_MODE: ${TOKHUB_SEED_MODE:-prod}
+      TOKHUB_UPSTREAM_MODE: ${TOKHUB_UPSTREAM_MODE:-mock}
+      TOKHUB_SESSION_SECURE: ${TOKHUB_SESSION_SECURE:-false}
+      TOKHUB_REGISTRATION_OPEN: ${TOKHUB_REGISTRATION_OPEN:-true}
+      TOKHUB_EXPOSE_DEV_TOKENS: ${TOKHUB_EXPOSE_DEV_TOKENS:-}
+      DATABASE_URL: postgres://tokhub:tokhub@db:5432/tokhub?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      NATS_URL: nats://nats:4222
+      SMTP_URL: ${SMTP_URL:-}
+    ports:
+      - "${TOKHUB_GATEWAY_PORT:-8082}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/app/tokhub", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  prober:
+    build:
+      context: .
+    environment:
+      TOKHUB_ROLE: prober
+      TOKHUB_ENV: ${TOKHUB_ENV:-development}
+      TOKHUB_PUBLIC_URL: ${TOKHUB_PUBLIC_URL:-http://localhost:8080}
+      TOKHUB_ADMIN_EMAIL: ${TOKHUB_ADMIN_EMAIL:-admin@tokhub.local}
+      TOKHUB_SECRET_KEY: ${TOKHUB_SECRET_KEY:-dev-only-change-this-secret-key-32b}
+      TOKHUB_SEED_MODE: ${TOKHUB_SEED_MODE:-prod}
+      TOKHUB_UPSTREAM_MODE: ${TOKHUB_UPSTREAM_MODE:-mock}
+      TOKHUB_SESSION_SECURE: ${TOKHUB_SESSION_SECURE:-false}
+      TOKHUB_REGISTRATION_OPEN: ${TOKHUB_REGISTRATION_OPEN:-true}
+      TOKHUB_EXPOSE_DEV_TOKENS: ${TOKHUB_EXPOSE_DEV_TOKENS:-}
+      DATABASE_URL: postgres://tokhub:tokhub@db:5432/tokhub?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      NATS_URL: nats://nats:4222
+      SMTP_URL: ${SMTP_URL:-}
+    expose:
+      - "8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/app/tokhub", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  worker:
+    build:
+      context: .
+    environment:
+      TOKHUB_ROLE: worker
+      TOKHUB_ENV: ${TOKHUB_ENV:-development}
+      TOKHUB_PUBLIC_URL: ${TOKHUB_PUBLIC_URL:-http://localhost:8080}
+      TOKHUB_ADMIN_EMAIL: ${TOKHUB_ADMIN_EMAIL:-admin@tokhub.local}
+      TOKHUB_SECRET_KEY: ${TOKHUB_SECRET_KEY:-dev-only-change-this-secret-key-32b}
+      TOKHUB_SEED_MODE: ${TOKHUB_SEED_MODE:-prod}
+      TOKHUB_UPSTREAM_MODE: ${TOKHUB_UPSTREAM_MODE:-mock}
+      TOKHUB_SESSION_SECURE: ${TOKHUB_SESSION_SECURE:-false}
+      TOKHUB_REGISTRATION_OPEN: ${TOKHUB_REGISTRATION_OPEN:-true}
+      TOKHUB_EXPOSE_DEV_TOKENS: ${TOKHUB_EXPOSE_DEV_TOKENS:-}
+      DATABASE_URL: postgres://tokhub:tokhub@db:5432/tokhub?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      NATS_URL: nats://nats:4222
+      SMTP_URL: ${SMTP_URL:-}
+    expose:
+      - "8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/app/tokhub", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 20

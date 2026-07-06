@@ -1,0 +1,35 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "tokhub.fullname" . }}
+  labels:
+    {{- include "tokhub.labels" . | nindent 4 }}
+  {{- if .Values.ingress.className }}
+  annotations:
+    kubernetes.io/ingress.class: {{ .Values.ingress.className | quote }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.tls }}
+  tls:
+    {{- toYaml .Values.ingress.tls | nindent 4 }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "tokhub.fullname" . }}-api
+                port:
+                  name: http
+          - path: /gateway/v1
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "tokhub.fullname" . }}-gateway
+                port:
+                  name: http
+{{- end }}

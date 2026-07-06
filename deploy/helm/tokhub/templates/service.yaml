@@ -1,0 +1,22 @@
+{{- range $role, $cfg := .Values.roles }}
+{{- if and $cfg.enabled $cfg.public }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tokhub.fullname" $ }}-{{ $role }}
+  labels:
+    {{- include "tokhub.labels" $ | nindent 4 }}
+    tokhub.io/role: {{ $role | quote }}
+spec:
+  type: {{ $.Values.service.type }}
+  ports:
+    - name: http
+      port: {{ $.Values.service.port }}
+      targetPort: http
+  selector:
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    app.kubernetes.io/name: {{ include "tokhub.name" $ }}
+    tokhub.io/role: {{ $role | quote }}
+---
+{{- end }}
+{{- end }}

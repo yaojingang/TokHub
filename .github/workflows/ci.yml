@@ -1,0 +1,48 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+env:
+  SQLC_VERSION: v1.31.1
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 25
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install sqlc
+        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@${SQLC_VERSION}
+
+      - name: Open source preflight
+        run: npm run open-source:preflight
+
+      - name: Static release checks
+        run: deploy/scripts/release-check.sh
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compose config
+        run: |
+          docker compose config
+          docker compose -f docker-compose.yml -f deploy/compose/docker-compose.roles.yml config
+      - name: Build app image
+        run: docker build -t tokhub:ci .

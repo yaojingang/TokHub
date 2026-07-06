@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "tokhub.fullname" . }}-config
+  labels:
+    {{- include "tokhub.labels" . | nindent 4 }}
+data:
+  TOKHUB_PUBLIC_URL: {{ .Values.publicUrl | quote }}
+  TOKHUB_ADMIN_EMAIL: {{ .Values.adminEmail | quote }}
+  DATABASE_URL: {{ .Values.databaseUrl | quote }}
+  REDIS_URL: {{ .Values.redisUrl | quote }}
+  NATS_URL: {{ .Values.natsUrl | quote }}

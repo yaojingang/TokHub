@@ -1,0 +1,6 @@
+apiVersion: v2
+name: tokhub
+description: TokHub modular monolith deployment with api, gateway, prober, and worker roles.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

@@ -1,0 +1,186 @@
+openapi: 3.1.0
+info:
+  title: TokHub Admin-Agent Internal API
+  version: 0.1.0
+  description: Internal machine contract for TokHub administrator agent execution. This is not the public third-party API contract.
+servers:
+  - url: http://localhost:8080
+security:
+  - AdminAgentBearer: []
+paths:
+  /api/admin/agent-tokens:
+    get:
+      summary: List admin-agent tokens
+      description: Owner-only browser session endpoint. Bearer admin-agent tokens are forbidden from calling this path.
+      security:
+        - BrowserAdminSession: []
+      responses:
+        "200":
+          description: Token list without plain token material.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AdminAgentToken"
+    post:
+      summary: Create admin-agent token
+      description: Owner-only browser session endpoint. The plain token is returned once.
+      security:
+        - BrowserAdminSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, scopes]
+              properties:
+                name:
+                  type: string
+                scopes:
+                  type: array
+                  items:
+                    type: string
+                    enum: [admin:read, admin:write, admin:dangerous, admin:secrets, admin:export, admin:*]
+                expiresAt:
+                  type: string
+                  format: date-time
+                ttlHours:
+                  type: integer
+                  minimum: 1
+      responses:
+        "201":
+          description: Created token, including one-time plainToken.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    allOf:
+                      - $ref: "#/components/schemas/AdminAgentToken"
+                      - type: object
+                        properties:
+                          plainToken:
+                            type: string
+  /api/admin/agent-tokens/{tokenID}/revoke:
+    post:
+      summary: Revoke admin-agent token
+      description: Owner-only browser session endpoint. Bearer admin-agent tokens are forbidden from calling this path.
+      security:
+        - BrowserAdminSession: []
+      parameters:
+        - name: tokenID
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Revoked token without plain token material.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    $ref: "#/components/schemas/AdminAgentToken"
+  /api/admin/production-health:
+    get:
+      summary: Read production health
+      security:
+        - AdminAgentBearer: [admin:read]
+      responses:
+        "200":
+          description: Existing production health payload.
+  /api/admin/audit:
+    get:
+      summary: Read admin audit events
+      security:
+        - AdminAgentBearer: [admin:read]
+      responses:
+        "200":
+          description: Existing audit list payload.
+  /api/admin/audit/export:
+    get:
+      summary: Export admin audit data
+      security:
+        - AdminAgentBearer: [admin:read, admin:export]
+      responses:
+        "200":
+          description: CSV export.
+  /api/admin/channels/{channelID}/validate:
+    post:
+      summary: Validate platform channel
+      security:
+        - AdminAgentBearer: [admin:write]
+      parameters:
+        - name: channelID
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Existing validation payload.
+  /api/admin/channel-sites/{siteID}/download:
+    get:
+      summary: Download channel site package
+      security:
+        - AdminAgentBearer: [admin:read, admin:dangerous, admin:secrets, admin:export]
+      parameters:
+        - name: siteID
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Package archive.
+components:
+  securitySchemes:
+    AdminAgentBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: admin-agent-token
+    BrowserAdminSession:
+      type: apiKey
+      in: cookie
+      name: tokhub_session
+  schemas:
+    AdminAgentToken:
+      type: object
+      required: [id, name, tokenPrefix, tokenMask, scopes, createdBy, createdAt]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        tokenPrefix:
+          type: string
+        tokenMask:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        createdBy:
+          type: string
+        createdByEmail:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        revokedAt:
+          type: string
+          format: date-time
+        lastUsedAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time

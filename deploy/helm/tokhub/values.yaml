@@ -1,0 +1,41 @@
+image:
+  repository: tokhub
+  tag: latest
+  pullPolicy: IfNotPresent
+
+publicUrl: http://tokhub.local
+adminEmail: admin@tokhub.local
+secretKey: dev-only-change-this-secret-key-32b
+databaseUrl: postgres://tokhub:tokhub@postgres:5432/tokhub?sslmode=disable
+redisUrl: redis://redis:6379/0
+natsUrl: nats://nats:4222
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: false
+  className: ""
+  host: tokhub.local
+  tls: []
+
+roles:
+  api:
+    enabled: true
+    replicas: 2
+    public: true
+  gateway:
+    enabled: true
+    replicas: 2
+    public: true
+  prober:
+    enabled: true
+    replicas: 1
+    public: false
+  worker:
+    enabled: true
+    replicas: 1
+    public: false
+
+resources: {}

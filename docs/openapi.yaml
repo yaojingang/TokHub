@@ -1,0 +1,882 @@
+openapi: 3.1.0
+info:
+  title: TokHub External API
+  version: 0.1.0
+  summary: Public monitoring, status Open API, and dedicated gateway contracts.
+  description: |
+    This contract covers stable external integration points only.
+    Browser session APIs under /api/auth, /api/me, /api/console and /api/admin are documented in docs/API.md.
+servers:
+  - url: http://localhost:8080
+    description: Local Docker Compose
+  - url: https://tokhub.example.com
+    description: Production example
+tags:
+  - name: Health
+  - name: Public Monitoring
+  - name: Status Open API
+  - name: Gateway
+security: []
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Liveness check
+      operationId: getHealthz
+      responses:
+        "200":
+          description: Service process is alive.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /readyz:
+    get:
+      tags: [Health]
+      summary: Readiness check
+      operationId: getReadyz
+      responses:
+        "200":
+          description: Service dependencies are ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadyResponse"
+        "503":
+          $ref: "#/components/responses/Error"
+  /api/public/overview:
+    get:
+      tags: [Public Monitoring]
+      summary: Public monitoring overview
+      operationId: getPublicOverview
+      responses:
+        "200":
+          description: Aggregated channel health and cost metrics.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Overview"
+        "429":
+          $ref: "#/components/responses/Error"
+  /api/public/channels:
+    get:
+      tags: [Public Monitoring]
+      summary: Public channel list
+      operationId: listPublicChannels
+      parameters:
+        - $ref: "#/components/parameters/Dimension"
+        - $ref: "#/components/parameters/Status"
+        - $ref: "#/components/parameters/Provider"
+        - $ref: "#/components/parameters/Query"
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: Paged channel list.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelList"
+        "429":
+          $ref: "#/components/responses/Error"
+  /api/public/channels/{channelID}:
+    get:
+      tags: [Public Monitoring]
+      summary: Public channel detail
+      operationId: getPublicChannel
+      parameters:
+        - $ref: "#/components/parameters/ChannelID"
+      responses:
+        "200":
+          description: Channel detail, current status and latest probe summaries.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelDetail"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/public/channels/{channelID}/series:
+    get:
+      tags: [Public Monitoring]
+      summary: Channel time series
+      operationId: getPublicChannelSeries
+      parameters:
+        - $ref: "#/components/parameters/ChannelID"
+        - name: days
+          in: query
+          schema:
+            type: integer
+            enum: [1, 7, 30, 90]
+            default: 7
+      responses:
+        "200":
+          description: Time series points.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SeriesPoint"
+  /api/public/providers/rank:
+    get:
+      tags: [Public Monitoring]
+      summary: Provider ranking
+      operationId: getPublicProviderRank
+      responses:
+        "200":
+          description: Provider ranking by health and latency.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ProviderRank"
+  /api/public/errors/summary:
+    get:
+      tags: [Public Monitoring]
+      summary: Public error summary
+      operationId: getPublicErrorsSummary
+      responses:
+        "200":
+          description: Error distribution.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ErrorBucket"
+  /api/public/site-config:
+    get:
+      tags: [Public Monitoring]
+      summary: Public site config
+      operationId: getPublicSiteConfig
+      responses:
+        "200":
+          description: Public brand, navigation and footer config.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SiteConfig"
+  /api/public/recommend:
+    get:
+      tags: [Public Monitoring]
+      summary: Public recommendation config
+      operationId: getPublicRecommend
+      responses:
+        "200":
+          description: Recommendation cards, rankings, rewards and scenarios.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RecommendConfig"
+  /api/public/recommend/click:
+    post:
+      tags: [Public Monitoring]
+      summary: Track recommendation click
+      operationId: trackRecommendClick
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [itemType, itemId]
+              properties:
+                itemType:
+                  type: string
+                  enum: [pick, rank, reward, scenario, cta]
+                itemId:
+                  type: string
+                channelId:
+                  type: string
+      responses:
+        "202":
+          description: Click accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    example: tracked
+        "400":
+          $ref: "#/components/responses/Error"
+  /v1/status/overview:
+    get:
+      tags: [Status Open API]
+      summary: Authenticated status overview
+      operationId: getStatusOverview
+      security:
+        - SiteKeyHeader: []
+        - SiteKeyBearer: []
+      responses:
+        "200":
+          description: Same overview data as the public dashboard.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Overview"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /v1/status/channels:
+    get:
+      tags: [Status Open API]
+      summary: Authenticated status channel list
+      operationId: listStatusChannels
+      security:
+        - SiteKeyHeader: []
+        - SiteKeyBearer: []
+      responses:
+        "200":
+          description: Channel list scoped by Site Key permissions.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelList"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /v1/status/channels/{channelID}:
+    get:
+      tags: [Status Open API]
+      summary: Authenticated status channel detail
+      operationId: getStatusChannel
+      security:
+        - SiteKeyHeader: []
+        - SiteKeyBearer: []
+      parameters:
+        - $ref: "#/components/parameters/ChannelID"
+      responses:
+        "200":
+          description: Channel detail.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelDetail"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "404":
+          $ref: "#/components/responses/Error"
+  /v1/status/channel-sync:
+    get:
+      tags: [Status Open API]
+      summary: TokHub channel sync package
+      description: Requires a Site Key with the channel_sync scope. Credentials are only included when includeCredentials=1 is requested.
+      operationId: getStatusChannelSync
+      security:
+        - SiteKeyHeader: []
+        - SiteKeyBearer: []
+      parameters:
+        - name: includeCredentials
+          in: query
+          schema:
+            type: string
+            enum: ["0", "1"]
+            default: "0"
+          description: Set to "1" only for trusted TokHub-to-TokHub synchronization; response then contains provider API keys.
+      responses:
+        "200":
+          description: Platform channel configuration, monitor snapshot, and recent probe logs for synchronization.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: Always no-store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelSyncPackage"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /v1/status/uptime:
+    get:
+      tags: [Status Open API]
+      summary: Authenticated uptime summary
+      operationId: getStatusUptime
+      security:
+        - SiteKeyHeader: []
+        - SiteKeyBearer: []
+      responses:
+        "200":
+          description: Uptime summary and trends.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UptimeSummary"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /v1/status/incidents:
+    get:
+      tags: [Status Open API]
+      summary: Authenticated incident list
+      operationId: listStatusIncidents
+      security:
+        - SiteKeyHeader: []
+        - SiteKeyBearer: []
+      responses:
+        "200":
+          description: Incident list.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Incident"
+        "401":
+          $ref: "#/components/responses/Error"
+        "403":
+          $ref: "#/components/responses/Error"
+  /gateway/v1/models:
+    get:
+      tags: [Gateway]
+      summary: OpenAI-compatible model list
+      operationId: listGatewayModels
+      security:
+        - GatewayBearer: []
+      responses:
+        "200":
+          description: OpenAI-compatible models response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GatewayModels"
+        "401":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /gateway/v1/chat/completions:
+    post:
+      tags: [Gateway]
+      summary: OpenAI-compatible chat completions
+      operationId: createGatewayChatCompletion
+      security:
+        - GatewayBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatCompletionRequest"
+      responses:
+        "200":
+          description: OpenAI-compatible completion or stream.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+            text/event-stream:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+  /gateway/v1/responses:
+    post:
+      tags: [Gateway]
+      summary: OpenAI Responses-compatible endpoint
+      operationId: createGatewayResponse
+      security:
+        - GatewayBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResponseRequest"
+      responses:
+        "200":
+          description: OpenAI-compatible Responses payload or stream.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+            text/event-stream:
+              schema:
+                type: string
+        "401":
+          $ref: "#/components/responses/Error"
+        "429":
+          $ref: "#/components/responses/Error"
+components:
+  securitySchemes:
+    SiteKeyHeader:
+      type: apiKey
+      in: header
+      name: X-Site-Key
+    SiteKeyBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: site_key
+    GatewayBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: gateway_key
+  parameters:
+    ChannelID:
+      name: channelID
+      in: path
+      required: true
+      schema:
+        type: string
+      example: ch_openai_gpt4o
+    Dimension:
+      name: dimension
+      in: query
+      schema:
+        type: string
+        enum: [brand, model]
+        default: brand
+    Status:
+      name: status
+      in: query
+      schema:
+        type: string
+        enum: [healthy, degraded, down, auth_error, unknown]
+    Provider:
+      name: provider
+      in: query
+      schema:
+        type: string
+    Query:
+      name: query
+      in: query
+      schema:
+        type: string
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: pageSize
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+  responses:
+    Error:
+      description: Controlled TokHub error response.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+    ReadyResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ready
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            requestId:
+              type: string
+    Overview:
+      type: object
+      additionalProperties: true
+      properties:
+        total:
+          type: integer
+        healthy:
+          type: integer
+        degraded:
+          type: integer
+        down:
+          type: integer
+        authError:
+          type: integer
+        p95LatencyMs:
+          type: integer
+        dailyCostUsd:
+          type: number
+    ChannelList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Channel"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+    Channel:
+      type: object
+      required: [id, name, provider, model, status]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        provider:
+          type: string
+        model:
+          type: string
+        endpoint:
+          type: string
+        officialSiteUrl:
+          type: string
+          description: Official website URL configured by admins for public channel entry links.
+        status:
+          type: string
+        diagnosis:
+          $ref: "#/components/schemas/ChannelDiagnosis"
+        latencyMs:
+          type: integer
+        uptime24h:
+          type: number
+        qualityScore:
+          type: integer
+    ChannelDiagnosis:
+      type: object
+      required: [code, label, severity]
+      properties:
+        code:
+          type: string
+          description: Machine-readable monitoring diagnosis code.
+        label:
+          type: string
+          description: Human-readable summary of the current monitoring diagnosis.
+        severity:
+          type: string
+          enum: [ok, info, warn, error]
+        hint:
+          type: string
+          description: Operator-facing remediation hint when available.
+    ChannelDetail:
+      allOf:
+        - $ref: "#/components/schemas/Channel"
+        - type: object
+          additionalProperties: true
+          properties:
+            l1:
+              type: array
+              items:
+                $ref: "#/components/schemas/ProbeStep"
+            l2:
+              type: array
+              items:
+                $ref: "#/components/schemas/ProbeStep"
+            l3:
+              type: object
+              additionalProperties: true
+    ChannelSyncPackage:
+      type: object
+      required: [version, source, syncedAt, credentials, items, logs]
+      properties:
+        version:
+          type: string
+          example: tokhub.channel_sync.v1
+        source:
+          type: string
+          example: https://source.example.com
+        syncedAt:
+          type: string
+          format: date-time
+        credentials:
+          type: string
+          enum: [omitted, included]
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChannelSyncItem"
+        logs:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChannelSyncLog"
+    ChannelSyncItem:
+      allOf:
+        - $ref: "#/components/schemas/Channel"
+        - type: object
+          additionalProperties: true
+          properties:
+            upstreamModel:
+              type: string
+            type:
+              type: string
+            probeDaily:
+              type: integer
+            publicVisible:
+              type: boolean
+            gatewayEnabled:
+              type: boolean
+            inputPerMtok:
+              type: number
+            outputPerMtok:
+              type: number
+            providerConfig:
+              type: object
+              additionalProperties: true
+            apiKey:
+              type: string
+              description: Present only when includeCredentials=1 and the Site Key has channel_sync scope.
+            keyMask:
+              type: string
+            keyFingerprint:
+              type: string
+            l1Status:
+              type: string
+            l2Status:
+              type: string
+            l3Status:
+              type: string
+            l1LatencyMs:
+              type: integer
+            l2LatencyMs:
+              type: integer
+            l3LatencyMs:
+              type: integer
+            tokensUsed:
+              type: integer
+            costUsd:
+              type: number
+            lastProbeAt:
+              type: string
+              format: date-time
+    ChannelSyncLog:
+      type: object
+      required: [id, channelId, channelName, sampledAt, status]
+      properties:
+        id:
+          type: string
+        channelId:
+          type: string
+        channelName:
+          type: string
+        sampledAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+        score:
+          type: integer
+        latencyP95Ms:
+          type: integer
+        l1Status:
+          type: string
+        l2Status:
+          type: string
+        l3Status:
+          type: string
+        errorType:
+          type: string
+    ProbeStep:
+      type: object
+      properties:
+        name:
+          type: string
+        status:
+          type: string
+        latencyMs:
+          type: integer
+        message:
+          type: string
+    SeriesPoint:
+      type: object
+      required: [ts]
+      properties:
+        ts:
+          type: string
+          format: date-time
+        latencyMs:
+          type: integer
+        uptime:
+          type: number
+        costUsd:
+          type: number
+    ProviderRank:
+      type: object
+      properties:
+        provider:
+          type: string
+        score:
+          type: integer
+        healthy:
+          type: integer
+        total:
+          type: integer
+    ErrorBucket:
+      type: object
+      properties:
+        code:
+          type: string
+        count:
+          type: integer
+        share:
+          type: number
+    SiteConfig:
+      type: object
+      additionalProperties: true
+      properties:
+        brandName:
+          type: string
+        publicUrl:
+          type: string
+        registrationOpen:
+          type: boolean
+    RecommendConfig:
+      type: object
+      additionalProperties: true
+      properties:
+        top:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        ranks:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        rewards:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        scenarios:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    UptimeSummary:
+      type: object
+      additionalProperties: true
+      properties:
+        windowDays:
+          type: integer
+        uptime:
+          type: number
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    Incident:
+      type: object
+      additionalProperties: true
+      properties:
+        id:
+          type: string
+        channelId:
+          type: string
+        status:
+          type: string
+        severity:
+          type: string
+        startedAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type:
+            - string
+            - "null"
+          format: date-time
+    GatewayModels:
+      type: object
+      required: [object, data]
+      properties:
+        object:
+          type: string
+          example: list
+        data:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+    ChatCompletionRequest:
+      type: object
+      required: [model, messages]
+      properties:
+        model:
+          type: string
+        messages:
+          type: array
+          items:
+            type: object
+            required: [role, content]
+            properties:
+              role:
+                type: string
+                enum: [system, user, assistant, tool]
+              content:
+                type: string
+        stream:
+          type: boolean
+        temperature:
+          type: number
+    ResponseRequest:
+      type: object
+      required: [model, input]
+      properties:
+        model:
+          type: string
+        input:
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: object
+                additionalProperties: true
+        stream:
+          type: boolean

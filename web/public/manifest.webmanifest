@@ -1,0 +1,46 @@
+{
+  "name": "TokHub",
+  "short_name": "TokHub",
+  "description": "TokHub API 中转站监控、精选推荐和专属网关工作台。",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#dbe2f9",
+  "background_color": "#ffffff",
+  "categories": ["business", "developer", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "监控总览",
+      "short_name": "监控",
+      "url": "/dashboard",
+      "description": "查看公开通道状态和 L1/L2/L3 探测结果。"
+    },
+    {
+      "name": "我的工作区",
+      "short_name": "工作区",
+      "url": "/console",
+      "description": "管理关注通道、私有通道和专属中转站。"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+TokHub has been rendered.
+
+Required external services:
+- PostgreSQL/TimescaleDB via DATABASE_URL
+- Redis via REDIS_URL
+- NATS JetStream via NATS_URL
+
+Run migrations and seed as one-off jobs before exposing traffic:
+  TOKHUB_ROLE=migrate /app/tokhub
+  TOKHUB_ROLE=seed /app/tokhub
