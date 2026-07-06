@@ -29,8 +29,9 @@ createRoot(document.getElementById("root")!).render(
 );
 
 function AppRoutes() {
+  const location = useLocation();
   const [adminBase, setAdminBase] = useState(getAdminPath());
-  const [loaded, setLoaded] = useState(false);
+  const [adminConfigLoaded, setAdminConfigLoaded] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -44,22 +45,23 @@ function AppRoutes() {
         setAdminBase(setAdminPath(DEFAULT_ADMIN_PATH));
       })
       .finally(() => {
-        if (active) setLoaded(true);
+        if (active) setAdminConfigLoaded(true);
       });
     return () => {
       active = false;
     };
   }, []);
 
-  if (!loaded) {
-    return <div className="card card-pad">正在加载站点配置...</div>;
+  if (!adminConfigLoaded && shouldWaitForAdminPath(location.pathname)) {
+    return <AppBootShell />;
   }
 
   return (
     <Routes>
-      {modules.map((module) => (
-        <Route path={routeWithAdminPath(module.path)} element={moduleElement(module)} key={`${module.id}:${adminBase}`} />
-      ))}
+      {modules.map((module) => {
+        const routeKey = moduleDependsOnAdminPath(module.path) ? `${module.id}:${adminBase}` : module.id;
+        return <Route path={routeWithAdminPath(module.path)} element={moduleElement(module)} key={routeKey} />;
+      })}
       {adminBase !== DEFAULT_ADMIN_PATH ? (
         <Route path="/admin/*" element={<LegacyAdminRedirect />} />
       ) : (
@@ -69,6 +71,39 @@ function AppRoutes() {
       <Route path="/console/*" element={<NotFoundPage />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>
+  );
+}
+
+function shouldWaitForAdminPath(pathname: string) {
+  return !isStableBeforeAdminConfig(pathname);
+}
+
+function isStableBeforeAdminConfig(pathname: string) {
+  return (
+    pathname === "/" ||
+    pathname === "/dashboard" ||
+    pathname === "/login" ||
+    pathname === "/pricing" ||
+    pathname === "/recommend" ||
+    pathname.startsWith("/channels/") ||
+    pathname === "/console" ||
+    pathname.startsWith("/console/")
+  );
+}
+
+function moduleDependsOnAdminPath(path: string) {
+  return path === DEFAULT_ADMIN_PATH || path.startsWith(`${DEFAULT_ADMIN_PATH}/`);
+}
+
+function AppBootShell() {
+  return (
+    <main className="app-boot" aria-busy="true" aria-live="polite">
+      <span className="app-boot-mark">T</span>
+      <span className="app-boot-copy">
+        <b>TokHub</b>
+        <small>正在准备站点入口</small>
+      </span>
+    </main>
   );
 }
 

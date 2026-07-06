@@ -68,6 +68,22 @@ deploy/scripts/preflight.sh --env-file .env.production
 deploy/scripts/release-check.sh
 ```
 
+## 线上服务器从 GitHub 拉取更新
+
+已有服务器更新到 GitHub 最新代码时，先拉取仓库，再单独执行迁移，最后重建应用容器：
+
+```bash
+git pull origin main
+docker compose run --rm --build migrate
+docker compose up -d --build --no-deps app
+curl http://localhost:8080/healthz
+curl http://localhost:8080/readyz
+```
+
+首次部署仍可使用 `docker compose up -d --build`。后续更新推荐显式先跑 `migrate`，避免应用进程先于数据库结构或内置运营数据启动。
+
+精选推荐的 AIGoCode、Pipellm、PackyCode 三条信息已随数据库迁移同步为 `runtime` 数据，包括公开通道元数据、推荐位、排序、文案和官网 CTA。线上服务器 `git pull` 后执行迁移即可得到这三条推荐；演示数据清理和无演示数据检查不会把它们当作 demo/test 推荐过滤。
+
 ## 分 role Compose
 
 当需要把流量入口、企业网关和探测任务拆开扩容时：

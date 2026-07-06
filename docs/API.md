@@ -173,7 +173,7 @@ curl -b cookies.txt -c cookies.txt -X POST http://localhost:8080/api/auth/login 
 
 兼容规则：如果请求省略 `rankRules` 字段，后端保留现有榜单规则；如果传入 `"rankRules":[]`，后端会清空榜单规则。
 
-`POST /api/admin/channels/export`、`POST /api/admin/channels/import` 和 `POST /api/admin/channels/sync` 只用于平台通道迁移或同步。三者都要求当前管理员登录密码二次验证；导出 CSV 和通道 API 同步都可能处理平台通道明文 `api_key`，响应禁止缓存，下载文件或 Site Key 必须按密钥材料保管。导入 CSV 中的 `id` 已存在则更新平台通道，`id` 为空或不存在则创建通道；任意一行校验失败时整批不落库。`/api/admin/channels/sync` 会调用源站 `/v1/status/channel-sync?includeCredentials=1`，复用同一批量导入逻辑，并尽量保留源站最新监控快照。
+`POST /api/admin/channels/export`、`POST /api/admin/channels/import` 和 `POST /api/admin/channels/sync` 只用于平台通道迁移或同步。浏览器管理员调用时要求当前管理员登录密码二次验证；admin-agent 调用时要求对应高权限 scope、`X-TokHub-Agent-Reason` 和 `X-Idempotency-Key`。导出 CSV 和通道 API 同步都可能处理平台通道明文 `api_key`，响应禁止缓存，下载文件或 Site Key 必须按密钥材料保管。导入 CSV 中的 `id` 已存在则更新平台通道，`id` 为空或不存在则创建通道；任意一行校验失败时整批不落库。`/api/admin/channels/sync` 会调用源站 `/v1/status/channel-sync?includeCredentials=1`，复用同一批量导入逻辑，并尽量保留源站最新监控快照。
 
 平台后台用于站点级运营和治理。`/admin/gateways`、`/admin/members` 和 `/admin/gateway-keys` 管理平台默认组织的网关、成员和 Key；普通用户/企业自己的工作区网关、成员和 Key 使用 `/api/console/*`。
 

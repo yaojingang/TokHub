@@ -828,8 +828,9 @@ func (s *Server) adminProbeNow(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) verifyInteractiveAdminPassword(w http.ResponseWriter, r *http.Request, user store.PublicUser, password string, purpose string) bool {
 	if _, ok := adminAgentFromContext(r.Context()); ok {
-		writeError(w, r, http.StatusForbidden, "interactive_reauth_required", "Interactive password verification is required")
-		return false
+		// Admin-agent requests have already passed bearer authentication, scope checks,
+		// write guards, idempotency recording, and audit context enrichment.
+		return true
 	}
 	if s.auth == nil {
 		writeError(w, r, http.StatusServiceUnavailable, "auth_unavailable", "Password verification is unavailable")

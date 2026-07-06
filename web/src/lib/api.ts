@@ -398,6 +398,22 @@ export type SiteConfig = {
   monitorModels: MonitorModelConfig[];
 };
 
+let siteConfigCache: SiteConfig | null = null;
+let siteConfigPromise: Promise<SiteConfig> | null = null;
+let siteConfigCacheExpiresAt = 0;
+const SITE_CONFIG_CACHE_TTL_MS = 30_000;
+
+function rememberSiteConfig(site: SiteConfig) {
+  siteConfigCache = site;
+  siteConfigCacheExpiresAt = Date.now() + SITE_CONFIG_CACHE_TTL_MS;
+  return site;
+}
+
+function rememberSitePayload<T extends { site: SiteConfig }>(payload: T) {
+  rememberSiteConfig(payload.site);
+  return payload;
+}
+
 export type MonitorModelConfig = {
   key: string;
   label: string;
@@ -1273,8 +1289,16 @@ export async function errorsSummary(range?: string): Promise<{ items: ErrorBucke
   return readJSON<{ items: ErrorBucket[] }>(`/api/public/errors/summary${suffix}`);
 }
 
-export async function siteConfig(): Promise<SiteConfig> {
-  return readJSON<SiteConfig>("/api/public/site-config", { cache: "no-store" });
+export async function siteConfig(options: { force?: boolean } = {}): Promise<SiteConfig> {
+  if (!options.force && siteConfigCache && Date.now() < siteConfigCacheExpiresAt) return siteConfigCache;
+  if (!options.force && siteConfigPromise) return siteConfigPromise;
+
+  siteConfigPromise = readJSON<SiteConfig>("/api/public/site-config", { cache: "no-store" })
+    .then(rememberSiteConfig)
+    .finally(() => {
+      siteConfigPromise = null;
+    });
+  return siteConfigPromise;
 }
 
 export async function favoriteChannels(): Promise<{ items: PublicChannel[]; ids: string[] }> {
@@ -1393,11 +1417,13 @@ export async function syncAdminChannelsFromAPI(input: { baseUrl: string; siteKey
 }
 
 export async function adminSettings(): Promise<{ site: SiteConfig; summary: AdminSettingsSummary }> {
-  return readJSON<{ site: SiteConfig; summary: AdminSettingsSummary }>("/api/admin/settings", { credentials: "include" });
+  return readJSON<{ site: SiteConfig; summary: AdminSettingsSummary }>("/api/admin/settings", { credentials: "include" })
+    .then(rememberSitePayload);
 }
 
 export async function updateAdminSettings(input: Partial<SiteConfig>): Promise<{ site: SiteConfig }> {
-  return writeJSONRequest<{ site: SiteConfig }>("/api/admin/settings", input, { method: "PATCH" });
+  return writeJSONRequest<{ site: SiteConfig }>("/api/admin/settings", input, { method: "PATCH" })
+    .then(rememberSitePayload);
 }
 
 export async function adminAgentTokens(): Promise<{ items: AdminAgentToken[] }> {
@@ -1834,13 +1860,16 @@ export async function downloadChannelSitePackage(siteID: string): Promise<{ blob
 }
 
 export async function adminWebConfig(): Promise<{ site: SiteConfig }> {
-  return readJSON<{ site: SiteConfig }>("/api/admin/web", { credentials: "include" });
+  return readJSON<{ site: SiteConfig }>("/api/admin/web", { credentials: "include" })
+    .then(rememberSitePayload);
 }
 
 export async function saveAdminWebConfig(input: SiteConfig): Promise<{ site: SiteConfig }> {
-  return writeJSONRequest<{ site: SiteConfig }>("/api/admin/web", input, { method: "PATCH" });
+  return writeJSONRequest<{ site: SiteConfig }>("/api/admin/web", input, { method: "PATCH" })
+    .then(rememberSitePayload);
 }
 
 export async function resetAdminWebConfig(): Promise<{ site: SiteConfig }> {
-  return writeJSONRequest<{ site: SiteConfig }>("/api/admin/web/reset", {});
+  return writeJSONRequest<{ site: SiteConfig }>("/api/admin/web/reset", {})
+    .then(rememberSitePayload);
 }

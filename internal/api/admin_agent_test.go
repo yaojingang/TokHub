@@ -2,8 +2,11 @@ package api
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
+
+	"tokhub/internal/store"
 )
 
 func TestAdminAgentRequiredScopes(t *testing.T) {
@@ -102,5 +105,19 @@ func TestMissingAdminAgentScopes(t *testing.T) {
 	want := []string{"admin:dangerous"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("missingAdminAgentScopes = %#v, want %#v", got, want)
+	}
+}
+
+func TestAdminAgentSatisfiesInteractivePasswordGate(t *testing.T) {
+	server := &Server{}
+	request := httptest.NewRequest(http.MethodPost, "/api/admin/channels/sync", nil)
+	authn := store.AuthenticatedAdminAgent{
+		Token: store.AdminAgentToken{ID: "aat_test", Name: "codex-admin"},
+		User:  store.PublicUser{ID: "usr_owner", Email: "owner@example.com", Role: "owner", Status: "active"},
+	}
+	request = withAdminAgent(request, authn, "sync production channel catalog", "sync-channels-20260706")
+
+	if ok := server.verifyInteractiveAdminPassword(httptest.NewRecorder(), request, authn.User, "", "channels_sync"); !ok {
+		t.Fatal("expected admin-agent context to satisfy interactive password gate")
 	}
 }

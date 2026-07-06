@@ -113,6 +113,44 @@ paths:
       responses:
         "200":
           description: CSV export.
+  /api/admin/channels/export:
+    post:
+      summary: Export platform channels including provider credentials
+      description: Requires reason and idempotency key. Browser sessions also require current password; admin-agent callers rely on bearer scopes and audit guardrails.
+      security:
+        - AdminAgentBearer: [admin:read, admin:write, admin:secrets, admin:export]
+      responses:
+        "200":
+          description: Secret-bearing CSV export. Store as key material.
+  /api/admin/channels/import:
+    post:
+      summary: Import platform channels from CSV
+      description: Requires reason and idempotency key. The multipart CSV may contain provider credentials.
+      security:
+        - AdminAgentBearer: [admin:write, admin:dangerous, admin:secrets]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Import result with created and updated rows.
+  /api/admin/channels/sync:
+    post:
+      summary: Sync platform channels from another TokHub status API
+      description: Requires reason and idempotency key. Fetches /v1/status/channel-sync?includeCredentials=1 from the source and imports channel credentials plus probe snapshots.
+      security:
+        - AdminAgentBearer: [admin:write, admin:dangerous, admin:secrets]
+      responses:
+        "200":
+          description: Sync result with created and updated rows.
   /api/admin/channels/{channelID}/validate:
     post:
       summary: Validate platform channel
