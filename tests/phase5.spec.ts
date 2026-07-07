@@ -71,6 +71,17 @@ test("phase 5 gateway create, key lifecycle, OpenAI compatible calls and usage",
         return;
       }
       if (req.url === "/v1/chat/completions") {
+        if (body.includes("Reply exactly: K")) {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            id: "chatcmpl-phase5-probe",
+            object: "chat.completion",
+            model: "gpt-phase5",
+            choices: [{ index: 0, message: { role: "assistant", content: "K" }, finish_reason: "stop" }],
+            usage: { prompt_tokens: 4, completion_tokens: 1, total_tokens: 5 }
+          }));
+          return;
+        }
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({
           id: "chatcmpl-phase5",
@@ -107,6 +118,8 @@ test("phase 5 gateway create, key lifecycle, OpenAI compatible calls and usage",
   });
   expect(privateCreated.ok).toBeTruthy();
   const privateID = privateCreated.payload.channel.id as string;
+  const privateProbe = await writeJSON(page, `/api/me/private-channels/${privateID}/probe-now`, "POST", {});
+  expect(privateProbe.ok).toBeTruthy();
 
   const gatewayData = await readJSON(page, "/api/console/gateways");
   expect(gatewayData.ok).toBeTruthy();

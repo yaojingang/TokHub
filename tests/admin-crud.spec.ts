@@ -58,7 +58,7 @@ async function createPrivateChannel(page: Page, suffix: number | string) {
     provider: "OpenAI",
     type: "openai-compatible",
     model: "gpt-4o-mini",
-    endpoint: `https://admin-delete-user-private-${suffix}.invalid/v1`,
+    endpoint: `https://admin-delete-user-private-${suffix}.example/v1`,
     apiKey: `sk-admin-delete-user-private-${suffix}`,
     probeDaily: 5
   });
@@ -68,6 +68,8 @@ async function createPrivateChannel(page: Page, suffix: number | string) {
 
 async function createConsoleGatewayKey(page: Page, suffix: number | string) {
   const channelID = await createPrivateChannel(page, `gateway-${suffix}`);
+  const probe = await writeJSON(page, `/api/me/private-channels/${channelID}/probe-now`, "POST", {});
+  expect(probe.ok).toBeTruthy();
   const gateway = await writeJSON(page, "/api/console/gateways", "POST", {
     name: `Admin Disable User Gateway ${suffix}`,
     policy: "latency",
@@ -936,7 +938,7 @@ test("admin gateways, gateway keys and platform members support CRUD governance"
     type: "openai-compatible",
     model: "gpt-4o-mini",
     upstreamModel: "gpt-4o-mini",
-    endpoint: `https://crud-upstream-${suffix}.invalid/v1`,
+    endpoint: `https://crud-upstream-${suffix}.example/v1`,
     apiKey: `sk-crud-${suffix}`,
     probeDaily: 1440,
     publicVisible: true,
@@ -947,6 +949,8 @@ test("admin gateways, gateway keys and platform members support CRUD governance"
   });
   expect(createdChannel.status).toBe(201);
   const channelID = createdChannel.payload.channel.id as string;
+  const channelProbe = await writeJSON(page, `/api/admin/channels/${channelID}/probe-now`, "POST", {});
+  expect(channelProbe.ok).toBeTruthy();
 
   const defaultGatewaySettings = await writeJSON(page, "/api/admin/settings", "PATCH", { defaultGatewayPolicy: "cost" });
   expect(defaultGatewaySettings.ok).toBeTruthy();
@@ -1306,7 +1310,7 @@ test("admin usage supports real filters, rollup recompute and CSV export", async
     type: "openai-compatible",
     model: "gpt-4o-mini",
     upstreamModel: "gpt-4o-mini",
-    endpoint: "http://127.0.0.1:1/v1",
+    endpoint: `https://crud-usage-${suffix}.example/v1`,
     apiKey: `sk-crud-usage-${suffix}`,
     probeDaily: 1440,
     publicVisible: false,
@@ -1317,6 +1321,8 @@ test("admin usage supports real filters, rollup recompute and CSV export", async
   });
   expect(createdChannel.status).toBe(201);
   const channelID = createdChannel.payload.channel.id as string;
+  const channelProbe = await writeJSON(page, `/api/admin/channels/${channelID}/probe-now`, "POST", {});
+  expect(channelProbe.ok).toBeTruthy();
 
   const createdGateway = await writeJSON(page, "/api/admin/gateways", "POST", {
     name: `CRUD Usage Gateway ${suffix}`,

@@ -72,13 +72,24 @@ test("console key creation only shows the full key once", async ({ page }) => {
   const upstreamSecret = `sk-ui-one-time-key-upstream-${suffix}`;
   const upstream = createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
-      await readRequestBody(req);
+      const body = await readRequestBody(req);
       if (req.headers.authorization !== `Bearer ${upstreamSecret}`) {
         res.writeHead(401, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "bad auth" }));
         return;
       }
       if (req.url === "/v1/chat/completions") {
+        if (body.includes("Reply exactly: K")) {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            id: "chatcmpl-ui-key-probe",
+            object: "chat.completion",
+            model: "gpt-4o-mini",
+            choices: [{ index: 0, message: { role: "assistant", content: "K" }, finish_reason: "stop" }],
+            usage: { prompt_tokens: 4, completion_tokens: 1, total_tokens: 5 }
+          }));
+          return;
+        }
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({
           id: "chatcmpl-ui-key-test",
@@ -110,6 +121,8 @@ test("console key creation only shows the full key once", async ({ page }) => {
       probeDaily: 5
     });
     expect(privateChannel.status).toBe(201);
+    const privateProbe = await writeJSON(page, `/api/me/private-channels/${privateChannel.payload.channel.id}/probe-now`, "POST", {});
+    expect(privateProbe.ok).toBeTruthy();
 
     const gateway = await writeJSON(page, "/api/console/gateways", "POST", {
       name: gatewayName,

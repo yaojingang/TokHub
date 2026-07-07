@@ -67,13 +67,24 @@ test("phase 7 usage rollup, alerts, audit export and metrics", async ({ page }) 
   const upstreamSecret = `phase7-upstream-${suffix}`;
   const upstream = createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
-      await readRequestBody(req);
+      const body = await readRequestBody(req);
       if (req.headers.authorization !== `Bearer ${upstreamSecret}`) {
         res.writeHead(401, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "bad auth" }));
         return;
       }
       if (req.url === "/v1/chat/completions") {
+        if (body.includes("Reply exactly: K")) {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            id: "chatcmpl-phase7-probe",
+            object: "chat.completion",
+            model: "gpt-phase7",
+            choices: [{ index: 0, message: { role: "assistant", content: "K" }, finish_reason: "stop" }],
+            usage: { prompt_tokens: 4, completion_tokens: 1, total_tokens: 5 }
+          }));
+          return;
+        }
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({
           id: "chatcmpl-phase7",
@@ -105,6 +116,8 @@ test("phase 7 usage rollup, alerts, audit export and metrics", async ({ page }) 
   });
   expect(privateCreated.ok).toBeTruthy();
   const privateID = privateCreated.payload.channel.id as string;
+  const privateProbe = await writeJSON(page, `/api/me/private-channels/${privateID}/probe-now`, "POST", {});
+  expect(privateProbe.ok).toBeTruthy();
 
   const brokenPrivate = await writeJSON(page, "/api/me/private-channels", "POST", {
     name: `Phase7 Broken ${Date.now()}`,

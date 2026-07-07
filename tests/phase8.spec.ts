@@ -68,13 +68,24 @@ test("phase 8 full release journey and security gates", async ({ page }) => {
   const upstreamSecret = `phase8-upstream-${suffix}`;
   const upstream = createServer((req: IncomingMessage, res: ServerResponse) => {
     void (async () => {
-      await readRequestBody(req);
+      const body = await readRequestBody(req);
       if (req.headers.authorization !== `Bearer ${upstreamSecret}`) {
         res.writeHead(401, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "bad auth" }));
         return;
       }
       if (req.url === "/v1/chat/completions") {
+        if (body.includes("Reply exactly: K")) {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            id: "chatcmpl-phase8-probe",
+            object: "chat.completion",
+            model: "gpt-phase8",
+            choices: [{ index: 0, message: { role: "assistant", content: "K" }, finish_reason: "stop" }],
+            usage: { prompt_tokens: 4, completion_tokens: 1, total_tokens: 5 }
+          }));
+          return;
+        }
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({
           id: "chatcmpl-phase8",
@@ -134,6 +145,8 @@ test("phase 8 full release journey and security gates", async ({ page }) => {
   expect(JSON.stringify(privateChannel.payload)).not.toContain(upstreamSecret);
   expect(privateChannel.payload.channel.keyMask).toContain("****");
   const privateID = privateChannel.payload.channel.id as string;
+  const privateProbe = await writeJSON(page, `/api/me/private-channels/${privateID}/probe-now`, "POST", {});
+  expect(privateProbe.ok).toBeTruthy();
 
   const gateway = await writeJSON(page, "/api/console/gateways", "POST", {
     name: "Phase8 Release Gateway",

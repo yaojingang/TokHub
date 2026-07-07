@@ -131,6 +131,8 @@ test("phase 6.5 workspace gateway uses private channels by default and platform 
   });
   expect(createdPrivate.ok).toBeTruthy();
   const privateID = createdPrivate.payload.channel.id as string;
+  const privateProbe = await writeJSON(page, `/api/me/private-channels/${privateID}/probe-now`, "POST", {});
+  expect(privateProbe.ok).toBeTruthy();
 
   const consoleData = await readJSON(page, "/api/console/gateways");
   expect(consoleData.ok).toBeTruthy();

@@ -82,6 +82,34 @@ test("phase 11.4 real gateway passthrough, failover, SSE and usage events", asyn
       const body = await readRequestBody(req);
       calls.push({ method: req.method ?? "", url: req.url ?? "", auth: req.headers.authorization ?? "", body });
 
+      if (req.url === "/fail/v1/models") {
+        if (req.headers.authorization !== `Bearer ${failSecret}`) {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "bad auth" }));
+          return;
+        }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ object: "list", data: [{ id: "gpt-4o-mini", object: "model", owned_by: "test-upstream" }] }));
+        return;
+      }
+
+      if (req.url === "/fail/v1/chat/completions" && body.includes("Reply exactly: K")) {
+        if (req.headers.authorization !== `Bearer ${failSecret}`) {
+          res.writeHead(401, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "bad auth" }));
+          return;
+        }
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          id: "chatcmpl-real-fail-probe",
+          object: "chat.completion",
+          model: "gpt-4o-mini",
+          choices: [{ index: 0, message: { role: "assistant", content: "K" }, finish_reason: "stop" }],
+          usage: { prompt_tokens: 4, completion_tokens: 1, total_tokens: 5 }
+        }));
+        return;
+      }
+
       if (req.url === "/fail/v1/chat/completions") {
         res.writeHead(503, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: { type: "unavailable", message: "temporary failure" } }));
@@ -103,6 +131,17 @@ test("phase 11.4 real gateway passthrough, failover, SSE and usage events", asyn
         if (req.headers.authorization !== `Bearer ${okSecret}`) {
           res.writeHead(401, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ error: "bad auth" }));
+          return;
+        }
+        if (body.includes("Reply exactly: K")) {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            id: "chatcmpl-real-ok-probe",
+            object: "chat.completion",
+            model: "gpt-4o-mini",
+            choices: [{ index: 0, message: { role: "assistant", content: "K" }, finish_reason: "stop" }],
+            usage: { prompt_tokens: 4, completion_tokens: 1, total_tokens: 5 }
+          }));
           return;
         }
         if (body.includes('"stream":true')) {
@@ -185,6 +224,11 @@ test("phase 11.4 real gateway passthrough, failover, SSE and usage events", asyn
     });
     expect(okChannel.ok).toBeTruthy();
     channelIDs.push(okChannel.payload.channel.id as string);
+
+    for (const channelID of channelIDs) {
+      const probe = await writeJSON(page, `/api/admin/channels/${channelID}/probe-now`, "POST", {});
+      expect(probe.ok).toBeTruthy();
+    }
 
     const gateway = await writeJSON(page, "/api/admin/gateways", "POST", {
       name: gatewayName,

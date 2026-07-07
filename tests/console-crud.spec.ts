@@ -58,7 +58,7 @@ async function createConsolePrivateChannel(page: Page, name: string) {
     provider: "OpenAI",
     type: "openai-compatible",
     model: "gpt-4o-mini",
-    endpoint: `https://${slug}.invalid/v1`,
+    endpoint: `https://${slug}.example/v1`,
     apiKey: `sk-${slug}`,
     probeDaily: 5
   });
@@ -68,6 +68,8 @@ async function createConsolePrivateChannel(page: Page, name: string) {
 
 async function createConsoleGatewayStack(page: Page, suffix: number | string, label: string) {
   const channelID = await createConsolePrivateChannel(page, `Console ${label} Usage Channel ${suffix}`);
+  const probe = await writeJSON(page, `/api/me/private-channels/${channelID}/probe-now`, "POST", {});
+  expect(probe.ok).toBeTruthy();
   const gateway = await writeJSON(page, "/api/console/gateways", "POST", {
     name: `Console ${label} Usage Gateway ${suffix}`,
     policy: "latency",
@@ -403,7 +405,7 @@ test("console workspace gateways, keys and members support edit, filters, bulk u
     provider: "OpenAI",
     type: "openai-compatible",
     model: "gpt-4o-mini",
-    endpoint: `https://console-crud-${suffix}.invalid/v1`,
+    endpoint: `https://console-crud-${suffix}.example/v1`,
     apiKey: `sk-console-crud-${suffix}`,
     probeDaily: 5
   });
@@ -415,7 +417,7 @@ test("console workspace gateways, keys and members support edit, filters, bulk u
     provider: "OpenAI",
     type: "openai-compatible",
     model: "gpt-4o-mini",
-    endpoint: `https://console-crud-bulk-${suffix}.invalid/v1`,
+    endpoint: `https://console-crud-bulk-${suffix}.example/v1`,
     apiKey: `sk-console-crud-bulk-${suffix}`,
     probeDaily: 5
   });
@@ -435,6 +437,8 @@ test("console workspace gateways, keys and members support edit, filters, bulk u
   });
   expect(bulkEnabledPrivate.ok).toBeTruthy();
   expect((bulkEnabledPrivate.payload.items as Array<{ id: string; status: string }>).filter((item) => [channelID, channelBID].includes(item.id)).every((item) => item.status === "unknown")).toBeTruthy();
+  const privateProbe = await writeJSON(page, `/api/me/private-channels/${channelID}/probe-now`, "POST", {});
+  expect(privateProbe.ok).toBeTruthy();
 
   const failedMixedPrivateDisable = await writeJSON(page, "/api/me/private-channels/bulk", "POST", {
     action: "disable",

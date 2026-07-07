@@ -389,11 +389,35 @@ func (r *Repository) UpdatePrivateChannelForOrg(ctx context.Context, orgID strin
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
+	var currentProvider, currentType, currentModel, currentEndpoint string
+	if err := tx.QueryRow(ctx, `
+		select provider,type,model,endpoint
+		from channels
+		where id=$1 and coalesce(org_id,'org_' || coalesce(owner_id,''))=$2 and owner_type='user' and status <> 'deleted' and deleted_at is null
+		for update
+	`, channelID, orgID).Scan(&currentProvider, &currentType, &currentModel, &currentEndpoint); err != nil {
+		return PrivateChannel{}, err
+	}
+	upstreamChanged := updateCredential ||
+		currentProvider != input.Provider ||
+		currentType != input.Type ||
+		currentModel != input.Model ||
+		currentEndpoint != input.Endpoint
+
 	tag, err := tx.Exec(ctx, `
 		update channels
-		set name=$3, provider=$4, type=$5, model=$6, upstream_model=$6, endpoint=$7, probe_daily=$8, updated_at=now()
+		set name=$3,
+			provider=$4,
+			type=$5,
+			model=$6,
+			upstream_model=$6,
+			endpoint=$7,
+			probe_daily=$8,
+			status=case when $9::boolean and status <> 'disabled' then 'unknown' else status end,
+			score=case when $9::boolean and status <> 'disabled' then 0 else score end,
+			updated_at=now()
 		where id=$1 and coalesce(org_id,'org_' || coalesce(owner_id,''))=$2 and owner_type='user' and status <> 'deleted' and deleted_at is null
-	`, channelID, orgID, input.Name, input.Provider, input.Type, input.Model, input.Endpoint, input.ProbeDaily)
+	`, channelID, orgID, input.Name, input.Provider, input.Type, input.Model, input.Endpoint, input.ProbeDaily, upstreamChanged)
 	if err != nil {
 		return PrivateChannel{}, err
 	}
@@ -410,6 +434,11 @@ func (r *Repository) UpdatePrivateChannelForOrg(ctx context.Context, orgID strin
 					where c.id=$1 and coalesce(c.org_id,'org_' || coalesce(c.owner_id,''))=$2
 				)
 		`, channelID, orgID, input.Credential.Ciphertext, input.Credential.Nonce, input.Credential.Fingerprint, input.Credential.Mask); err != nil {
+			return PrivateChannel{}, err
+		}
+	}
+	if upstreamChanged {
+		if _, err := tx.Exec(ctx, `update gateway_upstreams set enabled=false where channel_id=$1 and enabled is true`, channelID); err != nil {
 			return PrivateChannel{}, err
 		}
 	}

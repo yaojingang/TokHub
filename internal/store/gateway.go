@@ -389,13 +389,52 @@ func (r *Repository) AvailableGatewayUpstreamsForOrg(ctx context.Context, orgID 
 	return r.availableGatewayUpstreams(ctx, orgID, allowPlatform)
 }
 
+func gatewaySQLAlias(alias string) string {
+	alias = strings.TrimSpace(alias)
+	if alias == "" {
+		return ""
+	}
+	if strings.HasSuffix(alias, ".") {
+		return alias
+	}
+	return alias + "."
+}
+
+func gatewayEligiblePlatformPredicate(alias string) string {
+	prefix := gatewaySQLAlias(alias)
+	return prefix + "owner_type='platform' and " +
+		prefix + "gateway_enabled is true and " +
+		prefix + "status in ('healthy','degraded') and " +
+		prefix + "deleted_at is null"
+}
+
+func gatewayEligiblePrivatePredicate(alias string, orgParam string) string {
+	prefix := gatewaySQLAlias(alias)
+	return prefix + "owner_type='user' and " +
+		prefix + "gateway_enabled is true and " +
+		"coalesce(" + prefix + "org_id,'org_' || coalesce(" + prefix + "owner_id,''))=" + orgParam + " and " +
+		prefix + "status in ('healthy','degraded') and " +
+		prefix + "deleted_at is null"
+}
+
+func gatewayRuntimePlatformCredentialPredicate(alias string, orgParam string, defaultOrgParam string) string {
+	prefix := gatewaySQLAlias(alias)
+	return prefix + "owner_type='platform' and " +
+		prefix + "gateway_enabled is true and (" +
+		orgParam + "=" + defaultOrgParam + " or exists (" +
+		"select 1 from users u where " + orgParam + "='org_' || u.id " +
+		"and u.plan='super_vip' and u.status='active' and u.deleted_at is null" +
+		"))"
+}
+
 func (r *Repository) availableGatewayUpstreams(ctx context.Context, orgID string, allowPlatform bool) ([]GatewayUpstream, error) {
-	where := "c.owner_type='platform' and c.gateway_enabled is true and c.status not in ('disabled','deleted') and c.deleted_at is null"
+	where := gatewayEligiblePlatformPredicate("c")
 	args := []any{}
 	if strings.TrimSpace(orgID) != "" {
-		where = "c.owner_type='user' and coalesce(c.org_id,'org_' || coalesce(c.owner_id,''))=$1 and c.status <> 'deleted' and c.deleted_at is null"
+		privateWhere := gatewayEligiblePrivatePredicate("c", "$1")
+		where = privateWhere
 		if allowPlatform {
-			where = "((c.owner_type='platform' and c.gateway_enabled is true and c.status not in ('disabled','deleted') and c.deleted_at is null) or (" + where + "))"
+			where = "((" + gatewayEligiblePlatformPredicate("c") + ") or (" + privateWhere + "))"
 		}
 		args = append(args, orgID)
 	}
@@ -739,11 +778,8 @@ func (r *Repository) BulkDeleteGatewaysForOrg(ctx context.Context, ids []string,
 func (r *Repository) platformChannelIDs(ctx context.Context, ids []string) (map[string]bool, error) {
 	rows, err := r.db.Query(ctx, `
 		select id from channels
-		where owner_type='platform'
-			and gateway_enabled is true
-			and status in ('healthy','degraded')
-			and deleted_at is null
-			and id=any($1)
+		where id=any($1)
+			and (`+gatewayEligiblePlatformPredicate("")+`)
 	`, ids)
 	if err != nil {
 		return nil, err
@@ -764,9 +800,10 @@ func (r *Repository) gatewayAllowedChannelIDs(ctx context.Context, ids []string,
 	if strings.TrimSpace(privateOrgID) == "" {
 		return r.platformChannelIDs(ctx, ids)
 	}
-	where := "owner_type='user' and coalesce(org_id,'org_' || coalesce(owner_id,''))=$2 and status <> 'deleted' and deleted_at is null"
+	privateWhere := gatewayEligiblePrivatePredicate("", "$2")
+	where := privateWhere
 	if allowPlatform {
-		where = "(owner_type='platform' and gateway_enabled is true and status in ('healthy','degraded') and deleted_at is null) or (" + where + ")"
+		where = "(" + gatewayEligiblePlatformPredicate("") + ") or (" + privateWhere + ")"
 	}
 	rows, err := r.db.Query(ctx, `
 		select id from channels
@@ -790,12 +827,12 @@ func (r *Repository) gatewayAllowedChannelIDs(ctx context.Context, ids []string,
 
 func gatewayUpstreamAccessMessage(privateOrgID string, allowPlatform bool) string {
 	if strings.TrimSpace(privateOrgID) == "" {
-		return "platform gateways can only use enabled platform channels"
+		return "platform gateways can only use enabled, healthy or degraded platform channels"
 	}
 	if allowPlatform {
-		return "Super VIP gateways can only use enabled platform channels or private channels in this workspace"
+		return "Super VIP gateways can only use enabled, healthy or degraded platform channels, or tested private channels in this workspace"
 	}
-	return "普通用户的专属中转站只能使用当前工作区的私有通道；如需一键使用平台监控通道，请先由管理员开通 Super VIP"
+	return "普通用户的专属中转站只能使用当前工作区已通过检测的私有通道；如需一键使用平台监控通道，请先由管理员开通 Super VIP"
 }
 
 func (r *Repository) CreateGatewayKey(ctx context.Context, input GatewayKeyCreateInput) (GatewayKey, error) {
@@ -1328,17 +1365,10 @@ func (r *Repository) PlanGatewayRoute(_ context.Context, gateway Gateway) []Gate
 		if !upstream.Enabled {
 			continue
 		}
-		if upstream.Status == "connectivity_down" || upstream.Status == "auth_error" || upstream.Status == "functional_down" {
+		if !gatewayRuntimeEligibleStatus(upstream.Status) {
 			continue
 		}
 		candidates = append(candidates, upstream)
-	}
-	if len(candidates) == 0 {
-		for _, upstream := range gateway.Upstreams {
-			if upstream.Enabled {
-				candidates = append(candidates, upstream)
-			}
-		}
 	}
 	sort.SliceStable(candidates, func(i, j int) bool {
 		a, b := candidates[i], candidates[j]
@@ -1361,6 +1391,15 @@ func (r *Repository) PlanGatewayRoute(_ context.Context, gateway Gateway) []Gate
 		}
 	})
 	return candidates
+}
+
+func gatewayRuntimeEligibleStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "healthy", "degraded":
+		return true
+	default:
+		return false
+	}
 }
 
 func (r *Repository) RecordGatewayEvent(ctx context.Context, event GatewayRequestEvent) error {
@@ -1420,21 +1459,12 @@ func (r *Repository) GatewayChannelCredential(ctx context.Context, orgID string,
 			and c.status not in ('disabled','deleted')
 			and c.deleted_at is null
 			and (
-				(
-					c.owner_type='platform'
-					and (
-						$2=$3
-						or exists (
-							select 1
-							from users u
-							where $2='org_' || u.id
-								and u.plan='super_vip'
-								and u.status='active'
-								and u.deleted_at is null
-						)
-					)
+				(`+gatewayRuntimePlatformCredentialPredicate("c", "$2", "$3")+`)
+				or (
+					c.owner_type='user'
+					and c.gateway_enabled is true
+					and coalesce(c.org_id,'org_' || coalesce(c.owner_id,'')) = $2
 				)
-				or (c.owner_type='user' and coalesce(c.org_id,'org_' || coalesce(c.owner_id,'')) = $2)
 			)
 	`, channelID, orgID, DefaultOrgID).Scan(&cred.ChannelID, &cred.Ciphertext, &cred.Nonce, &cred.Mask, &cred.Fingerprint)
 	return cred, err

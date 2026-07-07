@@ -259,6 +259,17 @@ test("phase 11.5 user workspace settings, members, private validation and gatewa
           return;
         }
         if (req.url === "/v1/chat/completions") {
+          if (body.includes("Reply exactly: K")) {
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+              id: "chatcmpl-phase115-probe",
+              object: "chat.completion",
+              model: "gpt-phase115",
+              choices: [{ index: 0, message: { role: "assistant", content: "K" }, finish_reason: "stop" }],
+              usage: { prompt_tokens: 4, completion_tokens: 1, total_tokens: 5 }
+            }));
+            return;
+          }
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({
             id: "chatcmpl-phase115",
@@ -308,6 +319,8 @@ test("phase 11.5 user workspace settings, members, private validation and gatewa
     const savedValidation = await writeJSON(page, `/api/me/private-channels/${privateID}/validate`, "POST", {});
     expect(savedValidation.ok).toBeTruthy();
     expect(savedValidation.payload.result.ok).toBeTruthy();
+    const privateProbe = await writeJSON(page, `/api/me/private-channels/${privateID}/probe-now`, "POST", {});
+    expect(privateProbe.ok).toBeTruthy();
 
     const gateway = await writeJSON(page, "/api/console/gateways", "POST", {
       name: `Phase115 Gateway ${suffix}`,
