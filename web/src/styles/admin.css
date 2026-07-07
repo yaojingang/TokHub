@@ -42,9 +42,16 @@
 .org-pick { display: inline-flex; align-items: center; gap: 8px; padding: 6px 11px; border: 1px solid var(--border-strong); border-radius: 9px; background: var(--surface); color: var(--text); text-decoration: none; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .org-pick:hover { border-color: var(--brand); color: var(--brand); }
 .org-pick:focus-within { border-color: rgba(37, 99, 235, .48); box-shadow: 0 0 0 3px rgba(37, 99, 235, .11); }
+.console .admin-top .workspace-switcher {
+  flex: 0 1 clamp(260px, 31vw, 390px);
+  width: clamp(260px, 31vw, 390px);
+  min-width: 260px;
+}
 .org-pick .dot { width: 18px; height: 18px; border-radius: 6px; background: linear-gradient(140deg,#60a5fa,#2563eb); color: #fff; font-size: 11px; font-weight: 800; display: flex; align-items: center; justify-content: center; }
 .org-pick .ar { color: var(--text-3); font-size: 10px; }
 .org-pick select {
+  flex: 1;
+  width: 100%;
   max-width: min(42vw, 390px);
   min-width: 0;
   border: 0;

@@ -144,7 +144,7 @@ export function ConsoleShell({ children, title = "控制台首页", crumb = "/ �
           <h1>{title}</h1>
           <span className="crumb">{crumb}</span>
           <span className="spacer" />
-          <div className="org-pick" aria-label="当前工作区">
+          <div className="org-pick workspace-switcher" aria-label="当前工作区">
             <span className="dot">{workspace?.name ? firstMark(workspace.name, "T") : userMark}</span>
             <select value={workspace?.orgId ?? ""} onChange={(event) => handleWorkspaceChange(event.target.value)} aria-label="切换工作区">
               {(workspaces.length ? workspaces : workspace ? [{ orgId: workspace.orgId, name: workspace.name, plan: workspace.plan, status: workspace.status, role: workspace.role, members: workspace.members, privateChannels: workspace.privateChannels, gateways: workspace.gateways, activeKeys: workspace.activeKeys }] : []).map((item) => (
