@@ -8439,7 +8439,7 @@ body:has(.admin-login-wrap) {
   color: var(--brand);
   box-shadow: 0 1px 4px rgba(17,17,26,.06);
 }
-.rec-table { min-width: 1120px; }
+.rec-table { min-width: 1040px; }
 .rec-table .rk-num {
   font-family: var(--mono);
   font-weight: 800;
@@ -8457,14 +8457,30 @@ body:has(.admin-login-wrap) {
 .rec-table tbody tr:nth-child(2) .rk-num { background: linear-gradient(135deg,#e2e8f0,#94a3b8); color: #fff; }
 .rec-table tbody tr:nth-child(3) .rk-num { background: linear-gradient(135deg,#f6c89a,#c97b3f); color: #fff; }
 .rec-table .price-down { color: var(--green); }
+.rank-official-head,
+.rank-official-cell {
+  text-align: center;
+}
+.rank-official-cell {
+  min-width: 120px;
+}
+.rank-official-entry {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
 .reward-tag {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  justify-content: center;
+  max-width: 120px;
   padding: 3px 9px;
   border-radius: 7px;
   font-size: 11.5px;
   font-weight: 650;
+  line-height: 1.2;
+  white-space: normal;
   background: linear-gradient(135deg,#fff8ec,#fff);
   border: 1px solid #f5c451;
   color: #b45309;

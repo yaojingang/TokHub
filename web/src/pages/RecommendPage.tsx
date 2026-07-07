@@ -218,14 +218,13 @@ export function RecommendPage() {
                   <th>30 天成功率</th>
                   <th>价格 / MTok</th>
                   <th>评分</th>
-                  <th>官方入口</th>
-                  <th />
+                  <th className="rank-official-head">官方入口</th>
                 </tr>
               </thead>
               <tbody>
                 {isInitialSync ? (
                   <tr>
-                    <td colSpan={9}>
+                    <td colSpan={8}>
                       <div className="empty-state">
                         <h4>正在同步榜单</h4>
                         <p>读取后台榜单配置后再展示，当前页面不会先显示旧榜单再替换。</p>
@@ -261,18 +260,20 @@ export function RecommendPage() {
                         <td className="mono">{successLabel(pick)}</td>
                         <td className="mono price-down">{priceLabel(pick)}</td>
                         <td className="mono">{pick.channel.score}</td>
-                        <td>{reward ? <span className="reward-tag">以官网为准</span> : <span className="muted-time">-</span>}</td>
-                        <td>
-                          <a className="try-btn" href={ctaHref} {...externalLinkProps(ctaHref)} onClick={() => void record("rank", pick.id, pick.channelId)}>
-                            去体验
-                          </a>
+                        <td className="rank-official-cell">
+                          <div className="rank-official-entry">
+                            <a className="try-btn" href={ctaHref} {...externalLinkProps(ctaHref)} onClick={() => void record("rank", pick.id, pick.channelId)}>
+                              去体验
+                            </a>
+                            {reward ? <span className="reward-tag">{reward.rewardValue || "以官网为准"}</span> : null}
+                          </div>
                         </td>
                       </tr>
                     );
                   })
                 ) : (
                   <tr>
-                    <td colSpan={9}>
+                    <td colSpan={8}>
                       <div className="empty-state">
                         <h4>暂无榜单数据</h4>
                         <p>后台配置推荐位或录入公开平台通道后会在这里显示。</p>
