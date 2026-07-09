@@ -134,7 +134,9 @@ export function TrendBars({
   });
   const style = {
     ...(maxWidth ? { "--tk-trend-bar-max": maxWidth } : {}),
-    "--tk-trend-bar-count": barCount
+    "--tk-trend-bar-count": barCount,
+    "--tk-trend-bar-width": barCount <= 7 ? "5px" : "3px",
+    "--tk-trend-bar-gap": barCount <= 7 ? "0px" : "1.2px"
   } as CSSProperties;
   return (
     <div className={cx("tk-trend-bars model-trend-bars", className)} aria-label={values.length ? label : `${label}: no data`} style={style}>

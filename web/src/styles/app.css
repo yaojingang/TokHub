@@ -1982,6 +1982,40 @@ body:has(.admin-login-wrap) {
 .public-board {
   min-height: 290px;
   overflow: hidden;
+  position: relative;
+}
+
+.public-board.is-refreshing .scroll {
+  opacity: .74;
+  transition: opacity .16s ease;
+}
+
+.public-range-seg button {
+  position: relative;
+}
+
+.public-range-seg button.refreshing::after {
+  content: "";
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  margin-top: -2.5px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.96);
+  animation: publicRangePulse 1s ease-in-out infinite;
+}
+
+@keyframes publicRangePulse {
+  0%, 100% {
+    opacity: .45;
+    transform: scale(.86);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
 }
 
 .public-board-filter {
@@ -10610,24 +10644,27 @@ body:has(.admin-login-wrap) {
   --tk-trend-bar-max: 142px;
   --tk-trend-bar-count: 30;
   --tk-trend-bar-height: 22px;
+  --tk-trend-bar-width: 3px;
+  --tk-trend-bar-gap: 1.2px;
   height: 28px;
   width: min(100%, var(--tk-trend-bar-max));
   max-width: var(--tk-trend-bar-max);
   min-width: 0;
-  display: grid;
-  grid-template-columns: repeat(var(--tk-trend-bar-count), minmax(1.5px, 1fr));
+  display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 1.5px;
+  gap: var(--tk-trend-bar-gap);
   margin-left: auto;
   margin-right: 0;
   box-sizing: border-box;
 }
 
 .tk-trend-bars i {
-  width: 100%;
+  width: var(--tk-trend-bar-width);
+  flex: 0 0 var(--tk-trend-bar-width);
   height: var(--tk-trend-bar-height);
   min-width: 0;
-  border-radius: 999px;
+  border-radius: 3px;
   background: var(--green);
   display: block;
 }

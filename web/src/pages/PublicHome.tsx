@@ -128,6 +128,7 @@ export function PublicHome() {
   const [query, setQuery] = useState("");
   const [range, setRange] = useState("24");
   const [loading, setLoading] = useState(true);
+  const [publicDataRange, setPublicDataRange] = useState("");
   const [personalLoading, setPersonalLoading] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [registrationOpen, setRegistrationOpen] = useState(true);
@@ -151,21 +152,36 @@ export function PublicHome() {
 
   useEffect(() => {
     let active = true;
+    setError("");
+    publicOverview()
+      .then((overviewValue) => {
+        if (!active) return;
+        setOverview(overviewValue);
+      })
+      .catch((err: Error) => {
+        if (active) setError(err.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
     setLoading(true);
     setError("");
     Promise.all([
-      publicOverview(),
       publicChannels({ page: 1, pageSize: 100, range }),
       providerRank(range),
       errorsSummary(range)
     ])
-      .then(([overviewValue, channelList, rankList, errorList]) => {
+      .then(([channelList, rankList, errorList]) => {
         if (!active) return;
-        setOverview(overviewValue);
         setChannels(channelList.items);
         setTotal(channelList.total);
         setRank(rankList.items);
         setErrors(errorList.items);
+        setPublicDataRange(range);
       })
       .catch((err: Error) => {
         if (active) setError(err.message);
@@ -386,6 +402,9 @@ export function PublicHome() {
   const filteredFavorites = useMemo(() => filterChannels(rangedFavoriteItems, boardFilter), [rangedFavoriteItems, boardFilter]);
   const brandFavorites = useMemo(() => buildBrandRows(filteredFavorites, coreMonitorModels), [filteredFavorites, coreMonitorModels]);
   const filteredPrivate = useMemo(() => filterChannels(privateItems, boardFilter), [privateItems, boardFilter]);
+  const visiblePublicRange = publicDataRange || range;
+  const initialPublicLoading = loading && !publicDataRange;
+  const refreshingPublic = loading && Boolean(publicDataRange);
   const exportURL = useMemo(() => {
     const params = new URLSearchParams();
     if (provider !== "all") params.set("provider", provider);
@@ -522,24 +541,24 @@ export function PublicHome() {
           </div>
           <div className="seg public-range-seg">
             {["24", "7", "30", "all"].map((item) => (
-              <button className={range === item ? "active" : ""} key={item} onClick={() => setRange(item)}>
+              <button className={[range === item ? "active" : "", refreshingPublic && range === item ? "refreshing" : ""].filter(Boolean).join(" ")} key={item} onClick={() => setRange(item)}>
                 {rangeOptionLabel(item)}
               </button>
             ))}
           </div>
         </FilterBar>
 
-        <div className="card board public-board">
-          {activeBoardTab === "all" && loading ? <div className="empty-state"><div className="ico">⌁</div><h4>正在加载通道数据</h4><p>公开看板正在读取 `/api/public/*`。</p></div> : null}
-          {activeBoardTab === "all" && !loading && dimension === "brand" ? <BrandTable channels={brandChannels} favorites={favoriteIDs} range={range} onToggleFavorite={(id) => void toggleFavorite(id)} onOpenChannel={setSelectedChannel} /> : null}
-          {activeBoardTab === "all" && !loading && dimension === "model" ? <ModelTable rows={modelRows} range={range} /> : null}
+        <div className={`card board public-board ${refreshingPublic && activeBoardTab !== "private" ? "is-refreshing" : ""}`} aria-busy={refreshingPublic && activeBoardTab !== "private"}>
+          {activeBoardTab === "all" && initialPublicLoading ? <div className="empty-state"><div className="ico">⌁</div><h4>正在加载通道数据</h4><p>公开看板正在读取 `/api/public/*`。</p></div> : null}
+          {activeBoardTab === "all" && !initialPublicLoading && dimension === "brand" ? <BrandTable channels={brandChannels} favorites={favoriteIDs} range={visiblePublicRange} onToggleFavorite={(id) => void toggleFavorite(id)} onOpenChannel={setSelectedChannel} /> : null}
+          {activeBoardTab === "all" && !initialPublicLoading && dimension === "model" ? <ModelTable rows={modelRows} range={visiblePublicRange} /> : null}
           {activeBoardTab === "favorites" ? (
             <PublicFavoritePanel
               loading={personalLoading}
               channels={brandFavorites}
               total={favoriteItems.length}
               favorites={favoriteIDs}
-              range={range}
+              range={visiblePublicRange}
               onToggleFavorite={(id) => void toggleFavorite(id)}
               onOpenChannel={setSelectedChannel}
               onExplore={() => switchBoardTab("all")}
@@ -562,7 +581,7 @@ export function PublicHome() {
 
         <div className="section-head" id="providers">
           <h2>
-            供应商排行 <span className="tag">{rangeOptionLabel(range)}</span>
+            供应商排行 <span className="tag">{rangeOptionLabel(visiblePublicRange)}</span>
           </h2>
           <span className="sub">基于真实调用成功率、P95 延迟与故障次数综合排序</span>
         </div>
@@ -583,12 +602,12 @@ export function PublicHome() {
           </div>
           <div className="card card-pad error-summary-card">
             <div className="module-title">错误分类分布</div>
-            <div className="module-sub">{rangeOptionLabel(range)}失败探测的错误类型占比</div>
+            <div className="module-sub">{rangeOptionLabel(visiblePublicRange)}失败探测的错误类型占比</div>
             <ErrorBars errors={errors} />
           </div>
         </div>
       </main>
-      <ChannelPreviewDialog channel={selectedChannel} range={range} isFavorite={selectedChannel ? favoriteIDs.has(selectedChannel.id) : false} onToggleFavorite={(id) => void toggleFavorite(id)} onClose={() => setSelectedChannel(null)} />
+      <ChannelPreviewDialog channel={selectedChannel} range={visiblePublicRange} isFavorite={selectedChannel ? favoriteIDs.has(selectedChannel.id) : false} onToggleFavorite={(id) => void toggleFavorite(id)} onClose={() => setSelectedChannel(null)} />
       <AuthDialog
         open={authOpen}
         onOpenChange={(open) => {
