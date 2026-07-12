@@ -3,6 +3,7 @@ import { AdminShell } from "../components/AdminShell";
 import { ConsoleShell } from "../components/ConsoleShell";
 import { auditExportURL, auditLogDetail, AuditLogItem, auditLogs, AuditLogResult } from "../lib/api";
 import { Button, DataTable, DataTableColumn, FilterBar, SelectField, StatGrid, StatusBadge } from "../ui";
+import { ProbeLogsPanel } from "./ProbeLogsPanel";
 
 type Scope = "admin" | "console";
 type EventClass = "governance" | "system" | "all";
@@ -34,6 +35,7 @@ const emptyFilters: Filters = {
 };
 
 export function AuditPage({ scope = "admin" }: { scope?: Scope }) {
+  const [activeTab, setActiveTab] = useState<"audit" | "probe">(() => scope === "admin" && new URLSearchParams(window.location.search).get("tab") === "probe" ? "probe" : "audit");
   const [filters, setFilters] = useState<Filters>(() => initialAuditFilters());
   const [appliedFilters, setAppliedFilters] = useState<Filters>(() => initialAuditFilters());
   const [result, setResult] = useState<AuditLogResult>({ items: [], total: 0 });
@@ -113,7 +115,16 @@ export function AuditPage({ scope = "admin" }: { scope?: Scope }) {
 
   const Shell = scope === "console" ? ConsoleShell : AdminShell;
   return (
-    <Shell title="审计日志" crumb={scope === "console" ? "/ 工作区 / 审计" : "/ 平台治理 / 审计"}>
+    <Shell title={scope === "admin" ? "日志中心" : "审计日志"} crumb={scope === "console" ? "/ 工作区 / 审计" : "/ 平台治理 / 日志中心"}>
+      {scope === "admin" ? <div className="phase14-section-switch log-center-tabs" role="tablist" aria-label="日志类型">
+        <button type="button" role="tab" aria-selected={activeTab === "audit"} aria-controls="audit-log-panel" className={activeTab === "audit" ? "active" : ""} onClick={() => switchLogTab("audit", setActiveTab)}>操作审计</button>
+        <button type="button" role="tab" aria-selected={activeTab === "probe"} aria-controls="probe-log-panel" className={activeTab === "probe" ? "active" : ""} onClick={() => switchLogTab("probe", setActiveTab)}>探测日志</button>
+      </div> : null}
+
+      {scope === "admin" && activeTab === "probe" ? <div id="probe-log-panel" role="tabpanel">
+        <div className="page-intro">逐次查看平台通道的真实探测请求、HTTP 返回代码、中文状态含义和脱敏后的上游错误摘要</div>
+        <ProbeLogsPanel />
+      </div> : <div id={scope === "admin" ? "audit-log-panel" : undefined} role={scope === "admin" ? "tabpanel" : undefined}>
       <div className="page-intro">{scope === "console" ? "工作区审计只显示当前工作区相关的网关、密钥、私有通道和成员操作" : "平台审计显示 TokHub 全局管理操作、运营配置变更和安全事件"}</div>
       {error ? <div className="form-error">{error}</div> : null}
 
@@ -181,8 +192,18 @@ export function AuditPage({ scope = "admin" }: { scope?: Scope }) {
       />
 
       <AuditDrawer item={selected} loading={detailLoading} onClose={() => setSelected(null)} />
+      </div>}
     </Shell>
   );
+}
+
+function switchLogTab(tab: "audit" | "probe", setActiveTab: (tab: "audit" | "probe") => void) {
+  const params = new URLSearchParams(window.location.search);
+  if (tab === "probe") params.set("tab", "probe");
+  else params.delete("tab");
+  const search = params.toString();
+  window.history.replaceState(null, "", `${window.location.pathname}${search ? `?${search}` : ""}${window.location.hash}`);
+  setActiveTab(tab);
 }
 
 function AuditDrawer({ item, loading, onClose }: { item: AuditLogItem | null; loading: boolean; onClose: () => void }) {

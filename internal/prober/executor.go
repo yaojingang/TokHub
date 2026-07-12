@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -158,6 +159,9 @@ func (e *Executor) L2(ctx context.Context, target ProbeTarget, apiKey string) []
 	payload := result.Body
 	status := err == nil && statusCode >= 200 && statusCode < 300
 	meta := modelListMetadata(payload, target.Model)
+	if summary := upstreamErrorSummary(payload); !status && summary != "" {
+		meta["upstream_error_summary"] = summary
+	}
 	stepResult := step("models", status, time.Since(start), probeUpstreamErrorType(err, result.ErrorType, statusCode, payload), statusCode, meta)
 	if statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden {
 		stepResult.Status = "auth_error"
@@ -207,6 +211,9 @@ func (e *Executor) L3(ctx context.Context, target ProbeTarget, apiKey string) []
 	meta["usage_estimated"] = result.Usage.Estimated
 	warnThreshold := l3WarnThresholdMs(target)
 	meta["warn_threshold_ms"] = warnThreshold
+	if summary := upstreamErrorSummary(payload); (err != nil || statusCode < 200 || statusCode >= 300) && summary != "" {
+		meta["upstream_error_summary"] = summary
+	}
 
 	ok := err == nil && statusCode >= 200 && statusCode < 300 && contentStatus.Valid
 	stepResult := step("generate", ok, time.Duration(latency)*time.Millisecond, probeUpstreamErrorType(err, result.ErrorType, statusCode, payload), statusCode, meta)
@@ -632,6 +639,55 @@ func modelListMetadata(payload []byte, targetModel string) map[string]any {
 		meta["model_found"] = seen[targetModel]
 	}
 	return meta
+}
+
+var (
+	authorizationSecretPattern = regexp.MustCompile(`(?i)\bauthorization\s*[:=]\s*["']?[a-z0-9._~+/=-]+(?:\s+[a-z0-9._~+/=-]+)?`)
+	bearerSecretPattern        = regexp.MustCompile(`(?i)\bbearer\s+[a-z0-9._~+/=-]+`)
+	namedSecretPattern         = regexp.MustCompile(`(?i)\b(api[_-]?key|token|secret|password)\b\s*["']?\s*[:=]\s*["']?\s*[^\s,;"}']+`)
+	skSecretPattern            = regexp.MustCompile(`\bsk-[a-zA-Z0-9._-]{6,}`)
+	jwtSecretPattern           = regexp.MustCompile(`\b[a-zA-Z0-9_-]{8,}\.[a-zA-Z0-9_-]{8,}\.[a-zA-Z0-9_-]{8,}\b`)
+	googleAPIKeyPattern        = regexp.MustCompile(`\bAIza[a-zA-Z0-9_-]{20,}\b`)
+)
+
+func upstreamErrorSummary(payload []byte) string {
+	if len(payload) == 0 {
+		return ""
+	}
+	var body map[string]any
+	if err := json.Unmarshal(payload, &body); err != nil {
+		return ""
+	}
+	fields := make([]string, 0, 3)
+	appendFields := func(values map[string]any) {
+		for _, key := range []string{"code", "type"} {
+			value, ok := values[key].(string)
+			value = strings.TrimSpace(value)
+			if ok && value != "" {
+				fields = append(fields, key+"="+value)
+			}
+		}
+	}
+	if nested, ok := body["error"].(map[string]any); ok {
+		appendFields(nested)
+	} else {
+		appendFields(body)
+	}
+	if len(fields) == 0 {
+		return ""
+	}
+	summary := strings.Join(fields, " · ")
+	summary = authorizationSecretPattern.ReplaceAllString(summary, "Authorization: [redacted]")
+	summary = bearerSecretPattern.ReplaceAllString(summary, "Bearer [redacted]")
+	summary = namedSecretPattern.ReplaceAllString(summary, "$1=[redacted]")
+	summary = skSecretPattern.ReplaceAllString(summary, "sk-[redacted]")
+	summary = jwtSecretPattern.ReplaceAllString(summary, "[redacted-jwt]")
+	summary = googleAPIKeyPattern.ReplaceAllString(summary, "[redacted-google-key]")
+	runes := []rune(summary)
+	if len(runes) > 512 {
+		summary = string(runes[:512])
+	}
+	return summary
 }
 
 type l3ContentCheck struct {

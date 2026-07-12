@@ -964,6 +964,55 @@ export type AuditLogResult = {
   total: number;
 };
 
+export type ProbeLogItem = {
+  id: string;
+  channelId: string;
+  channelName: string;
+  provider: string;
+  type: string;
+  model: string;
+  endpoint: string;
+  layer: string;
+  source: string;
+  status: string;
+  runStatus: string;
+  step: string;
+  httpStatus?: number;
+  errorType: string;
+  latencyMs: number;
+  stepCount: number;
+  startedAt: string;
+  finishedAt?: string;
+};
+
+export type ProbeLogStep = {
+  step: string;
+  status: string;
+  latencyMs: number;
+  httpStatus?: number;
+  errorType: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type ProbeLogDetail = ProbeLogItem & {
+  steps: ProbeLogStep[];
+};
+
+export type ProbeLogResult = {
+  items: ProbeLogItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  summary: {
+    total: number;
+    abnormal: number;
+    authErrors: number;
+    slowResponses: number;
+    latestAt?: string;
+  };
+};
+
 export type GovernanceSummary = {
   openIncidents: number;
   alertsToday: number;
@@ -1764,6 +1813,26 @@ export async function auditLogs(scope: "admin" | "console", params: Record<strin
 
 export async function auditLogDetail(scope: "admin" | "console", auditID: string): Promise<AuditLogItem> {
   return readJSON<AuditLogItem>(`/api/${scope}/audit/${auditID}`, { credentials: "include" });
+}
+
+export async function probeLogs(params: Record<string, string | number | boolean | undefined> = {}): Promise<ProbeLogResult> {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== "") search.set(key, String(value));
+  }
+  return readJSON<ProbeLogResult>(`/api/admin/probe-logs${search.toString() ? `?${search}` : ""}`, { credentials: "include" });
+}
+
+export async function probeLogDetail(runID: string): Promise<ProbeLogDetail> {
+  return readJSON<ProbeLogDetail>(`/api/admin/probe-logs/${encodeURIComponent(runID)}`, { credentials: "include" });
+}
+
+export function probeLogExportURL(params: Record<string, string | number | boolean | undefined> = {}) {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== "" && value !== false) search.set(key, String(value));
+  }
+  return `/api/admin/probe-logs/export${search.toString() ? `?${search}` : ""}`;
 }
 
 export function auditExportURL(scope: "admin" | "console", params: Record<string, string | number | undefined> = {}) {

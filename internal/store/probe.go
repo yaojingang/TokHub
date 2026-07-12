@@ -28,6 +28,14 @@ type ProbeTarget struct {
 	ProviderConfig map[string]any
 }
 
+type ProbeRunSnapshot struct {
+	ChannelName string
+	Provider    string
+	Type        string
+	Endpoint    string
+	Model       string
+}
+
 type ProbeStepResult struct {
 	Step       string
 	Status     string
@@ -162,12 +170,19 @@ func (r *Repository) ProbeTarget(ctx context.Context, channelID string) (ProbeTa
 	return target, err
 }
 
-func (r *Repository) UpsertProbeRun(ctx context.Context, runID string, channelID string, layer string, source string) error {
+func (r *Repository) UpsertProbeRun(ctx context.Context, runID string, channelID string, layer string, source string, snapshot ProbeRunSnapshot) error {
+	metadata := mapJSON(map[string]any{
+		"channel_name": snapshot.ChannelName,
+		"provider":     snapshot.Provider,
+		"type":         snapshot.Type,
+		"endpoint":     snapshot.Endpoint,
+		"model":        snapshot.Model,
+	})
 	_, err := r.db.Exec(ctx, `
-		insert into probe_runs(id,channel_id,layer,source,status,started_at)
-		values($1,$2,$3,$4,'running',now())
-		on conflict(id) do update set source=excluded.source
-	`, runID, channelID, layer, source)
+		insert into probe_runs(id,channel_id,layer,source,status,metadata,started_at)
+		values($1,$2,$3,$4,'running',$5,now())
+		on conflict(id) do update set source=excluded.source,metadata=excluded.metadata
+	`, runID, channelID, layer, source, metadata)
 	return err
 }
 

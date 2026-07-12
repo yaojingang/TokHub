@@ -93,6 +93,10 @@
       border-bottom: 0;
     }
 
+    .long-section {
+      break-inside: auto;
+    }
+
     h2 {
       margin: 0 0 16px;
       font-size: 24px;
@@ -306,7 +310,19 @@
         break-inside: avoid;
       }
 
+      .long-section {
+        break-inside: auto;
+      }
+
       .card, .step, .kpi, table, pre {
+        break-inside: avoid;
+      }
+
+      .long-section table {
+        break-inside: auto;
+      }
+
+      tr {
         break-inside: avoid;
       }
     }
@@ -549,7 +565,7 @@ node agent-skills/tokhub/scripts/tokhub.mjs admin-agent preflight</code></pre>
       </div>
     </section>
 
-    <section>
+    <section class="long-section">
       <h2>6. 功能范围</h2>
       <table>
         <thead>
@@ -602,6 +618,111 @@ node agent-skills/tokhub/scripts/tokhub.mjs admin-agent preflight</code></pre>
           </tr>
         </tbody>
       </table>
+
+      <h3>6.1 使用方法</h3>
+      <ol>
+        <li>用户先提供 TokHub 站点地址，可以是本地地址，也可以是远程部署地址。</li>
+        <li>脚本在本机终端完成登录，密码不进入聊天，登录后保存本地 profile。</li>
+        <li>执行前用 <code>whoami</code> 或 <code>preflight</code> 确认当前账号、工作区、平台角色和可用权限面。</li>
+        <li>读操作直接按当前账号权限查询。写操作、导出、下载、删除、批量、重置和凭证相关操作必须带执行确认、原因和幂等键。</li>
+        <li>管理员自动化统一走 <code>admin-agent</code> 分支，旧 <code>tokhub-admin</code> 名称只作为兼容语义，不再对应单独 skill 包。</li>
+      </ol>
+
+      <h3>6.2 不同账号能获取的数据</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>账号或凭证</th>
+            <th>可获取的数据</th>
+            <th>常见用途</th>
+            <th>能带来的帮助</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>未登录</td>
+            <td>公开概览、公开通道列表、通道详情、可用率曲线、服务商排行、公开错误摘要、推荐位和站点配置。</td>
+            <td>了解哪些通道可用，比较服务商稳定性，查看公开状态页。</td>
+            <td>让 agent 能直接回答公开监控和选型问题，不需要人工打开多个页面截图。</td>
+          </tr>
+          <tr>
+            <td>外部站点</td>
+            <td><code>/v1/status/*</code> 下的通道、uptime、incident、overview 和 channel sync 数据，范围由 Site Key 绑定的 Open API 站点决定。</td>
+            <td>同步公开状态页，把 TokHub 监控数据接到第三方站点、看板或客户门户。</td>
+            <td>把外部展示和内部监控接起来，减少手工导出和重复维护。</td>
+          </tr>
+          <tr>
+            <td>普通用户</td>
+            <td>个人资料、收藏通道、自己有权限进入的工作区入口，以及该账号在网站上能看到的个人数据。</td>
+            <td>查看收藏、整理常用通道，确认自己能进入哪些组织空间。</td>
+            <td>帮助用户用自然语言查询自己的 TokHub 数据，同时保持和网站完全一致的权限边界。</td>
+          </tr>
+          <tr>
+            <td>查看者</td>
+            <td>当前工作区设置、网关、Gateway Key 列表及脱敏信息、成员列表、用量、告警、审计、incident 和治理摘要。</td>
+            <td>查看工作区运行状态、成本趋势、告警历史、审计记录和成员配置。</td>
+            <td>适合做运营巡检、周报整理、问题追踪和只读审计，不会误改生产配置。</td>
+          </tr>
+          <tr>
+            <td>操作员</td>
+            <td>查看者数据，加上私有通道维护、通道校验、立即探测、网关调试、Gateway Key 创建或撤销、告警规则、通知通道和 incident 处理。</td>
+            <td>处理上游故障、调整网关入口、创建临时 key、测试告警通道、关闭或重开 incident。</td>
+            <td>把日常运维动作变成可审计的 agent 操作，减少在后台反复点击和复制参数。</td>
+          </tr>
+          <tr>
+            <td>管理员</td>
+            <td>操作员数据，加上工作区设置、成员管理、批量成员操作和部分重置类动作。</td>
+            <td>维护组织成员、调整工作区策略、处理权限变更和治理配置。</td>
+            <td>帮助团队把权限治理、成员变更和配置检查沉淀成可复用流程。</td>
+          </tr>
+          <tr>
+            <td>平台管理员</td>
+            <td>生产健康、平台设置、平台通道、用户、组织、全局用量、后台审计、审计导出、通道导入导出和站点包下载。</td>
+            <td>平台运营、生产巡检、用户和组织排查、全局成本分析、通道迁移和后台审计。</td>
+            <td>让管理员能从同一个 skill 完成后台查询和受控变更，降低跨页面操作成本。</td>
+          </tr>
+          <tr>
+            <td>机器凭证</td>
+            <td>由 token scope 限定的 <code>/api/admin/*</code> 后台数据和动作，写操作必须带 reason、idempotency key 和审计验证。</td>
+            <td>定时巡检、自动导出、CI 检查、生产健康报告、后台批处理和审计回溯。</td>
+            <td>适合机器自动化场景，既保留高权限能力，也保留 scope、幂等和 audit 约束。</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="note">
+        <p><strong>数据不是越权复制。</strong>skill 只是把网站已有权限变成 agent 可调用的通道。明文密钥、Cookie、CSRF、session 文件、Site Key 和 admin-agent token 不进入聊天；导出和下载默认写本地安全路径，并按密钥材料处理。</p>
+      </div>
+
+      <h3>6.3 应用场景和价值</h3>
+      <div class="grid">
+        <div class="card">
+          <h3>公开监控问答</h3>
+          <p>查询通道状态、服务商排行、错误摘要和可用率曲线，用于选型、状态页说明和客户答疑。</p>
+        </div>
+        <div class="card">
+          <h3>工作区运维</h3>
+          <p>围绕私有通道、网关、Gateway Key、告警、incident 和审计做日常排查，适合团队值班和问题复盘。</p>
+        </div>
+        <div class="card">
+          <h3>成本和用量分析</h3>
+          <p>读取 usage、rollup、审计和请求事件，整理组织成本、异常用量、重点模型和高频调用来源。</p>
+        </div>
+        <div class="card">
+          <h3>权限和成员治理</h3>
+          <p>查看成员、角色、工作区设置和审计记录，辅助排查谁能访问什么、谁改过什么、哪些权限需要收紧。</p>
+        </div>
+        <div class="card">
+          <h3>平台后台巡检</h3>
+          <p>平台管理员可以检查 production health、全局通道、用户、组织、告警和审计，形成稳定的后台巡检流程。</p>
+        </div>
+        <div class="card">
+          <h3>自动化报告和同步</h3>
+          <p>通过 Site Key 或 admin-agent token 做定时报告、外部状态同步和审计验证，减少人工导出和手动对账。</p>
+        </div>
+      </div>
+      <div class="success">
+        <p><strong>目的作用：</strong>让普通用户、工作区成员和平台管理员都能用同一个 skill 查询和管理 TokHub 数据。它把后台能力变成可审计、可复用、可自动化的本地执行流程，同时不绕过网站权限。</p>
+      </div>
     </section>
 
     <section>

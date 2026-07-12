@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"tokhub/internal/store"
 )
 
 func TestProbeLayerCredentialRequirement(t *testing.T) {
@@ -68,5 +70,17 @@ func TestProbePersistenceContextHasShortBoundedTimeout(t *testing.T) {
 	remaining := time.Until(deadline)
 	if remaining <= 0 || remaining > probePersistenceTimeout {
 		t.Fatalf("persistence timeout = %s, want within %s", remaining, probePersistenceTimeout)
+	}
+}
+
+func TestProbeRunSnapshotCapturesIdentityAtExecutionTime(t *testing.T) {
+	target := store.ProbeTarget{
+		Name: "PackyCode", Provider: "PackyCode", Type: "anthropic",
+		Model: "claude-sonnet-4-6", Endpoint: "https://user:pass@api.example.com/v1?api_key=secret#fragment",
+	}
+	snapshot := probeRunSnapshot(target)
+	if snapshot.ChannelName != target.Name || snapshot.Provider != target.Provider || snapshot.Type != target.Type ||
+		snapshot.Model != target.Model || snapshot.Endpoint != "https://api.example.com/v1" {
+		t.Fatalf("snapshot = %+v, want execution-time target identity", snapshot)
 	}
 }
