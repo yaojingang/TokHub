@@ -296,16 +296,6 @@ docker compose --env-file .env.production -f docker-compose.yml -f deploy/compos
 - `docs/`：API、部署、发布、恢复、开源规则和机器合同文档。
 - `tests/`：Playwright 端到端和视觉测试。
 
-## 开源发布
-
-开源首发前请先阅读 [docs/OPEN_SOURCE.md](docs/OPEN_SOURCE.md)。不要使用 `git add .` 做首个公开提交，按文档中的 allowlist staging，避免把 `.env`、备份、临时目录、本地二进制、私有评审和原型材料带进公开仓库。
-
-开源发布预检：
-
-```bash
-npm run open-source:preflight
-```
-
 ## License
 
 TokHub is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

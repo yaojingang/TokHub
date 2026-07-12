@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -72,6 +73,42 @@ func TestExecutorL2DoesNotInjectConfiguredModelFallback(t *testing.T) {
 
 	if summary.Status != "down" || summary.ErrorType != "model_not_found" {
 		t.Fatalf("summary = %+v, want down/model_not_found", summary)
+	}
+}
+
+func TestExecutorL2CapturesSanitizedUpstreamErrorSummary(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"code":"ip_not_allowed","type":"auth_error","message":"source IP 47.251.246.63 is denied; token=sk-upstream-secret; details={\"token\":\"jwt-secret-value\"}; Authorization: Bearer bearer-secret; Authorization: Basic basic-secret; session eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0b2todWItdXNlciJ9.signaturevalue; Google key AIzaSyD1234567890abcdefghijklmnopqrstuvwxyz"}}`))
+	}))
+	defer server.Close()
+
+	executor := NewExecutorWithMockEndpoints(false)
+	target := ProbeTarget{ID: "ch_real", Endpoint: server.URL, Type: "openai-compatible", Model: "gpt-5.5"}
+	result := executor.L2(context.Background(), target, "sk-request-secret")[0]
+
+	if result.Status != "auth_error" || result.HTTPStatus != http.StatusUnauthorized {
+		t.Fatalf("result=%+v, want auth_error/401", result)
+	}
+	summary, _ := result.Metadata["upstream_error_summary"].(string)
+	if !strings.Contains(summary, "source IP 47.251.246.63 is denied") || !strings.Contains(summary, "ip_not_allowed") {
+		t.Fatalf("summary=%q, want diagnostic message and error code", summary)
+	}
+	for _, secret := range []string{"sk-upstream-secret", "jwt-secret-value", "bearer-secret", "basic-secret", "sk-request-secret", "eyJhbGciOiJIUzI1NiJ9", "AIzaSyD1234567890abcdefghijklmnopqrstuvwxyz"} {
+		if strings.Contains(summary, secret) {
+			t.Fatalf("summary leaked secret %q: %q", secret, summary)
+		}
+	}
+}
+
+func TestUpstreamErrorSummaryRedactsQuotedAuthorizationValues(t *testing.T) {
+	summary := upstreamErrorSummary([]byte(`{"error":{"message":"request rejected; Authorization: \"Basic cXVvdGVkLXNlY3JldA==\""}}`))
+	if strings.Contains(summary, "cXVvdGVkLXNlY3JldA==") {
+		t.Fatalf("summary leaked quoted authorization secret: %q", summary)
+	}
+	if !strings.Contains(summary, "Authorization: [redacted]") {
+		t.Fatalf("summary=%q, want redacted authorization marker", summary)
 	}
 }
 
@@ -332,6 +369,27 @@ func TestExecutorL3SupportsNonEmptyContentPolicy(t *testing.T) {
 	}
 	if result.Metadata["content_valid"] != true {
 		t.Fatalf("content_valid=%v, want true", result.Metadata["content_valid"])
+	}
+}
+
+func TestExecutorL3CapturesSanitizedUpstreamErrorSummary(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":{"code":"region_denied","message":"Alibaba US egress is not allowed; api_key=sk-response-secret"}}`))
+	}))
+	defer server.Close()
+
+	executor := NewExecutorWithMockEndpoints(false)
+	target := ProbeTarget{ID: "ch_real", Endpoint: server.URL, Type: "openai-compatible", Model: "gpt-5.5"}
+	result := executor.L3(context.Background(), target, "sk-request-secret")[0]
+
+	if result.Status != "auth_error" || result.HTTPStatus != http.StatusForbidden {
+		t.Fatalf("result=%+v, want auth_error/403", result)
+	}
+	summary, _ := result.Metadata["upstream_error_summary"].(string)
+	if !strings.Contains(summary, "Alibaba US egress is not allowed") || strings.Contains(summary, "sk-response-secret") {
+		t.Fatalf("summary=%q, want sanitized region diagnostic", summary)
 	}
 }
 

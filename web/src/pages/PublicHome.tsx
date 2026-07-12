@@ -1673,9 +1673,10 @@ function trendValues(row: { trend: number[]; trendBuckets?: TrendBucket[] }) {
 }
 
 function trendBarCount(row: { trend: number[]; trendBuckets?: TrendBucket[] }, range: string) {
+  // Keep seven-day data in a dense rail so it matches the visual language of the 30-day trend.
+  if (range === "7") return 30;
   if (row.trendBuckets?.length) return row.trendBuckets.length;
   if (range === "24") return 24;
-  if (range === "7") return 7;
   return 30;
 }
 

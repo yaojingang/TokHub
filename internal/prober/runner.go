@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 
@@ -65,7 +66,7 @@ func (r *Runner) RunLayerWithIDAndCredential(ctx context.Context, runID string, 
 	if err != nil {
 		return err
 	}
-	if err := r.repo.UpsertProbeRun(ctx, runID, channelID, layer, source); err != nil {
+	if err := r.repo.UpsertProbeRun(ctx, runID, channelID, layer, source, probeRunSnapshot(target)); err != nil {
 		return err
 	}
 
@@ -112,6 +113,27 @@ func (r *Runner) RunLayerWithIDAndCredential(ctx context.Context, runID string, 
 	}
 	r.logger.Info("probe layer complete", "channel_id", channelID, "layer", layer, "status", summary.Status, "run_id", runID)
 	return nil
+}
+
+func probeRunSnapshot(target store.ProbeTarget) store.ProbeRunSnapshot {
+	return store.ProbeRunSnapshot{
+		ChannelName: target.Name,
+		Provider:    target.Provider,
+		Type:        target.Type,
+		Endpoint:    probeSnapshotEndpoint(target.Endpoint),
+		Model:       target.Model,
+	}
+}
+
+func probeSnapshotEndpoint(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return ""
+	}
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
 }
 
 func (r *Runner) persistProbeOutcome(ctx context.Context, runID string, channelID string, layer string, steps []StepResult) (LayerSummary, error) {

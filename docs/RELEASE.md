@@ -61,7 +61,7 @@ TOKHUB_BASE_URL="$TOKHUB_PUBLIC_URL" npm run test:no-demo-smoke
 docker build -t tokhub:0.1.0 .
 ```
 
-## 单容器发布
+## 单容器首次发布
 
 ```bash
 docker compose --env-file .env.production up -d --build
@@ -70,11 +70,25 @@ curl -fsS "$TOKHUB_PUBLIC_URL/readyz"
 TOKHUB_BASE_URL="$TOKHUB_PUBLIC_URL" npm run test:smoke
 ```
 
-## 分 role 发布
+## 已有线上服务更新
+
+已有数据库的线上服务更新时，只跑迁移，再重建应用容器；不要用全量 `up` 当作日常更新命令，避免重复执行 seed job。
+
+```bash
+git pull origin main
+docker compose --env-file .env.production run --rm --build migrate
+docker compose --env-file .env.production up -d --build --no-deps app
+curl -fsS "$TOKHUB_PUBLIC_URL/healthz"
+curl -fsS "$TOKHUB_PUBLIC_URL/readyz"
+```
+
+## 分 role 首次发布
 
 ```bash
 docker compose --env-file .env.production -f docker-compose.yml -f deploy/compose/docker-compose.roles.yml up -d --build
 ```
+
+分 role 已有线上服务更新同样先跑 `migrate`，再分别 `up -d --build --no-deps api gateway prober worker`。
 
 检查：
 

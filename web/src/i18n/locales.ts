@@ -65,7 +65,7 @@ export const resources = {
         recommend: "精选推荐",
         usage: "用量数据",
         alerts: "告警规则",
-        audit: "审计日志",
+        audit: "日志中心",
         settings: "系统设置",
         web: "网站设置"
       },
@@ -80,7 +80,7 @@ export const resources = {
         recommend: "/ 平台运营",
         usage: "/ 平台治理 / 用量",
         alerts: "/ 平台治理 / 告警",
-        audit: "/ 平台治理 / 审计",
+        audit: "/ 平台治理 / 日志中心",
         settings: "/ 系统",
         web: "/ 前台首页"
       },
@@ -226,7 +226,7 @@ export const resources = {
         recommend: "Recommendations",
         usage: "Usage Data",
         alerts: "Alert Rules",
-        audit: "Audit Logs",
+        audit: "Log Center",
         settings: "System Settings",
         web: "Website"
       },
@@ -241,7 +241,7 @@ export const resources = {
         recommend: "/ Operations",
         usage: "/ Governance / Usage",
         alerts: "/ Governance / Alerts",
-        audit: "/ Governance / Audit",
+        audit: "/ Governance / Log Center",
         settings: "/ System",
         web: "/ Public Website"
       },

@@ -42,7 +42,8 @@ export function Drawer({
   title,
   description,
   children,
-  footer
+  footer,
+  className = ""
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -50,12 +51,13 @@ export function Drawer({
   description?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
+  className?: string;
 }) {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="drawer-mask open tk-drawer-overlay" />
-        <DialogPrimitive.Content className="drawer open private-editor tk-drawer-content">
+        <DialogPrimitive.Content className={`drawer open private-editor tk-drawer-content ${className}`.trim()}>
           <div className="dh">
             <div>
               <DialogPrimitive.Title>{title}</DialogPrimitive.Title>
