@@ -299,3 +299,5 @@ docker compose --env-file .env.production -f docker-compose.yml -f deploy/compos
 ## License
 
 TokHub is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+- [JiuRelay](https://jiurelay.com/) - Free AI API relay for GPT, Claude, GLM. No registration required, 1-hour valid key, OpenAI/Anthropic compatible.
