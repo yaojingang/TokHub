@@ -33,6 +33,85 @@ type AdminAgentToken struct {
 	CreatedAt   time.Time
 }
 
+type AiConnection struct {
+	ID                  string
+	OwnerUserID         string
+	OrgID               string
+	Provider            string
+	ProductLine         string
+	Region              string
+	WorkspaceID         string
+	AuthMethod          string
+	Protocol            string
+	AdapterType         string
+	Endpoint            string
+	ProviderConfig      json.RawMessage
+	DisplayName         string
+	Status              string
+	ValidationStage     string
+	ValidationLatencyMs int32
+	ModelCount          int32
+	LastErrorCode       string
+	LastErrorMessage    string
+	LastValidatedAt     sql.NullTime
+	PolicyVersion       string
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	DeletedAt           sql.NullTime
+}
+
+type AiConnectionModel struct {
+	ID                  string
+	ConnectionID        string
+	ProviderModelID     string
+	DisplayName         string
+	Enabled             bool
+	VerificationStatus  string
+	ValidationLatencyMs int32
+	LastErrorCode       string
+	LastErrorMessage    string
+	LastValidatedAt     sql.NullTime
+	CapabilitiesJson    json.RawMessage
+	RouteChannelID      sql.NullString
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+}
+
+type AiConnectionSecret struct {
+	ConnectionID     string
+	Ciphertext       string
+	Nonce            string
+	Mask             string
+	Fingerprint      string
+	EncryptionKeyID  string
+	FingerprintKeyID string
+	Algorithm        string
+	Version          int32
+	RotatedAt        time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+type AiQuickRelayRequest struct {
+	ID                     string
+	OwnerUserID            string
+	OrgID                  string
+	IdempotencyKey         string
+	RequestHash            string
+	ConnectionID           string
+	GatewayID              sql.NullString
+	GatewayKeyID           sql.NullString
+	RevealCiphertext       string
+	RevealNonce            string
+	RevealEncryptionKeyID  string
+	RevealFingerprint      string
+	RevealFingerprintKeyID string
+	RevealMask             string
+	Status                 string
+	ExpiresAt              time.Time
+	CreatedAt              time.Time
+}
+
 type AlertConfigState struct {
 	Scope                 string
 	OrgID                 string
@@ -103,38 +182,41 @@ type AuthSession struct {
 }
 
 type Channel struct {
-	ID              string
-	OwnerType       string
-	OwnerID         sql.NullString
-	Name            string
-	Provider        string
-	Type            string
-	Model           string
-	UpstreamModel   string
-	Endpoint        string
-	Status          string
-	Score           int32
-	ProbeDaily      int32
-	ProbesUsedToday int32
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	ProbeResetDate  time.Time
-	DataOrigin      string
-	PublicVisible   bool
-	GatewayEnabled  bool
-	DisabledAt      sql.NullTime
-	DeletedAt       sql.NullTime
-	ProviderConfig  json.RawMessage
-	OfficialSiteUrl string
-	OrgID           sql.NullString
-	PublicSlug      string
-	IntroTitle      string
-	IntroSummary    string
-	IntroBody       string
-	IntroHighlights json.RawMessage
-	LogoUrl         string
-	IntroSourceUrl  string
-	IntroUpdatedAt  sql.NullTime
+	ID                  string
+	OwnerType           string
+	OwnerID             sql.NullString
+	Name                string
+	Provider            string
+	Type                string
+	Model               string
+	UpstreamModel       string
+	Endpoint            string
+	Status              string
+	Score               int32
+	ProbeDaily          int32
+	ProbesUsedToday     int32
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+	ProbeResetDate      time.Time
+	DataOrigin          string
+	PublicVisible       bool
+	GatewayEnabled      bool
+	DisabledAt          sql.NullTime
+	DeletedAt           sql.NullTime
+	ProviderConfig      json.RawMessage
+	OfficialSiteUrl     string
+	OrgID               sql.NullString
+	PublicSlug          string
+	IntroTitle          string
+	IntroSummary        string
+	IntroBody           string
+	IntroHighlights     json.RawMessage
+	LogoUrl             string
+	IntroSourceUrl      string
+	IntroUpdatedAt      sql.NullTime
+	AiConnectionID      sql.NullString
+	AiConnectionModelID sql.NullString
+	ManagedSource       string
 }
 
 type ChannelCredential struct {

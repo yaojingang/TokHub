@@ -394,6 +394,7 @@ func (r *Repository) UpdatePrivateChannelForOrg(ctx context.Context, orgID strin
 		select provider,type,model,endpoint
 		from channels
 		where id=$1 and coalesce(org_id,'org_' || coalesce(owner_id,''))=$2 and owner_type='user' and status <> 'deleted' and deleted_at is null
+			and coalesce(managed_source,'')=''
 		for update
 	`, channelID, orgID).Scan(&currentProvider, &currentType, &currentModel, &currentEndpoint); err != nil {
 		return PrivateChannel{}, err
@@ -417,6 +418,7 @@ func (r *Repository) UpdatePrivateChannelForOrg(ctx context.Context, orgID strin
 			score=case when $9::boolean and status <> 'disabled' then 0 else score end,
 			updated_at=now()
 		where id=$1 and coalesce(org_id,'org_' || coalesce(owner_id,''))=$2 and owner_type='user' and status <> 'deleted' and deleted_at is null
+			and coalesce(managed_source,'')=''
 	`, channelID, orgID, input.Name, input.Provider, input.Type, input.Model, input.Endpoint, input.ProbeDaily, upstreamChanged)
 	if err != nil {
 		return PrivateChannel{}, err
@@ -467,6 +469,7 @@ func (r *Repository) DeletePrivateChannelForOrg(ctx context.Context, orgID strin
 			deleted_at=coalesce(deleted_at, now()),
 			updated_at=now()
 		where id=$1 and coalesce(org_id,'org_' || coalesce(owner_id,''))=$2 and owner_type='user' and status <> 'deleted' and deleted_at is null
+			and coalesce(managed_source,'')=''
 	`, channelID, orgID)
 	if err != nil {
 		return err
@@ -523,6 +526,7 @@ func (r *Repository) BulkUpdatePrivateChannelsStatusForOrg(ctx context.Context, 
 			disabled_at=case when $3='disabled' then coalesce(disabled_at, now()) else null end,
 			updated_at=now()
 		where id=any($1) and coalesce(org_id,'org_' || coalesce(owner_id,''))=$2 and owner_type='user' and status <> 'deleted' and deleted_at is null
+			and coalesce(managed_source,'')=''
 		returning id
 	`, ids, orgID, status)
 	if err != nil {
@@ -581,6 +585,7 @@ func (r *Repository) BulkDeletePrivateChannelsForOrg(ctx context.Context, orgID 
 			deleted_at=coalesce(deleted_at, now()),
 			updated_at=now()
 		where id=any($1) and coalesce(org_id,'org_' || coalesce(owner_id,''))=$2 and owner_type='user' and status <> 'deleted' and deleted_at is null
+			and coalesce(managed_source,'')=''
 		returning id
 	`, ids, orgID)
 	if err != nil {
@@ -641,6 +646,7 @@ func (r *Repository) PrivateCredentialForOrg(ctx context.Context, orgID string, 
 		from channel_credentials cc
 		join channels c on c.id=cc.channel_id
 		where cc.channel_id=$1 and coalesce(c.org_id,'org_' || coalesce(c.owner_id,''))=$2 and c.owner_type='user' and c.status <> 'deleted' and c.deleted_at is null
+			and coalesce(c.managed_source,'')=''
 	`, channelID, orgID).Scan(&cred.ChannelID, &cred.Ciphertext, &cred.Nonce)
 	return cred, err
 }
@@ -657,6 +663,7 @@ func (r *Repository) ReservePrivateL3ProbeForOrg(ctx context.Context, orgID stri
 			probe_reset_date = current_date,
 			updated_at = now()
 		where id=$1 and coalesce(org_id,'org_' || coalesce(owner_id,''))=$2 and owner_type='user'
+			and coalesce(managed_source,'')=''
 			and status <> 'deleted' and deleted_at is null
 			and (
 				case when probe_reset_date < current_date then 0 else probes_used_today end

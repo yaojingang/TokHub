@@ -17,7 +17,7 @@
     "frontend:ui-contract-check": "bash deploy/scripts/frontend-ui-contract-check.sh",
     "test:ops": "bash deploy/scripts/db-check.sh",
     "test:restore": "bash deploy/scripts/restore-drill.sh",
-    "test:preflight": "TOKHUB_SECRET_KEY=ci-production-sample-secret-key-32-bytes TOKHUB_ADMIN_PASSWORD=ci-production-admin-password bash deploy/scripts/preflight.sh --env-file .env.production.example",
+    "test:preflight": "TOKHUB_SECRET_KEY=ci-production-sample-secret-key-32-bytes TOKHUB_ADMIN_PASSWORD=ci-production-admin-password TOKHUB_CREDENTIAL_ACTIVE_KEY_ID=enc-ci TOKHUB_CREDENTIAL_ENCRYPTION_KEYS=enc-ci:ci-encryption-key-material-32-bytes-long TOKHUB_CREDENTIAL_ACTIVE_FINGERPRINT_KEY_ID=fp-ci TOKHUB_CREDENTIAL_FINGERPRINT_KEYS=fp-ci:ci-fingerprint-key-material-32-bytes-long bash deploy/scripts/preflight.sh --env-file .env.production.example",
     "test:smoke": "bash deploy/scripts/smoke.sh",
     "test:no-demo-smoke": "bash deploy/scripts/no-demo-smoke.sh",
     "test:fresh-prod": "bash deploy/scripts/fresh-prod-check.sh",
@@ -44,7 +44,7 @@
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-i18next": "^17.0.8",
-    "react-router-dom": "^7.10.1",
+    "react-router-dom": "7.18.1",
     "read-excel-file": "^9.2.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.0"
@@ -56,6 +56,7 @@
     "@types/react-dom": "^19.2.3"
   },
   "overrides": {
-    "esbuild": "0.28.1"
+    "esbuild": "0.28.1",
+    "postcss": "8.5.23"
   }
 }

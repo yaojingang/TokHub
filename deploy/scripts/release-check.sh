@@ -46,6 +46,10 @@ run_production_sample_preflight() {
   echo "==> production preflight sample"
   TOKHUB_SECRET_KEY=ci-production-sample-secret-key-32-bytes \
     TOKHUB_ADMIN_PASSWORD=ci-production-admin-password \
+    TOKHUB_CREDENTIAL_ACTIVE_KEY_ID=enc-ci \
+    TOKHUB_CREDENTIAL_ENCRYPTION_KEYS=enc-ci:ci-encryption-key-material-32-bytes-long \
+    TOKHUB_CREDENTIAL_ACTIVE_FINGERPRINT_KEY_ID=fp-ci \
+    TOKHUB_CREDENTIAL_FINGERPRINT_KEYS=fp-ci:ci-fingerprint-key-material-32-bytes-long \
     deploy/scripts/preflight.sh --env-file .env.production.example
 }
 

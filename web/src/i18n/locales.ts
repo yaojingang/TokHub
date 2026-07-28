@@ -122,6 +122,7 @@ export const resources = {
       },
       nav: {
         home: "控制台首页",
+        connections: "AI 服务连接",
         channels: "我的通道",
         gateways: "专属中转站",
         keys: "成员与密钥",
@@ -133,6 +134,7 @@ export const resources = {
       },
       crumbs: {
         home: "/ 工作区",
+        connections: "/ 工作区 / AI 连接",
         channels: "/ 工作区 / 通道",
         gateways: "/ 工作区 / 网关",
         keys: "/ 工作区 / 访问管理",
@@ -283,6 +285,7 @@ export const resources = {
       },
       nav: {
         home: "Console Home",
+        connections: "AI Connections",
         channels: "My Channels",
         gateways: "Dedicated Gateways",
         keys: "Members and Keys",
@@ -294,6 +297,7 @@ export const resources = {
       },
       crumbs: {
         home: "/ Workspace",
+        connections: "/ Workspace / AI Connections",
         channels: "/ Workspace / Channels",
         gateways: "/ Workspace / Gateways",
         keys: "/ Workspace / Access",

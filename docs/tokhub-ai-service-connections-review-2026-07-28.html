@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TokHub AI 服务连接升级评审与 sub2api 对照</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172033;
+      --muted: #64708a;
+      --line: #dfe5ef;
+      --paper: #ffffff;
+      --wash: #f5f7fb;
+      --brand: #2459d3;
+      --brand-soft: #eaf0ff;
+      --green: #13795b;
+      --green-soft: #e9f8f1;
+      --amber: #a05a00;
+      --amber-soft: #fff6df;
+      --red: #b42318;
+      --red-soft: #fff0ee;
+      --shadow: 0 18px 48px rgba(24, 39, 75, .09);
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--wash);
+      color: var(--ink);
+      font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+      line-height: 1.68;
+    }
+    a { color: var(--brand); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code {
+      padding: 2px 5px;
+      border-radius: 5px;
+      background: #edf1f7;
+      color: #33415f;
+      font-family: "SFMono-Regular", Consolas, monospace;
+      font-size: .9em;
+    }
+    .page { width: min(1240px, calc(100% - 32px)); margin: 28px auto 72px; }
+    .hero {
+      overflow: hidden;
+      padding: 42px;
+      border: 1px solid #cbd8f4;
+      border-radius: 24px;
+      background:
+        radial-gradient(circle at 88% 14%, rgba(67, 111, 224, .22), transparent 32%),
+        linear-gradient(135deg, #f8faff 0%, #eef3ff 100%);
+      box-shadow: var(--shadow);
+    }
+    .eyebrow {
+      display: inline-flex;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: var(--brand-soft);
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .08em;
+    }
+    h1 { max-width: 900px; margin: 18px 0 12px; font-size: clamp(30px, 5vw, 54px); line-height: 1.12; letter-spacing: -.04em; }
+    .hero p { max-width: 880px; margin: 0; color: #43506a; font-size: 17px; }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      margin-top: 26px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 24px; margin-top: 24px; }
+    nav {
+      position: sticky;
+      top: 18px;
+      align-self: start;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--paper);
+      box-shadow: 0 10px 28px rgba(24, 39, 75, .05);
+    }
+    nav b { display: block; margin-bottom: 9px; font-size: 12px; color: var(--muted); }
+    nav a { display: block; padding: 7px 8px; border-radius: 8px; color: #41506d; font-size: 13px; }
+    nav a:hover { background: var(--brand-soft); text-decoration: none; }
+    main { min-width: 0; }
+    section {
+      margin-bottom: 22px;
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--paper);
+      box-shadow: 0 12px 34px rgba(24, 39, 75, .05);
+    }
+    h2 { margin: 0 0 14px; font-size: 24px; letter-spacing: -.025em; }
+    h3 { margin: 22px 0 10px; font-size: 17px; }
+    p { margin: 9px 0; }
+    .lead { color: #35415b; font-size: 16px; }
+    .verdict {
+      padding: 16px 18px;
+      border-left: 4px solid var(--green);
+      border-radius: 10px;
+      background: var(--green-soft);
+    }
+    .verdict b { color: var(--green); }
+    .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+    .card { padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: #fbfcfe; }
+    .card span { display: block; color: var(--muted); font-size: 11px; font-weight: 700; }
+    .card strong { display: block; margin-top: 6px; font-size: 23px; }
+    .card small { display: block; margin-top: 4px; color: var(--muted); }
+    .table-wrap { overflow-x: auto; margin-top: 14px; border: 1px solid var(--line); border-radius: 12px; }
+    table { width: 100%; border-collapse: collapse; min-width: 780px; font-size: 13px; }
+    th, td { padding: 12px 13px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { background: #f4f7fb; color: #43506a; font-size: 11px; letter-spacing: .04em; }
+    tr:last-child td { border-bottom: 0; }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .done { background: var(--green-soft); color: var(--green); }
+    .next { background: var(--amber-soft); color: var(--amber); }
+    .risk { background: var(--red-soft); color: var(--red); }
+    .info { background: var(--brand-soft); color: var(--brand); }
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .flow div {
+      position: relative;
+      min-height: 126px;
+      padding: 14px;
+      border: 1px solid #cfd9ec;
+      border-radius: 12px;
+      background: #f9fbff;
+    }
+    .flow div::after {
+      content: "›";
+      position: absolute;
+      top: 43px;
+      right: -9px;
+      z-index: 2;
+      color: #8ba0c7;
+      font-size: 26px;
+    }
+    .flow div:last-child::after { display: none; }
+    .flow b { display: block; color: var(--brand); font-size: 12px; }
+    .flow p { margin: 7px 0 0; color: #4b5872; font-size: 12px; line-height: 1.55; }
+    .callout { margin-top: 16px; padding: 14px 16px; border-radius: 11px; background: var(--amber-soft); color: #70460d; font-size: 13px; }
+    ul { margin: 10px 0 0; padding-left: 20px; }
+    li { margin: 6px 0; }
+    .footnote { color: var(--muted); font-size: 12px; }
+    footer { padding: 8px 4px; color: var(--muted); font-size: 12px; text-align: center; }
+    @media (max-width: 940px) {
+      .layout { grid-template-columns: 1fr; }
+      nav { position: static; display: flex; flex-wrap: wrap; gap: 4px; }
+      nav b { width: 100%; }
+      nav a { display: inline-block; }
+      .cards { grid-template-columns: 1fr 1fr; }
+      .flow { grid-template-columns: 1fr; }
+      .flow div { min-height: auto; }
+      .flow div::after { display: none; }
+    }
+    @media (max-width: 620px) {
+      .page { width: min(100% - 20px, 1240px); margin-top: 10px; }
+      .hero, section { padding: 21px; border-radius: 15px; }
+      .cards { grid-template-columns: 1fr; }
+      h1 { font-size: 34px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <span class="eyebrow">REVIEW SNAPSHOT · 2026-07-28</span>
+      <h1>TokHub AI 服务连接升级评审与 sub2api 对照</h1>
+      <p>本报告检查普通用户导入官方开发者凭证、按模型验证、一键创建个人中转、运行时取密和注销清理这条完整链路，并用 sub2api 当前主分支的账号池、调度和风控设计做对照。</p>
+      <div class="meta">
+        <span>TokHub 基线：<code>9cdcd2559610</code> 上的未提交功能变更</span>
+        <span>sub2api 对照：<code>origin/main 0ef2228ce9d2</code></span>
+        <span>评审深度：深度审查</span>
+        <span>公开来源：<a href="https://github.com/Wei-Shaw/sub2api">Wei-Shaw/sub2api</a></span>
+      </div>
+    </header>
+
+    <div class="layout">
+      <nav aria-label="报告目录">
+        <b>报告目录</b>
+        <a href="#verdict">评审结论</a>
+        <a href="#fixed">本轮已修</a>
+        <a href="#flow">当前完整链路</a>
+        <a href="#same">共同能力</a>
+        <a href="#different">差异对照</a>
+        <a href="#providers">服务商支持</a>
+        <a href="#review">双路审查</a>
+        <a href="#backlog">后续升级</a>
+        <a href="#verification">验证证据</a>
+      </nav>
+
+      <main>
+        <section id="verdict">
+          <h2>评审结论</h2>
+          <div class="verdict">
+            <b>当前版本可以进入受控内测。</b>
+            <p>凭证存储、租户隔离、模型选择、幂等创建、删除清理和计费提示已经形成闭环。生产开放前仍需补齐服务商级开关、运行时状态机、能力目录和密钥批量重加密。</p>
+          </div>
+          <div class="cards">
+            <div class="card"><span>官方服务商</span><strong>7 家</strong><small>OpenAI、Gemini、Kimi、DeepSeek、豆包、Claude、千问</small></div>
+            <div class="card"><span>本轮高确定性修正</span><strong>14 项</strong><small>覆盖权限、凭证、计费、模型目录、迁移和运行链路</small></div>
+            <div class="card"><span>新增长期测试点</span><strong>10+ 类</strong><small>含租户边界、密钥分离、重复凭据、部分模型可用、注销清理和目录生命周期</small></div>
+          </div>
+        </section>
+
+        <section id="fixed">
+          <h2>本轮已经修正的问题</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>问题</th><th>触发条件和影响</th><th>处理结果</th><th>位置</th></tr></thead>
+              <tbody>
+                <tr><td>请求模型可越过网关绑定范围</td><td>调用方提交未配置模型时，旧路由仍可能选到任意健康上游。</td><td><span class="tag done">已修</span> 候选上游按请求模型精确过滤；未绑定模型返回稳定的 <code>model_not_available</code>。</td><td><code>internal/api/gateway_handlers.go</code></td></tr>
+                <tr><td>模型列表暴露服务商完整目录</td><td>真实上游模式会透传服务商的全部模型列表，范围大于中转站授权模型。</td><td><span class="tag done">已修</span> <code>/models</code> 只返回当前网关中健康且已绑定的模型。</td><td><code>internal/api/gateway_handlers.go</code></td></tr>
+                <tr><td>用户注销后保留 AI 连接密文</td><td>管理员删除用户时，旧流程只清理私有通道凭证。</td><td><span class="tag done">已修</span> 连接密文和一次性密钥密文同步擦除，受管通道停用，空网关暂停，相关调用密钥吊销。</td><td><code>internal/store/admin_governance.go</code></td></tr>
+                <tr><td>连接可以直接落入共享工作区</td><td>工作区操作员可把个人凭证接入共享网关，成员关系变化后缺少独立授权和撤销边界。</td><td><span class="tag done">已修</span> 所有 AI 服务连接固定归属个人工作区，客户端工作区 Header 不参与归属选择；运行时同时检查连接所有者和个人成员关系。</td><td><code>internal/api/connection_handlers.go</code><br><code>internal/store/gateway.go</code></td></tr>
+                <tr><td>多模型验证采用整体状态</td><td>一个模型失败会把同一凭证下所有模型标为不可用。</td><td><span class="tag done">已修</span> 每个模型独立记录结果、错误和耗时；连接处于 <code>attention</code> 时，已验证模型仍能创建中转。</td><td><code>internal/api/connection_handlers.go</code><br><code>internal/store/connections.go</code></td></tr>
+                <tr><td>付费验证缺少明确确认</td><td>创建、复验和轮换会调用最小生成请求，服务商可能计费。</td><td><span class="tag done">已修</span> API 强制 <code>confirmBillable</code>；创建和轮换提供勾选确认，复验提供二次确认，审计记录确认状态。</td><td><code>web/src/pages/AIConnectionsPage.tsx</code><br><code>internal/api/connection_handlers.go</code></td></tr>
+                <tr><td>重复凭据可以反复接入</td><td>同一用户在相同工作区、服务商和 Endpoint 下重复导入同一凭据。</td><td><span class="tag done">已修</span> 用 HMAC 指纹预检并在事务内加锁复核，创建和轮换都返回冲突。</td><td><code>internal/store/connections.go</code></td></tr>
+                <tr><td>密钥环故障不影响就绪状态</td><td>配置缺失或旧 Key ID 提前移除时，服务仍可能接收流量。</td><td><span class="tag done">已修</span> <code>/readyz</code> 在凭证密钥环不可用时返回 503，容器健康检查改用就绪端点。</td><td><code>internal/api/server.go</code><br><code>cmd/tokhub/main.go</code></td></tr>
+                <tr><td>生产凭证密钥静默回落到全局密钥</td><td>绕过预检直接启动时，新导入凭证可能复用 <code>TOKHUB_SECRET_KEY</code>，加密和指纹材料也可能相同。</td><td><span class="tag done">已修</span> 生产环境取消回落；加密和指纹密钥材料强制分离；开发回落使用两个独立派生上下文。</td><td><code>internal/api/config.go</code><br><code>internal/crypto/keyring.go</code></td></tr>
+                <tr><td>凭证请求体没有读取上限</td><td>攻击者可在字段长度校验前提交超大 JSON。</td><td><span class="tag done">已修</span> 连接创建、复验、轮换和快速中转统一限制为 64 KiB。</td><td><code>internal/api/connection_handlers.go</code></td></tr>
+                <tr><td>配额名称与实际计数不一致</td><td>界面写“每月 Token 配额”，服务端实际累计请求次数。</td><td><span class="tag done">已修</span> 界面改为“累计请求次数上限”，API 文档补充现有字段语义。</td><td><code>web/src/pages/AIConnectionsPage.tsx</code><br><code>docs/API.md</code></td></tr>
+                <tr><td>默认模型目录存在生命周期漂移</td><td>Claude Sonnet 4 已退役，Opus 4.1 临近退役；Kimi 的旧预览默认项缺少当前稳定目录依据。</td><td><span class="tag done">已修</span> Claude 默认值更新为 Opus 4.8 和 Sonnet 5；Kimi 只保留官方页面可确认的 K2.5，并增加回归测试。</td><td><code>internal/connections/registry.go</code><br><code>internal/connections/registry_test.go</code></td></tr>
+                <tr><td>分角色部署重复运行 Reveal 清理器</td><td>API、Gateway、Prober 和 Worker 副本会同时扫描同一过期队列。</td><td><span class="tag done">已修</span> 单体模式由 <code>all</code> 负责，分角色模式只由 <code>worker</code> 负责。</td><td><code>cmd/tokhub/main.go</code></td></tr>
+                <tr><td>远端主分支新增同号数据库迁移</td><td>远端已经使用 0045 更新推广链接，本地 AI 连接迁移原先也使用 0045。</td><td><span class="tag done">已修</span> AI 连接迁移顺延为 0046，并在最新远端主分支合并态完成全量迁移验证。</td><td><code>db/migrations/0046_ai_service_connections.sql</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="flow">
+          <h2>当前完整链路</h2>
+          <div class="flow">
+            <div><b>1. 选择服务</b><p>从固定注册表选择服务商、地域和产品线。Endpoint 由服务端生成，客户端不能提交任意地址。</p></div>
+            <div><b>2. 导入凭证</b><p>仅接受官方开发者 API Key。用户确认最小验证可能产生费用。</p></div>
+            <div><b>3. 按模型验证</b><p>模型列表探测最多一次，配置模型最多四并发验证，整组最多 25 秒。</p></div>
+            <div><b>4. 加密保存</b><p>AES-256-GCM 保存密文，独立 HMAC Key 生成指纹，响应只展示 mask。</p></div>
+            <div><b>5. 快速中转</b><p>只选已验证模型，事务创建受管通道、网关和调用密钥，幂等结果保留 10 分钟。</p></div>
+          </div>
+          <div class="callout">运行时读取凭证时会再次检查连接所有者状态、个人工作区成员关系、连接状态、模型启用状态和模型验证状态。删除连接、删除用户、停用用户或移除成员关系都会切断这条链路。</div>
+        </section>
+
+        <section id="same">
+          <h2>TokHub 与 sub2api 的共同能力</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>能力</th><th>sub2api</th><th>TokHub 当前实现</th><th>一致程度</th></tr></thead>
+              <tbody>
+                <tr><td>多服务商接入</td><td>以账号类型和平台配置接入多家模型服务。</td><td>固定注册表覆盖七家官方开发者产品线。</td><td><span class="tag done">高度一致</span></td></tr>
+                <tr><td>统一 API 中转</td><td>把上游账号能力转换为统一 API，面向配额分发。</td><td>把用户凭证封装成个人网关、受管通道和 Gateway Key。</td><td><span class="tag done">高度一致</span></td></tr>
+                <tr><td>模型级路由</td><td>账号模型映射、模型可用性和调度共同决定候选。</td><td>请求模型必须和网关绑定模型一致，模型验证结果参与运行时取密。</td><td><span class="tag info">主要链路一致</span></td></tr>
+                <tr><td>凭证验证</td><td>按账号类型执行测试、能力探测和错误归类。</td><td>服务商注册表定义验证模式，并对每个配置模型执行最小生成。</td><td><span class="tag info">目标一致</span></td></tr>
+                <tr><td>限流和故障隔离</td><td>账号、用户、分组等多层限制，配合冷却和调度状态。</td><td>Gateway Key QPS、累计请求上限、内存或 Redis 熔断。</td><td><span class="tag next">基础一致</span></td></tr>
+                <tr><td>用量和审计</td><td>记录调用、配额、刷新和调度相关状态。</td><td>记录网关事件、Token、成本估算、连接验证和敏感操作审计。</td><td><span class="tag done">高度一致</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="different">
+          <h2>两套系统的关键差异</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>维度</th><th>sub2api</th><th>TokHub</th><th>评审判断</th></tr></thead>
+              <tbody>
+                <tr><td>产品重心</td><td>账号池、订阅额度分发和高吞吐调度。</td><td>渠道观测、工作区网关、个人凭证连接和治理。</td><td>两者可以共享调度思想，数据模型和用户边界需要保持各自语义。</td></tr>
+                <tr><td>凭证来源</td><td>覆盖 OAuth、Cookie、Session 和多类账号凭证，项目主页明确提示服务商条款和封号风险。</td><td>本轮只接受官方开发者 API Key，拒绝密码、验证码、浏览器 Cookie 和消费者登录态。</td><td>TokHub 当前策略更适合普通用户自助接入，也减少条款和账号安全风险。</td></tr>
+                <tr><td>静态凭证存储</td><td>当前账号仓储以 JSONB 保存 credentials，并在响应层集中脱敏。</td><td>凭证使用版本化 AES-256-GCM 加密，HMAC 指纹和加密 Key 分离。</td><td>TokHub 的静态凭证保护更完整；sub2api 的集中脱敏注册表值得吸收。</td></tr>
+                <tr><td>账号状态机</td><td>区分 active、schedulable、过期、限流、过载、临时不可调度和会话窗口。</td><td>连接主状态为 active、attention、disabled、deleted；模型有 verified、unverified、disabled。</td><td>TokHub 已补模型级状态，运行时冷却和过载状态仍有差距。</td></tr>
+                <tr><td>401、403、429 处理</td><td>按服务商和错误语义刷新、冷却、暂停或降低调度资格。</td><td>当前统一映射为认证错误、限流、上游不可用，并开启 30 秒熔断。</td><td>TokHub 需要连接级错误状态和可持久化冷却时间。</td></tr>
+                <tr><td>令牌刷新</td><td>有刷新器注册表、并发和 QPS 门控、刷新锁、失败阈值和缓存失效。</td><td>首版只支持 API Key，不做 OAuth 自动刷新。</td><td>等正式 OAuth 上线时复用 sub2api 的刷新治理思路。</td></tr>
+                <tr><td>调度一致性</td><td>有调度 Outbox、缓存失效、并发控制和账号选择测试。</td><td>沿用网关路由和 Redis 计划缓存，连接状态变更直接影响数据库查询。</td><td>规模扩大后需要 Outbox 或版本化缓存失效。</td></tr>
+                <tr><td>用户交付</td><td>偏管理端账号池和 API 分发。</td><td>普通用户在个人工作区完成连接、验证、轮换、删除和快速中转。</td><td>TokHub 的个人用户闭环更完整。</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="providers">
+          <h2>七家服务商支持范围</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>服务</th><th>开发者产品线</th><th>协议适配</th><th>验证方式</th><th>首版凭证</th></tr></thead>
+              <tbody>
+                <tr><td>ChatGPT / OpenAI</td><td>OpenAI Platform</td><td>Responses、OpenAI</td><td>模型列表加最小生成</td><td>Project API Key</td></tr>
+                <tr><td>Gemini</td><td>Google AI Studio</td><td>Gemini generateContent</td><td>模型列表加最小生成</td><td>API Key</td></tr>
+                <tr><td>Kimi</td><td>Moonshot Open Platform</td><td>OpenAI Compatible</td><td>模型列表加最小生成</td><td>API Key</td></tr>
+                <tr><td>DeepSeek</td><td>DeepSeek Open Platform</td><td>OpenAI Compatible</td><td>最小生成</td><td>API Key</td></tr>
+                <tr><td>豆包</td><td>火山方舟按量调用</td><td>OpenAI Compatible、Responses</td><td>最小生成</td><td>ARK API Key</td></tr>
+                <tr><td>Claude</td><td>Anthropic Console</td><td>Anthropic Messages</td><td>最小生成</td><td>API Key</td></tr>
+                <tr><td>千问</td><td>阿里云百炼按量付费</td><td>OpenAI Compatible</td><td>最小生成</td><td>Model Studio API Key</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="footnote">具体模型名和地域会随服务商更新。当前代码用固定注册表和受控 Endpoint 模板降低任意上游地址带来的风险，正式开放前仍需逐家完成真实凭证验收。</p>
+        </section>
+
+        <section id="review">
+          <h2>双路独立审查结果</h2>
+          <h3>工程标准审查</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>级别</th><th>原始发现</th><th>本轮处理</th></tr></thead>
+              <tbody>
+                <tr><td><span class="tag risk">P1</span></td><td>密钥环初始化失败只写日志，<code>readyz</code> 仍可能成功。</td><td><span class="tag done">已修</span> 纳入就绪检查，容器健康检查同步切换。</td></tr>
+                <tr><td><span class="tag next">P2</span></td><td>凭证接口在完整 JSON 读取后才做字段长度校验。</td><td><span class="tag done">已修</span> 增加 64 KiB 请求体上限和回归测试。</td></tr>
+                <tr><td><span class="tag next">P2</span></td><td>模型验证状态默认值为 <code>verified</code>。</td><td><span class="tag done">已修</span> 数据库默认值改为 <code>unverified</code>。</td></tr>
+                <tr><td><span class="tag info">P3</span></td><td>React Router 和 PostCSS 版本升级扩大变更范围。</td><td>保留升级，单列为依赖安全修复；当前 <code>npm audit</code> 仍有 React Router RSC 路径的上游告警。</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3>方案符合度审查</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>原始发现</th><th>本轮处理</th><th>当前状态</th></tr></thead>
+              <tbody>
+                <tr><td>请求模型没有参与候选过滤。</td><td>增加精确模型过滤，并收紧模型列表响应。</td><td><span class="tag done">已修</span></td></tr>
+                <tr><td>删除用户没有销毁连接密文。</td><td>把连接、受管通道、中转站和调用密钥纳入注销事务。</td><td><span class="tag done">已修</span></td></tr>
+                <tr><td>付费生成验证缺少用户确认。</td><td>API、界面和审计同时增加确认。</td><td><span class="tag done">已修</span></td></tr>
+                <tr><td>运行时只有统一 30 秒熔断。</td><td>本轮保留现有熔断，下一阶段加入持久化冷却、并发和错误状态机。</td><td><span class="tag next">待升级</span></td></tr>
+                <tr><td>注册表缺少 deployment mode、能力目录、策略期限和服务商级开关。</td><td>Endpoint 和凭证类型已经受控；策略与能力治理列入生产开放门禁。</td><td><span class="tag next">待升级</span></td></tr>
+                <tr><td>页面名称和配额文案不准确。</td><td>统一改为“AI 服务连接”和“累计请求次数上限”。</td><td><span class="tag done">已修</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="backlog">
+          <h2>后续升级顺序</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>优先级</th><th>升级项</th><th>参考 sub2api 的部分</th><th>验收标准</th></tr></thead>
+              <tbody>
+                <tr><td><span class="tag risk">P0</span></td><td>服务商级创建和运行开关、deployment mode、策略复核期限</td><td>账号类型和服务商配置集中治理</td><td>七家均可独立停止新增和运行；策略过期自动禁止新增；自托管和托管模式有不同允许列表。</td></tr>
+                <tr><td><span class="tag risk">P0</span></td><td>连接运行时状态机</td><td><code>rate_limit_reset_at</code>、<code>overload_until</code>、临时不可调度和错误分类</td><td>401 进入重新授权，403 区分权限、地域和策略，429 按重置时间冷却，5xx 采用有上限退避。</td></tr>
+                <tr><td><span class="tag next">P1</span></td><td>模型能力目录和稳定错误</td><td>能力探测和模型可用性测试</td><td>文本、流式、工具、多模态、结构化输出等能力按模型保存；未验证能力返回 <code>unsupported_feature</code>。</td></tr>
+                <tr><td><span class="tag next">P1</span></td><td>连接并发、公平队列和请求 attempt</td><td>账号并发、QPS 门控、调度选择和故障切换</td><td>每个连接有并发上限；排队可观测；每次候选尝试有结构化事件；重试不会形成无界风暴。</td></tr>
+                <tr><td><span class="tag next">P1</span></td><td>密钥批量重加密和旧 Key 退役</td><td>集中凭证持久化和生命周期管理思路</td><td>后台按批次把旧 Key ID 密文迁到 active Key；有进度、失败重试和旧 Key 安全删除门禁。</td></tr>
+                <tr><td><span class="tag next">P1</span></td><td>共享工作区凭证授权</td><td>账号池的权限边界和调度资格</td><td>连接所有者发起 <code>route_only</code> grant，工作区管理员接受；运行时检查授权、成员关系和双方状态；任一方撤销后关联路由和 Key 立即失效。</td></tr>
+                <tr><td><span class="tag info">P2</span></td><td>模型目录 TTL、创建连接幂等和细分监控</td><td>缓存失效、Outbox 和分页任务</td><td>目录过期阻止新启用；创建连接支持幂等 Key；监控按服务商、模型和连接汇总且控制标签基数。</td></tr>
+                <tr><td><span class="tag info">P2</span></td><td>正式 OAuth</td><td>刷新器注册表、刷新锁、QPS 门控和熔断</td><td>每家服务商经过官方授权和条款审核后独立上线；PKCE、state、回调绑定、重放和刷新并发测试通过。</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="callout">HMAC 指纹 Key 轮换期间，同一明文凭证可能分别留下旧指纹和新指纹。批量重加密阶段应同步重算指纹，并在旧指纹清零前保留跨 Key ID 的重复检查策略。</div>
+        </section>
+
+        <section id="verification">
+          <h2>本轮验证证据</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>检查</th><th>结果</th><th>覆盖范围</th></tr></thead>
+              <tbody>
+                <tr><td><code>go test ./...</code></td><td><span class="tag done">通过</span></td><td>后端单元测试和现有业务测试。</td></tr>
+                <tr><td>干净数据库迁移</td><td><span class="tag done">通过</span></td><td>从 0001 到 0046 全量迁移，包含远端主分支新增的 0045 推广链接更新。</td></tr>
+                <tr><td>数据库集成测试 <code>-count=3</code></td><td><span class="tag done">通过</span></td><td>重复凭据、模型级状态、注意状态中转、幂等并发、删除和注销清理。</td></tr>
+                <tr><td><code>npm run typecheck</code></td><td><span class="tag done">通过</span></td><td>前端类型检查。</td></tr>
+                <tr><td><code>npm run build</code></td><td><span class="tag next">通过，有包体建议</span></td><td>前端生产构建成功；主业务块约 1,014.43 kB，后续可按控制台模块拆包。</td></tr>
+                <tr><td>隔离快照 <code>npm run release:check</code></td><td><span class="tag done">通过</span></td><td>全量 Go 测试、静态检查、sqlc 漂移、前端检查、安全扫描、Compose 配置和生产预检。</td></tr>
+                <tr><td>Helm 3.17.3 <code>lint</code></td><td><span class="tag done">通过</span></td><td>部署 Chart 结构和模板检查，只有缺少图标的建议项。</td></tr>
+                <tr><td>Docker Compose 重建</td><td><span class="tag done">通过</span></td><td>应用、迁移和初始化镜像；<code>/readyz</code> 和 <code>/healthz</code> 返回成功。</td></tr>
+                <tr><td>Playwright 375 px 流程</td><td><span class="tag done">通过</span></td><td>七家目录、千问地域和 Workspace ID、凭证字段、移动端无横向溢出。</td></tr>
+                <tr><td>官方模型目录复核</td><td><span class="tag done">已更新</span></td><td><a href="https://developers.openai.com/api/docs/models/gpt-5.5">OpenAI</a>、<a href="https://ai.google.dev/gemini-api/docs/models">Gemini</a>、<a href="https://platform.claude.com/docs/en/docs/about-claude/model-deprecations">Claude</a>、<a href="https://api-docs.deepseek.com/updates/">DeepSeek</a>、<a href="https://www.volcengine.com/docs/82379/1795150">豆包</a>、<a href="https://help.aliyun.com/en/model-studio/model-pricing">千问</a>和 <a href="https://platform.moonshot.ai/docs/guide/prompt-best-practice">Kimi</a>。</td></tr>
+                <tr><td><code>npm audit --omit=dev</code></td><td><span class="tag next">2 项上游告警</span></td><td>当前剩余 React Router RSC 路径相关高危告警；TokHub 没有启用该 RSC 能力，仍需跟随上游安全版本。</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="footnote">本报告是 2026-07-28 的代码评审快照。服务商 API、模型名、政策和依赖告警会变化，生产上线前需要重新执行真实凭证验收和依赖审计。</p>
+        </section>
+      </main>
+    </div>
+
+    <footer>TokHub AI 服务连接升级评审 · 2026-07-28</footer>
+  </div>
+</body>
+</html>

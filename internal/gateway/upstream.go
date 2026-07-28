@@ -168,7 +168,7 @@ func (c *UpstreamClient) newRequest(ctx context.Context, upstream Upstream, apiK
 	if endpoint == "" {
 		return nil, fmt.Errorf("endpoint is required")
 	}
-	target := joinEndpointPath(upstream.adapterKind(), endpoint, path)
+	target := joinEndpointPathForUpstream(upstream, endpoint, path)
 	req, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -193,6 +193,20 @@ func (c *UpstreamClient) newRequest(ctx context.Context, upstream Upstream, apiK
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 	return req, nil
+}
+
+func joinEndpointPathForUpstream(upstream Upstream, endpoint string, path string) string {
+	if mode, ok := configString(upstream.ProviderConfig, "pathMode"); ok && strings.EqualFold(mode, "direct") {
+		endpoint = strings.TrimRight(strings.TrimSpace(endpoint), "/")
+		path = "/" + strings.TrimLeft(path, "/")
+		parsed, err := url.Parse(endpoint)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			return endpoint + path
+		}
+		parsed.Path = strings.TrimRight(parsed.Path, "/") + path
+		return parsed.String()
+	}
+	return joinEndpointPath(upstream.adapterKind(), endpoint, path)
 }
 
 func applyClientProfileHeaders(req *http.Request, config map[string]any) {

@@ -6,6 +6,10 @@ image:
 publicUrl: http://tokhub.local
 adminEmail: admin@tokhub.local
 secretKey: dev-only-change-this-secret-key-32b
+credentialActiveKeyId: legacy-v1
+credentialEncryptionKeys: ""
+credentialActiveFingerprintKeyId: legacy-v1
+credentialFingerprintKeys: ""
 databaseUrl: postgres://tokhub:tokhub@postgres:5432/tokhub?sslmode=disable
 redisUrl: redis://redis:6379/0
 natsUrl: nats://nats:4222

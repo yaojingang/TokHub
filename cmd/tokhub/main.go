@@ -62,6 +62,31 @@ func main() {
 	}
 
 	repo := store.NewRepository(db)
+	if shouldExpireAIQuickRelayReveals(cfg.Role) {
+		go func() {
+			expire := func() {
+				expired, err := repo.ExpireAIQuickRelayReveals(ctx)
+				if err != nil {
+					logger.Warn("expire AI quick relay reveals", "error", err)
+					return
+				}
+				if expired > 0 {
+					logger.Info("expired AI quick relay reveals", "count", expired)
+				}
+			}
+			expire()
+			ticker := time.NewTicker(time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					expire()
+				}
+			}
+		}()
+	}
 	authSvc := auth.NewService(repo, cfg.SecretKey, cfg.SessionSecure, logger)
 	probeRunner, err := prober.NewRunnerWithSecretKey(repo, logger, cfg.SeedMode != "prod", cfg.SecretKey)
 	if err != nil {
@@ -115,6 +140,10 @@ func main() {
 	logger.Info("shutdown complete")
 }
 
+func shouldExpireAIQuickRelayReveals(role string) bool {
+	return role == "all" || role == "worker"
+}
+
 func runHealthcheck() {
 	port := os.Getenv("TOKHUB_PORT")
 	if port == "" {
@@ -123,7 +152,7 @@ func runHealthcheck() {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://127.0.0.1:"+port+"/healthz", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://127.0.0.1:"+port+"/readyz", nil)
 	if err != nil {
 		os.Exit(1)
 	}

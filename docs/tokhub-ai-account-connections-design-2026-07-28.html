@@ -1,0 +1,1587 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TokHub AI 服务连接与个人中转站方案 v2</title>
+  <style>
+    :root {
+      --ink: #172033;
+      --muted: #60708a;
+      --line: #dbe3ef;
+      --paper: #ffffff;
+      --canvas: #f4f7fb;
+      --navy: #172b5f;
+      --blue: #356df3;
+      --blue-soft: #eaf0ff;
+      --green: #13795b;
+      --green-soft: #e8f7f0;
+      --amber: #a15c00;
+      --amber-soft: #fff4d8;
+      --red: #b42318;
+      --red-soft: #ffebe9;
+      --violet: #6842c2;
+      --violet-soft: #f2edff;
+      --shadow: 0 18px 50px rgba(28, 49, 93, .10);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 10% 0, rgba(53, 109, 243, .10), transparent 31rem),
+        radial-gradient(circle at 100% 20%, rgba(104, 66, 194, .08), transparent 28rem),
+        var(--canvas);
+      font: 15px/1.72 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
+    }
+
+    a { color: var(--blue); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    code, pre, .mono {
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    }
+    code {
+      padding: .13em .38em;
+      border: 1px solid #d9e1ee;
+      border-radius: 6px;
+      background: #f6f8fc;
+      color: #21345d;
+      font-size: .91em;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 250px minmax(0, 1fr);
+      min-height: 100vh;
+    }
+    .nav {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 30px 22px;
+      color: #dce5ff;
+      background: linear-gradient(180deg, #132655, #1a356d 68%, #142751);
+      overflow-y: auto;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      margin-bottom: 28px;
+    }
+    .brand-mark {
+      display: grid;
+      width: 38px;
+      height: 38px;
+      place-items: center;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #7ba0ff, #4d76e4);
+      color: white;
+      font-weight: 800;
+      box-shadow: 0 10px 24px rgba(28, 54, 123, .45);
+    }
+    .brand b { display: block; color: white; font-size: 17px; }
+    .brand small { display: block; color: #aebce1; }
+    .nav h2 {
+      margin: 22px 10px 8px;
+      color: #8fa4d8;
+      font-size: 11px;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+    }
+    .nav a {
+      display: block;
+      padding: 7px 10px;
+      border-radius: 8px;
+      color: #dbe4ff;
+      font-size: 13px;
+    }
+    .nav a:hover {
+      background: rgba(255, 255, 255, .08);
+      color: white;
+      text-decoration: none;
+    }
+    .nav-note {
+      margin-top: 24px;
+      padding: 12px;
+      border: 1px solid rgba(255, 255, 255, .12);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, .05);
+      color: #bac8e9;
+      font-size: 12px;
+    }
+
+    .main { min-width: 0; padding: 42px 4.2vw 80px; }
+    .page { max-width: 1180px; margin: 0 auto; }
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: 54px 56px;
+      border-radius: 24px;
+      color: white;
+      background: linear-gradient(125deg, #172b5f 0%, #214898 58%, #4b4db7 100%);
+      box-shadow: var(--shadow);
+    }
+    .hero::after {
+      position: absolute;
+      right: -90px;
+      bottom: -110px;
+      width: 340px;
+      height: 340px;
+      border: 55px solid rgba(255, 255, 255, .09);
+      border-radius: 50%;
+      content: "";
+    }
+    .hero .eyebrow {
+      margin-bottom: 15px;
+      color: #bed0ff;
+      font-weight: 700;
+      letter-spacing: .08em;
+    }
+    .hero h1 {
+      max-width: 850px;
+      margin: 0 0 16px;
+      font-size: clamp(32px, 5vw, 54px);
+      line-height: 1.13;
+      letter-spacing: -.035em;
+    }
+    .hero p {
+      max-width: 870px;
+      margin: 0;
+      color: #dce6ff;
+      font-size: 17px;
+    }
+    .hero-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 27px;
+    }
+    .hero-meta span {
+      padding: 6px 10px;
+      border: 1px solid rgba(255, 255, 255, .18);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .08);
+      color: #eef3ff;
+      font-size: 12px;
+    }
+
+    section {
+      margin-top: 28px;
+      padding: 30px 34px;
+      border: 1px solid rgba(218, 227, 240, .9);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, .96);
+      box-shadow: 0 10px 30px rgba(28, 49, 93, .05);
+    }
+    section h2 {
+      margin: 0 0 8px;
+      color: var(--navy);
+      font-size: 25px;
+      line-height: 1.25;
+    }
+    section h3 {
+      margin: 26px 0 8px;
+      color: #24385f;
+      font-size: 18px;
+    }
+    section > p:first-of-type { margin-top: 8px; }
+    .lead { color: var(--muted); font-size: 16px; }
+    .anchor { scroll-margin-top: 25px; }
+    .callout {
+      margin: 18px 0;
+      padding: 17px 19px;
+      border-left: 4px solid var(--blue);
+      border-radius: 0 12px 12px 0;
+      background: var(--blue-soft);
+    }
+    .callout strong { color: #214eae; }
+    .callout.warn { border-color: #e09b28; background: var(--amber-soft); }
+    .callout.warn strong { color: var(--amber); }
+    .callout.danger { border-color: #d34336; background: var(--red-soft); }
+    .callout.danger strong { color: var(--red); }
+    .callout.success { border-color: #20a177; background: var(--green-soft); }
+    .callout.success strong { color: var(--green); }
+
+    .decision-grid, .card-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+    .decision, .card {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fbfcff;
+    }
+    .decision b, .card b {
+      display: block;
+      margin-bottom: 5px;
+      color: #1c356b;
+      font-size: 16px;
+    }
+    .decision p, .card p { margin: 0; color: var(--muted); }
+    .num {
+      display: inline-grid;
+      width: 25px;
+      height: 25px;
+      margin-right: 7px;
+      place-items: center;
+      border-radius: 8px;
+      background: var(--blue-soft);
+      color: var(--blue);
+      font-weight: 800;
+      font-size: 12px;
+    }
+
+    .table-wrap {
+      margin: 16px 0 4px;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+      font-size: 13.5px;
+    }
+    th {
+      padding: 12px 13px;
+      border-bottom: 1px solid var(--line);
+      color: #33496f;
+      background: #f3f6fb;
+      text-align: left;
+      white-space: nowrap;
+    }
+    td {
+      padding: 12px 13px;
+      border-bottom: 1px solid #e7ecf4;
+      vertical-align: top;
+    }
+    tr:last-child td { border-bottom: 0; }
+    tbody tr:hover { background: #fbfcff; }
+    .yes, .good { color: var(--green); font-weight: 700; }
+    .later { color: var(--amber); font-weight: 700; }
+    .no, .risk { color: var(--red); font-weight: 700; }
+    .tag {
+      display: inline-block;
+      margin: 1px 3px 1px 0;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: var(--blue-soft);
+      color: #2b5bca;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .tag.green { background: var(--green-soft); color: var(--green); }
+    .tag.amber { background: var(--amber-soft); color: var(--amber); }
+    .tag.red { background: var(--red-soft); color: var(--red); }
+    .tag.violet { background: var(--violet-soft); color: var(--violet); }
+
+    .flow {
+      margin: 18px 0;
+      padding: 20px;
+      overflow-x: auto;
+      border: 1px solid #d8e1f1;
+      border-radius: 14px;
+      color: #dce8ff;
+      background: #17233f;
+      font-size: 12.5px;
+      line-height: 1.55;
+    }
+    ol, ul { padding-left: 1.35em; }
+    li + li { margin-top: 6px; }
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(135px, 1fr));
+      gap: 9px;
+      margin: 18px 0;
+    }
+    .step {
+      position: relative;
+      padding: 15px 13px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fbfcff;
+    }
+    .step b { display: block; color: #203c78; }
+    .step small { color: var(--muted); }
+
+    .phase {
+      display: grid;
+      grid-template-columns: 130px minmax(0, 1fr);
+      gap: 18px;
+      padding: 20px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .phase:last-child { border-bottom: 0; }
+    .phase-label {
+      height: fit-content;
+      padding: 9px 10px;
+      border-radius: 10px;
+      color: white;
+      background: linear-gradient(135deg, #315cc2, #6b55c8);
+      text-align: center;
+      font-weight: 800;
+    }
+    .phase h3 { margin: 0 0 6px; }
+    .phase p { margin: 5px 0; }
+
+    .checklist {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 18px;
+    }
+    .check {
+      padding: 14px 15px;
+      border: 1px solid #cad7ee;
+      border-radius: 11px;
+      background: #f7f9fd;
+    }
+    .check::before {
+      margin-right: 7px;
+      color: var(--blue);
+      content: "□";
+      font-weight: 800;
+    }
+    .sources li { margin-bottom: 8px; }
+    .footer {
+      margin: 28px 0 0;
+      color: #7a879d;
+      text-align: center;
+      font-size: 12px;
+    }
+
+    @media (max-width: 980px) {
+      .layout { display: block; }
+      .nav { position: relative; width: 100%; height: auto; }
+      .nav h2, .nav a, .nav-note { display: none; }
+      .brand { margin: 0; }
+      .main { padding: 22px 16px 60px; }
+      .hero { padding: 38px 27px; }
+      section { padding: 24px 20px; }
+      .decision-grid, .card-grid, .checklist { grid-template-columns: 1fr; }
+      .steps { grid-template-columns: 1fr; }
+      .phase { grid-template-columns: 1fr; }
+      .phase-label { width: 120px; }
+    }
+
+    @media print {
+      body { background: white; }
+      .layout { display: block; }
+      .nav { display: none; }
+      .main { padding: 0; }
+      .hero, section { box-shadow: none; break-inside: avoid; }
+      a { color: inherit; }
+    }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="nav">
+    <div class="brand">
+      <span class="brand-mark">T</span>
+      <span><b>TokHub</b><small>方案评审稿 v2</small></span>
+    </div>
+    <h2>判断</h2>
+    <a href="#summary">结论与决策</a>
+    <a href="#review">Review 结论</a>
+    <a href="#boundary">官方能力边界</a>
+    <a href="#sub2api">sub2api 借鉴</a>
+    <h2>产品</h2>
+    <a href="#experience">入口与用户流程</a>
+    <a href="#sharing">个人与小组共享</a>
+    <h2>技术</h2>
+    <a href="#architecture">总体架构</a>
+    <a href="#model">数据模型</a>
+    <a href="#api">接口设计</a>
+    <a href="#routing">运行时与调度</a>
+    <h2>治理</h2>
+    <a href="#risk">风控与安全</a>
+    <a href="#observability">监控与告警</a>
+    <a href="#delivery">实施与回滚</a>
+    <a href="#approval">待确认项</a>
+    <div class="nav-note">
+      调研基线<br>
+      TokHub <span class="mono">9cdcd255</span><br>
+      sub2api <span class="mono">1aeacf4d</span><br>
+      2026-07-28
+    </div>
+  </aside>
+
+  <main class="main">
+    <article class="page">
+      <header class="hero">
+        <div class="eyebrow">REVIEWED PRODUCT AND ARCHITECTURE PROPOSAL</div>
+        <h1>AI 服务连接与个人中转站</h1>
+        <p>
+          面向 TokHub 普通用户的自助连接、凭证托管、个人中转和工作区共享方案。
+          方案覆盖 OpenAI、Gemini、Kimi、DeepSeek、豆包、Claude、千问七家主流服务，
+          吸收 sub2api 的授权、账号状态、配额与调度机制，同时沿用 TokHub 已有的租户隔离、Gateway Key、探测、用量和审计能力。
+        </p>
+        <div class="hero-meta">
+          <span>状态：待产品确认</span>
+          <span>实施：本轮未修改业务代码</span>
+          <span>Review：2026-07-28 完成</span>
+          <span>首版：七家官方开发者凭证</span>
+          <span>共享方式：工作区仅路由授权</span>
+        </div>
+      </header>
+
+      <section id="summary" class="anchor">
+        <h2>1. 结论与核心决策</h2>
+        <p class="lead">
+          推荐在用户控制台新增一级入口“AI 服务连接”，把提供者授权、凭证生命周期、模型能力和网关路由拆成清晰的资源层。
+          现有“我的通道”继续服务手工配置和自定义兼容端点，新入口负责官方提供者的标准化连接。
+        </p>
+        <div class="decision-grid">
+          <div class="decision">
+            <b><span class="num">1</span>产品入口</b>
+            <p>左侧导航增加“AI 服务连接”，地址为 <code>/console/connections</code>。首页增加“连接 AI 服务”快速卡片。</p>
+          </div>
+          <div class="decision">
+            <b><span class="num">2</span>首版授权范围</b>
+            <p>七家均支持官方开发者凭证。用户选择产品线和区域，TokHub 从注册表生成固定上游地址，不接受任意 URL。</p>
+          </div>
+          <div class="decision">
+            <b><span class="num">3</span>OAuth 范围</b>
+            <p>Gemini 在 TokHub 自有 OAuth 客户端通过生产审核后上线。OpenAI、Claude 的工作负载身份联合单列为企业能力，不复用消费者登录。</p>
+          </div>
+          <div class="decision">
+            <b><span class="num">4</span>共享模型</b>
+            <p>连接归个人所有。共享时授予工作区“仅路由”权限，成员可调用中转站，凭证始终不可见。</p>
+          </div>
+          <div class="decision">
+            <b><span class="num">5</span>路由复用</b>
+            <p>每个连接生成受管通道，继续使用现有 Gateway、Gateway Key、熔断、探测、用量和审计链路。</p>
+          </div>
+          <div class="decision">
+            <b><span class="num">6</span>高风险能力</b>
+            <p>网页 Cookie、Session Token、账号密码、验证码、浏览器存储、Codex CLI 与 Gemini CLI 登录态均无导入路径。</p>
+          </div>
+        </div>
+
+        <div class="callout success">
+          <strong>推荐发布定义：</strong>
+          用户把专门创建的官方 AI 开发者凭证连接到 TokHub，TokHub 为个人或受邀工作区生成统一中转入口。
+          对外主协议使用 OpenAI 兼容接口，各提供者的能力差异由适配器和模型能力目录明确表达。
+        </div>
+        <div class="callout danger">
+          <strong>实施前置红线：</strong>
+          消费订阅登录态不会进入共享池。ChatGPT 登录只提供身份信息，ChatGPT 订阅与 API 分开计费；
+          Gemini CLI 禁止第三方服务借用其 OAuth；Claude 账号与 Claude Console 独立；Kimi 会员、Kimi Code 和 Kimi 开放平台相互独立。
+          首版连接对象统一为允许产品集成的开发者凭证。
+        </div>
+      </section>
+
+      <section id="review" class="anchor">
+        <h2>Review 结论：方案可进入确认，实施需通过九项门禁</h2>
+        <p class="lead">
+          本轮按安全、架构、产品和逆向故障四个视角复核。原方案主链路成立，以下缺口已经补入本版设计和验收标准。
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+            <tr><th>级别</th><th>发现</th><th>本版处理</th><th>关闭条件</th></tr>
+            </thead>
+            <tbody>
+            <tr><td><span class="tag red">阻断</span></td><td>“AI 账号”容易被理解为消费者账号和订阅额度</td><td>页面主名称改为“AI 服务连接”，每家展示开发者平台、凭证来源、计费归属和排除项</td><td>七家向导文案与官方产品线逐项核对</td></tr>
+            <tr><td><span class="tag red">阻断</span></td><td>原方案只覆盖三家，区域、项目和工作空间字段不足</td><td>增加七家 Provider Registry、区域端点、产品线和必填元数据</td><td>七家真实凭证 RC 全部通过</td></tr>
+            <tr><td><span class="tag red">阻断</span></td><td>现有单主密钥缺少无中断轮换</td><td>采用版本化 keyring、active-write、multi-read 和批量重加密</td><td>旧密钥退出演练和备份恢复演练通过</td></tr>
+            <tr><td><span class="tag amber">高</span></td><td>OpenAI 兼容只描述了请求外形，未定义能力损失</td><td>建立模型能力目录和请求契约，未知或不支持字段返回明确错误</td><td>文本、流式、工具、多模态、结构化输出逐模型验收</td></tr>
+            <tr><td><span class="tag amber">高</span></td><td>共享授权缺少 owner、admin、operator、viewer 的完整矩阵</td><td>连接所有者发起，工作区 owner 或 admin 接受，operator 只能操作已接受的 binding</td><td>权限集成测试与越权测试通过</td></tr>
+            <tr><td><span class="tag amber">高</span></td><td>定时生成探测会消耗用户余额</td><td>默认只做无计费验证和运行时被动健康，付费探测由用户显式开启并设置预算</td><td>无授权付费探测测试通过</td></tr>
+            <tr><td><span class="tag amber">高</span></td><td>创建连接、通道和 Gateway 的跨资源一致性不足</td><td>数据库事务、Idempotency-Key 和 outbox 共同保证原子性与可恢复性</td><td>重复请求、Worker 重启和 NATS 故障测试通过</td></tr>
+            <tr><td><span class="tag amber">高</span></td><td>自托管与 TokHub 托管服务的凭证责任边界不同</td><td>Provider Policy 增加 deployment_mode；托管模式逐提供者完成条款和隐私审核后开放</td><td>policy_version、披露文案和关闭开关齐备</td></tr>
+            <tr><td><span class="tag">中</span></td><td>连接规模扩大后，固定周期探测会形成请求尖峰</td><td>分片调度、随机抖动、活跃度分级和全局探测预算</td><td>十倍连接量压测无探测风暴</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout warn">
+          <strong>最脆弱的假设：</strong>
+          用户口中的“登录自己的 AI 账号”可能指直接消耗 ChatGPT、Claude、Gemini 等消费者订阅。
+          七家没有一套共同、公开、允许第三方中转的消费者授权协议。方案以官方开发者凭证为稳定基线；
+          未来某家开放正式授权时，通过 Provider Registry 单独增加，不影响其余连接和网关。
+        </div>
+      </section>
+
+      <section id="boundary" class="anchor">
+        <h2>2. 七家提供者的官方能力边界</h2>
+        <p class="lead">
+          用户账号、消费者订阅、开发者平台和 API 凭证属于不同资产。TokHub 首版只接收允许服务端调用的开发者凭证，
+          并要求用户为 TokHub 单独创建、限制权限和预算。
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+            <tr>
+              <th>提供者</th>
+              <th>首版正式支持</th>
+              <th>固定协议与区域</th>
+              <th>后续可评估</th>
+              <th>明确排除</th>
+              <th>上线校验</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr>
+              <td><b>OpenAI / ChatGPT</b></td>
+              <td><span class="yes">OpenAI Platform 项目 API Key</span></td>
+              <td><code>api.openai.com/v1</code>；Responses 和 Chat Completions</td>
+              <td>面向企业自托管的 Workload Identity Federation；正式模型调用授权 scope</td>
+              <td><span class="no">ChatGPT Cookie、Codex CLI 客户端授权、消费者订阅共享</span></td>
+              <td>项目归属、模型列表、最小请求；明确提示 ChatGPT 订阅与 API 分开计费</td>
+            </tr>
+            <tr>
+              <td><b>Google Gemini</b></td>
+              <td><span class="yes">AI Studio Authorization Key</span></td>
+              <td><code>generativelanguage.googleapis.com</code>；Interactions 或 generateContent</td>
+              <td>TokHub 自有 OAuth 客户端、正式 consent 和 scope 审核；Vertex AI 项目凭证</td>
+              <td><span class="no">复用 Gemini CLI OAuth、Gemini 网页 Cookie</span></td>
+              <td>拒绝不受限 Standard Key；在 2026 年 9 月前完成 Auth Key 迁移检查</td>
+            </tr>
+            <tr>
+              <td><b>Kimi</b></td>
+              <td><span class="yes">Kimi 开放平台 API Key</span></td>
+              <td>中国 <code>api.moonshot.cn/v1</code>；国际 <code>api.moonshot.ai/v1</code>；OpenAI Chat</td>
+              <td>开放平台发布正式 OAuth 后单独评估</td>
+              <td><span class="no">Kimi 网页会话、会员登录态、Kimi Code 登录态</span></td>
+              <td>区域、Key 产品线、余额和模型列表必须匹配；会员权益不转换为开放平台余额</td>
+            </tr>
+            <tr>
+              <td><b>DeepSeek</b></td>
+              <td><span class="yes">DeepSeek Open Platform API Key</span></td>
+              <td><code>api.deepseek.com</code>；首版固定 OpenAI Chat 协议</td>
+              <td>Anthropic 兼容协议；官方发布第三方 OAuth 后再增加</td>
+              <td><span class="no">DeepSeek 网页登录态、账号密码托管</span></td>
+              <td>模型、余额、401、402、429、503 分类；终端用户披露和内容治理门禁</td>
+            </tr>
+            <tr>
+              <td><b>豆包 / 火山方舟</b></td>
+              <td><span class="yes">方舟推理 API Key</span></td>
+              <td><code>ark.cn-beijing.volces.com/api/v3</code>；Responses 或 Chat</td>
+              <td>其它正式区域和企业 IAM 方式按官方文档增加</td>
+              <td><span class="no">豆包网页会话、Coding Plan 非授权用途</span></td>
+              <td>区域、推理接入点或模型 ID、API Key 产品线必须匹配</td>
+            </tr>
+            <tr>
+              <td><b>Claude / Anthropic</b></td>
+              <td><span class="yes">Claude Console API Key</span></td>
+              <td><code>api.anthropic.com/v1/messages</code>；Anthropic Messages</td>
+              <td>自托管企业可评估 Workload Identity Federation</td>
+              <td><span class="no">Claude.ai Cookie、Claude Code 消费者登录态</span></td>
+              <td>Key 到期时间、workspace、模型列表和 <code>anthropic-version</code>；Claude 与 Console 独立</td>
+            </tr>
+            <tr>
+              <td><b>千问 / 阿里云百炼</b></td>
+              <td><span class="yes">百炼按量付费 API Key</span></td>
+              <td>按区域和 Workspace ID 生成 API Host；首版使用 OpenAI 兼容 Chat</td>
+              <td>Anthropic 兼容协议、RAM 短期凭证和企业身份能力</td>
+              <td><span class="no">千问网页会话；Token Plan、Coding Plan 用于自定义应用</span></td>
+              <td>区域、Workspace ID、Key 类型和 Base URL 成对验证；识别 <code>sk-ws</code> 新 Key</td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout warn">
+          <strong>页面措辞：</strong>
+          使用“连接 AI 服务”“开发者凭证”“计费由提供者账号承担”。
+          TokHub 不接收提供者账号密码、验证码和消费者 Session。OAuth 页面始终由提供者托管，API Key 由用户在开发者控制台创建后导入。
+        </div>
+
+        <h3>2.1 Provider Registry 是唯一配置来源</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>注册项</th><th>作用</th><th>失败策略</th></tr></thead>
+            <tbody>
+            <tr><td>产品线与 deployment_mode</td><td>区分开放平台、消费者订阅、Coding Plan、自托管和 TokHub 托管</td><td>未明确允许的组合关闭创建和运行</td></tr>
+            <tr><td>区域与 endpoint 模板</td><td>由 region、workspace_id、project_id 等受控字段生成地址</td><td>未知区域或不合法标识直接拒绝，不接受用户 URL</td></tr>
+            <tr><td>auth schema</td><td>定义 API Key、Authorization Key、WIF、正式 OAuth 的字段和请求头</td><td>未注册的凭证类型无解析代码路径</td></tr>
+            <tr><td>协议与能力</td><td>标记 Chat、Responses、Messages、generateContent 以及流式、工具、多模态等能力</td><td>不支持的字段返回 <code>unsupported_feature</code></td></tr>
+            <tr><td>policy_version</td><td>记录官方条款、隐私披露和最近复核日期</td><td>过期时关闭新增；严重变化可按提供者关闭运行</td></tr>
+            <tr><td>验证与错误映射</td><td>定义无计费验证、最小计费验证、错误码、限速和余额语义</td><td>未知错误不触发无界重试</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>2.2 七家共同承诺和差异表达</h3>
+        <p>
+          首版共同承诺是文本对话、SSE 流式、Token 计量、明确错误和模型选择。工具调用、多模态、结构化输出、推理强度、
+          上下文缓存和服务端会话按模型能力目录开放。网关收到未验证能力时返回 400，
+          响应包含 <code>provider</code>、<code>model</code>、<code>feature</code> 和稳定错误码，禁止静默删除字段或改用低能力模型。
+        </p>
+
+        <h3>2.3 单个提供者上线门禁</h3>
+        <div class="checklist">
+          <div class="check">官方文档、服务条款、产品线和部署模式完成复核，写入 policy_version。</div>
+          <div class="check">固定 endpoint、请求头 allowlist、区域字段和 SSRF 测试通过。</div>
+          <div class="check">真实测试账号完成创建、验证、模型发现、调用、限流、余额不足和撤销。</div>
+          <div class="check">数据流、计费归属、终端用户披露、内容治理和隐私文案可见。</div>
+          <div class="check">提供者级创建开关、运行开关和紧急停用开关完成演练。</div>
+          <div class="check">模型能力目录和价格版本有来源、复核时间、过期策略和回滚版本。</div>
+        </div>
+      </section>
+
+      <section id="sub2api" class="anchor">
+        <h2>3. sub2api 的机制借鉴与 TokHub 改造方向</h2>
+        <p class="lead">
+          sub2api 当前的 OpenAI、Gemini OAuth 入口均在管理员 API 下，普通用户无法自助接入。
+          其账号调度能力值得参考，租户模型、凭证保护和 OAuth 会话需要按 TokHub 的安全边界重构。
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+            <tr>
+              <th>主题</th>
+              <th>sub2api 当前做法</th>
+              <th>TokHub 采用内容</th>
+              <th>TokHub 增强内容</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr>
+              <td>接入权限</td>
+              <td>OpenAI、Gemini OAuth 位于 <code>/api/v1/admin/*</code></td>
+              <td>授权向导、账号状态、刷新、配额探测</td>
+              <td>连接归用户所有，工作区通过 grant 获得仅路由权限</td>
+            </tr>
+            <tr>
+              <td>OAuth 安全</td>
+              <td>随机 state、PKCE S256、授权码交换</td>
+              <td>完整保留 state、PKCE、一次性交换</td>
+              <td>绑定 TokHub 用户、浏览器会话、提供者、固定 callback；Redis 共享存储；TTL 从 30 分钟收紧到 10 分钟</td>
+            </tr>
+            <tr>
+              <td>OAuth 会话</td>
+              <td>进程内存 Map，多副本切换会丢失</td>
+              <td>短期会话和成功后删除</td>
+              <td>Redis 加密负载，Redis 故障时授权流程关闭，运行时中转继续</td>
+            </tr>
+            <tr>
+              <td>凭证存储</td>
+              <td><code>accounts.credentials</code> JSONB 直接持久化凭证</td>
+              <td>版本化凭证结构和提供者元数据</td>
+              <td>AES-256-GCM 密文、Nonce、指纹、Mask、密钥版本；API 响应和审计不含密文</td>
+            </tr>
+            <tr>
+              <td>授权方式</td>
+              <td>OAuth、API Key、Cookie、Session Token、PAT 等多种导入</td>
+              <td>官方 API Key 和正式 OAuth</td>
+              <td>Provider Registry、部署模式和产品线门禁，非官方登录态无代码路径</td>
+            </tr>
+            <tr>
+              <td>回调地址</td>
+              <td>部分流程接受客户端 redirect URI，Gemini 从 Origin 或代理头推导</td>
+              <td>托管 callback 体验</td>
+              <td>仅从 <code>TOKHUB_PUBLIC_URL</code> 生成，逐提供者精确 allowlist</td>
+            </tr>
+            <tr>
+              <td>调度</td>
+              <td>账号并发、优先级、限速冷却、过载、粘性和配额状态</td>
+              <td>连接并发槽、429 冷却、401 停用、优先级和健康调度</td>
+              <td>复用现有 Gateway 排序和熔断，增加连接级并发、公平队列与 attempt 事件</td>
+            </tr>
+            <tr>
+              <td>账号分组</td>
+              <td>账号加入一个或多个管理员分组</td>
+              <td>资源池和模型映射思想</td>
+              <td>个人连接、工作区 grant、Gateway binding 三层权限</td>
+            </tr>
+            <tr>
+              <td>配额和刷新</td>
+              <td>可查询计划、到期、额度并刷新 Token</td>
+              <td>到期预警、后台刷新、失败重授权</td>
+              <td>刷新分布式锁、抖动、状态机、密钥轮换审计</td>
+            </tr>
+            <tr>
+              <td>代理</td>
+              <td>管理员可为账号指定代理</td>
+              <td>平台统一出口配置</td>
+              <td>普通用户不填写代理，防止出口滥用和 SSRF 旁路</td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="experience" class="anchor">
+        <h2>4. 用户中心入口与完整体验</h2>
+        <h3>4.1 导航和首页</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+            <tr><th>位置</th><th>设计</th><th>触发条件</th><th>目标</th></tr>
+            </thead>
+            <tbody>
+            <tr>
+              <td>控制台左侧导航</td>
+              <td>在“通道资源”分组首位增加 <b>AI 服务连接</b>，图标使用链路符号，路由 <code>/console/connections</code></td>
+              <td>全部已登录用户可见</td>
+              <td>建立稳定一级入口</td>
+            </tr>
+            <tr>
+              <td>控制台首页</td>
+              <td>增加“连接你的第一个 AI 服务”卡片，展示已连接数、健康数、待重授权数</td>
+              <td>无连接时显示引导，有连接时显示摘要</td>
+              <td>降低首次配置成本</td>
+            </tr>
+            <tr>
+              <td>我的通道</td>
+              <td>保留“手工添加 API 通道”，增加“从 AI 服务连接生成”入口</td>
+              <td>连接已验证且发现模型</td>
+              <td>兼容现有用户和自定义上游</td>
+            </tr>
+            <tr>
+              <td>专属中转站</td>
+              <td>增加“一键用此连接创建中转站”按钮</td>
+              <td>连接 active 且至少有一个启用模型</td>
+              <td>把连接到可调用入口压缩为一次操作</td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>4.2 连接向导</h3>
+        <div class="steps">
+          <div class="step"><b>1. 选择提供者</b><small>七家官方服务</small></div>
+          <div class="step"><b>2. 选择产品线</b><small>区域、项目或 Workspace</small></div>
+          <div class="step"><b>3. 导入凭证</b><small>专用 API Key 或已启用 OAuth</small></div>
+          <div class="step"><b>4. 选择模型</b><small>默认启用推荐模型，可继续调整</small></div>
+          <div class="step"><b>5. 创建中转</b><small>个人使用或工作区共享</small></div>
+        </div>
+        <ol>
+          <li>选择提供者后，页面展示官方开发者控制台链接、支持的产品线、所需权限、TokHub 保存的数据和撤销方式。</li>
+          <li>选择区域、项目或 Workspace。页面只提供 Provider Registry 中的选项，由服务端生成固定 endpoint。</li>
+          <li>API Key 在提交后立即加密，页面只显示 Mask 和指纹。OAuth 在新窗口或当前窗口跳转到提供者域名。</li>
+          <li>服务端优先执行无计费验证，获取可展示账号标签、可用模型、配额信息和过期时间。必须调用模型时，页面提前展示预计费用并由用户确认。</li>
+          <li>模型选择页显示“已验证”“可能计费”“能力未知”等标签。用户可关闭高成本模型。</li>
+          <li>完成页提供“稍后配置”和“一键创建个人中转站”。后者使用 Idempotency-Key，原子创建 Gateway、binding 和一次性 Gateway Key。</li>
+        </ol>
+
+        <h3>4.3 连接列表和详情</h3>
+        <div class="card-grid">
+          <div class="card"><b>连接卡片</b><p>提供者、账号标签、授权方式、状态、到期时间、健康度、模型数、共享范围、最近调用。</p></div>
+          <div class="card"><b>健康与额度</b><p>最近验证、401/403/429、剩余额度比例、重置时间、Token 刷新结果和延迟。</p></div>
+          <div class="card"><b>安全</b><p>凭证 Mask、指纹、创建者、授权时间、最近轮换、工作区 grant、撤销入口。</p></div>
+          <div class="card"><b>使用</b><p>请求、Token、估算成本、成功率、首字节延迟、关联中转站和 Gateway Key。</p></div>
+        </div>
+      </section>
+
+      <section id="sharing" class="anchor">
+        <h2>5. 个人中转与小组共享模型</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+            <tr><th>维度</th><th>个人模式</th><th>小组 / 工作区模式</th></tr>
+            </thead>
+            <tbody>
+            <tr>
+              <td>资源归属</td>
+              <td>连接归当前用户，默认只用于个人工作区</td>
+              <td>连接仍归提供者账号持有人，工作区获得可撤销的 route_only grant</td>
+            </tr>
+            <tr>
+              <td>凭证可见性</td>
+              <td>所有页面只显示 Mask 和指纹</td>
+              <td>工作区 owner、admin、operator 和 viewer 均无法读取凭证</td>
+            </tr>
+            <tr>
+              <td>开通方式</td>
+              <td>连接验证后直接一键创建个人 Gateway</td>
+              <td>连接持有人发起共享，工作区 owner 或 admin 接受，随后由可操作角色绑定到共享 Gateway</td>
+            </tr>
+            <tr>
+              <td>调用身份</td>
+              <td>用户持有个人 Gateway Key</td>
+              <td>每个成员创建自己的 Gateway Key，Key 关联 subject_user_id</td>
+            </tr>
+            <tr>
+              <td>额度</td>
+              <td>Gateway Key、Gateway、Connection 三层限制</td>
+              <td>增加成员级限制，来源账号持有人可以设置共享总预算</td>
+            </tr>
+            <tr>
+              <td>撤销</td>
+              <td>撤销连接后关联 binding 立即停用</td>
+              <td>连接持有人可随时撤销 grant；成员退出工作区时其 Key 自动吊销</td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout">
+          <strong>推荐的小组使用方式：</strong>
+          每位成员优先连接自己的开发者凭证，共享 Gateway 汇聚多个连接。
+          单个连接也可以主动授权给小型工作区，系统保持 route_only、独立成员 Key、明确额度和完整审计。
+        </div>
+        <div class="callout warn">
+          <strong>默认约束：</strong>
+          Starter 工作区最多 6 名可调用成员；共享连接最多 12 个；连接持有人可设置允许模型、总月请求、总 Token 和并发上限。
+          用户可以下调限制。提高平台上限需要管理员配置。
+        </div>
+
+        <h3>5.1 权限矩阵</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>动作</th><th>连接所有者</th><th>工作区 owner / admin</th><th>operator</th><th>viewer</th></tr></thead>
+            <tbody>
+            <tr><td>创建、轮换、撤销个人连接</td><td class="yes">允许</td><td>仅限自己的连接</td><td>仅限自己的连接</td><td>仅限自己的连接</td></tr>
+            <tr><td>发起或撤销 grant</td><td class="yes">允许</td><td>无权替连接所有者发起</td><td class="no">禁止</td><td class="no">禁止</td></tr>
+            <tr><td>接受或拒绝 grant</td><td>连接所有者不能代工作区接受</td><td class="yes">允许</td><td class="no">禁止</td><td class="no">禁止</td></tr>
+            <tr><td>绑定已接受连接</td><td>需同时具备工作区操作权限</td><td class="yes">允许</td><td class="yes">允许</td><td class="no">禁止</td></tr>
+            <tr><td>设置共享总预算</td><td class="yes">可设置上限</td><td>可设置不高于所有者上限的工作区预算</td><td>可下调运行预算</td><td class="no">禁止</td></tr>
+            <tr><td>查看凭证</td><td class="no">只见 Mask</td><td class="no">只见 Mask</td><td class="no">只见 Mask</td><td class="no">只见 Mask</td></tr>
+            <tr><td>创建个人调用 Key</td><td>按工作区角色</td><td class="yes">允许</td><td class="yes">允许</td><td>由 owner 或 admin 分配</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout warn">
+          <strong>共享知情：</strong>
+          成员首次使用共享连接前，页面说明请求会发送到连接所有者的提供者项目，费用由连接所有者承担，
+          数据处理与保留遵循对应提供者政策。成员确认后才签发可用 Gateway Key。
+        </div>
+      </section>
+
+      <section id="architecture" class="anchor">
+        <h2>6. 总体架构</h2>
+        <p class="lead">
+          控制面负责连接、授权、共享和健康。数据面继续由现有 TokHub Gateway 承担。
+          连接通过受管通道接入现有路由系统，凭证解析集中在 Provider Credential Resolver。
+        </p>
+        <pre class="flow">┌──────────────────────── TokHub 用户控制台 ────────────────────────┐
+│ AI 服务连接 → 产品线与区域 → 凭证验证 → 模型选择 → 个人 / 小组中转 │
+└─────────────────┬─────────────────────────────┬──────────────────┘
+                  │                             │
+                  v                             v
+┌──────────────────────────┐       ┌──────────────────────────────┐
+│ Connection Control API   │       │ OAuth Transaction Service    │
+│ 所有权、grant、状态机     │       │ state、PKCE、会话、固定回调   │
+└────────────┬─────────────┘       └──────────────┬───────────────┘
+             │                                     │
+             v                                     v
+┌──────────────────────────┐       ┌──────────────────────────────┐
+│ PostgreSQL + Outbox      │       │ Redis                        │
+│ 连接、模型、授权、审计    │       │ OAuth、刷新锁、并发、公平队列 │
+└────────────┬─────────────┘       └──────────────────────────────┘
+             │
+             v
+┌──────────────────────────┐       ┌──────────────────────────────┐
+│ Versioned Secret Keyring │──────→│ Provider Registry + Adapters │
+│ AES-GCM、key_id、HMAC    │       │ OpenAI 兼容、Gemini、Claude  │
+└────────────┬─────────────┘       └──────────────┬───────────────┘
+             │                                     │
+             v                                     v
+┌──────────────────────────┐       ┌──────────────────────────────┐
+│ Managed Channels        │──────→│ TokHub Gateway               │
+│ 模型和能力版本化绑定      │       │ Key、预算、熔断、切换、计量   │
+└──────────────────────────┘       └──────────────┬───────────────┘
+                                                   │
+                                                   v
+                              ┌───────────────────────────────────┐
+                              │ 七家官方 API                      │
+                              │ Prompt 和响应正文默认不写 TokHub  │
+                              └───────────────────────────────────┘</pre>
+
+        <h3>6.1 Provider Adapter 内部契约</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+            <tr><th>能力</th><th>职责</th><th>失败处理</th></tr>
+            </thead>
+            <tbody>
+            <tr><td><code>StartAuthorization</code></td><td>生成官方授权地址，写入 state、PKCE 和用户绑定</td><td>配置或 Redis 不可用时关闭 OAuth 入口</td></tr>
+            <tr><td><code>ExchangeAuthorization</code></td><td>一次性交换授权码，生成版本化密文</td><td>state 不匹配、过期、重放统一拒绝</td></tr>
+            <tr><td><code>Validate</code></td><td>按 Provider Registry 执行无计费验证或经用户确认的最小请求</td><td>创建阶段失败不进入路由；运行中凭证错误进入 reauth_required</td></tr>
+            <tr><td><code>Refresh</code></td><td>在到期前刷新 Token，原子更新密文</td><td>分布式锁、指数退避、三次失败告警</td></tr>
+            <tr><td><code>DiscoverModels</code></td><td>合并官方模型列表、账号可用模型和 TokHub 能力目录</td><td>保留上次成功快照并标记 stale；超过 24 小时禁止启用新模型</td></tr>
+            <tr><td><code>FetchQuota</code></td><td>在官方接口可用时读取余额、配额和重置时间</td><td>能力缺失显示 unknown，不阻断路由</td></tr>
+            <tr><td><code>ResolveAuthMaterial</code></td><td>向 Gateway 提供内存中的 API Key、Bearer Token 或 Google 项目元数据</td><td>密文不可解或已撤销时禁止请求</td></tr>
+            <tr><td><code>BuildRequest</code></td><td>按已验证能力生成固定地址、请求头和请求体</td><td>未知字段、请求头覆盖和不支持能力直接拒绝</td></tr>
+            <tr><td><code>NormalizeResponse</code></td><td>统一非流式、SSE、用量和提供者 request ID</td><td>上游协议异常进入稳定错误分类，不回传敏感原文</td></tr>
+            <tr><td><code>Revoke</code></td><td>调用官方撤销能力并销毁本地密文</td><td>上游不支持自动撤销时提示用户到官方控制台处理</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>6.2 适配器分层减少七家重复实现</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>层</th><th>覆盖提供者</th><th>职责</th></tr></thead>
+            <tbody>
+            <tr><td>OpenAI Compatible Core</td><td>OpenAI、Kimi、DeepSeek、豆包、千问</td><td>复用 Chat、Responses、SSE 和 Bearer 认证骨架，按 manifest 开关功能和扩展字段</td></tr>
+            <tr><td>Gemini Native Adapter</td><td>Gemini</td><td>转换 generateContent 或 Interactions、<code>x-goog-api-key</code>、模型路径和用量</td></tr>
+            <tr><td>Anthropic Native Adapter</td><td>Claude</td><td>转换 Messages、<code>x-api-key</code>、<code>anthropic-version</code> 和 SSE 事件</td></tr>
+            <tr><td>Provider Manifest</td><td>七家</td><td>端点、区域、产品线、错误码、限速、能力和策略版本</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          “兼容 OpenAI”只表示使用共同骨架。每个提供者仍有独立契约测试和能力开关，
+          任一专有字段都要经过 manifest 和适配器确认后开放。
+        </p>
+
+        <h3>6.3 模型能力目录</h3>
+        <p>
+          模型列表由“内置已验证目录、提供者实时发现、管理员覆盖”三层合并。每条模型记录包含文本、图片、音频、视频、
+          流式、工具调用、并行工具、结构化输出、推理强度、上下文缓存、最大上下文、最大输出、协议和价格版本。
+          提供者实时列表只决定账号能否看到模型，不能自动声明能力。模型版本变化后先进入 <code>pending_verification</code>，
+          通过契约测试才可以加入默认推荐列表。
+        </p>
+      </section>
+
+      <section id="model" class="anchor">
+        <h2>7. 数据模型与状态机</h2>
+        <h3>7.1 新增和扩展表</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+            <tr><th>表 / 变更</th><th>关键字段</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+            <tr>
+              <td><code>ai_connections</code></td>
+              <td>id, owner_user_id, provider, product_line, region, auth_method, endpoint_profile, provider_project_ref, display_name, account_label, status, health_status, policy_version, token_expires_at, last_validated_at, created_at</td>
+              <td>用户级连接主表。project_ref 只保存经过格式校验的项目或 Workspace 标识，account_label 只保存可展示信息。</td>
+            </tr>
+            <tr>
+              <td><code>ai_connection_secrets</code></td>
+              <td>connection_id, ciphertext, nonce, fingerprint_hmac, mask, algorithm, encryption_key_id, fingerprint_key_id, secret_schema_version, rotated_at</td>
+              <td>一对一密文信封。指纹使用 owner 和 provider 域内 HMAC，只用于本用户重复提示，不能用于跨用户关联。</td>
+            </tr>
+            <tr>
+              <td><code>ai_connection_models</code></td>
+              <td>connection_id, provider_model_id, enabled, verification_status, capability_profile_id, route_channel_id, discovered_at, verified_at</td>
+              <td>账号模型发现结果。能力引用版本化目录，启用模型关联一个受管 channel。</td>
+            </tr>
+            <tr>
+              <td><code>provider_capability_profiles</code></td>
+              <td>provider, product_line, region, model_pattern, protocol, capability_json, source_url, verified_at, expires_at, version</td>
+              <td>七家模型和协议能力目录。管理员覆盖也必须保留来源、操作人和版本。</td>
+            </tr>
+            <tr>
+              <td><code>ai_connection_grants</code></td>
+              <td>connection_id, org_id, scope, status, requested_by, accepted_by, consent_version, allowed_models, request_limit, token_limit, cost_limit, concurrency_limit, revoked_at</td>
+              <td>个人到工作区的 route_only 授权。双向同意、预算和披露版本可审计，连接所有权不会转移。</td>
+            </tr>
+            <tr>
+              <td><code>ai_connection_events</code></td>
+              <td>connection_id, actor_id, action, result, reason_code, metadata, created_at</td>
+              <td>连接生命周期事件。metadata 经过字段白名单。</td>
+            </tr>
+            <tr>
+              <td><code>gateway_attempt_events</code></td>
+              <td>request_event_id, connection_id, attempt_no, outcome, status_code, provider_request_id, latency_ms, queue_ms, cooldown_ms, error_type</td>
+              <td>记录每次上游尝试和切换。provider_request_id 加密或脱敏保存，Prompt 和响应正文不进入事件。</td>
+            </tr>
+            <tr>
+              <td><code>ai_connection_outbox</code></td>
+              <td>id, aggregate_id, event_type, payload, status, attempts, next_attempt_at, created_at, processed_at</td>
+              <td>与连接、受管通道和 grant 同事务写入。Worker 幂等处理，NATS 只承担通知和加速。</td>
+            </tr>
+            <tr>
+              <td><code>channels</code> 扩展</td>
+              <td>connection_id nullable, managed_source, credential_source</td>
+              <td>受管通道指向连接。现有手工 private channel 继续使用 channel_credentials。</td>
+            </tr>
+            <tr>
+              <td><code>gateway_keys</code> 扩展</td>
+              <td>subject_user_id nullable</td>
+              <td>共享工作区中标识具体调用成员，支持成员额度和离开时吊销。</td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>7.2 连接状态</h3>
+        <pre class="flow">pending_validation
+       │ 验证成功
+       v
+     active ───────────────→ degraded
+       │                         │
+       │ Token 临近到期          │ 健康恢复
+       v                         └────────────→ active
+   refreshing
+       │ 成功
+       ├─────────────────────────────────────→ active
+       │ 连续失败、401、403
+       v
+reauth_required ── 重新授权成功 ─────────────→ active
+       │
+       ├─ 策略或部署模式禁用 ─→ policy_blocked
+       ├─ 用户停用 ─→ disabled
+       ├─ 用户撤销 ─→ revoked
+       └─ 删除并销毁密文 ─→ deleted</pre>
+        <p>
+          <code>status</code> 表达连接生命周期，<code>health_status</code> 表达最近运行健康。
+          429 进入 connection cooldown，不直接改变生命周期；运行时首次 401 会暂时移出路由并触发一次无计费复核，
+          五分钟内第二次确认后进入 <code>reauth_required</code>；
+          403 要先按提供者映射为权限、区域、模型或策略错误，避免误判凭证失效。
+          <code>policy_blocked</code> 在新策略审核通过后可以恢复，披露内容变化时要求连接所有者重新确认。
+        </p>
+
+        <h3>7.3 事务和幂等边界</h3>
+        <ul>
+          <li>创建连接的数据库事务写入连接、密文信封、初始模型快照、审计和 outbox。上游验证在短事务外执行，验证成功后用版本条件更新，避免长事务占锁。</li>
+          <li>一键创建中转使用客户端生成的 <code>Idempotency-Key</code>。同一用户、工作区、连接和请求摘要返回同一结果；摘要冲突返回 409。</li>
+          <li>Gateway、binding、Gateway Key 哈希和审计在同一事务创建。明文 Key 只存在于首次成功响应；响应丢失后只能轮换，不能从数据库恢复。</li>
+          <li>Outbox Worker 使用事件 ID 去重。任务可以重复投递，受管通道同步、通知和模型目录刷新保持幂等。</li>
+        </ul>
+      </section>
+
+      <section id="api" class="anchor">
+        <h2>8. API 设计</h2>
+        <p class="lead">
+          连接属于用户资源，主 API 放在 <code>/api/me</code>。共享、Gateway 和 Key 继续遵循当前工作区权限。
+          所有浏览器写操作使用现有 Cookie 与 CSRF 双重校验。
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+            <tr><th>方法与地址</th><th>权限</th><th>用途</th><th>安全约束</th></tr>
+            </thead>
+            <tbody>
+            <tr><td><code>GET /api/me/ai-connection-providers</code></td><td>登录用户</td><td>读取七家可用产品线、区域、授权方式和功能状态</td><td>只返回已启用 manifest，不返回内部 endpoint override 和密钥配置</td></tr>
+            <tr><td><code>GET /api/me/ai-connections</code></td><td>登录用户</td><td>列出本人连接和健康摘要</td><td>仅返回 Mask、指纹和可展示元数据</td></tr>
+            <tr><td><code>POST /api/me/ai-connections</code></td><td>登录用户</td><td>导入开发者凭证并启动验证</td><td>Idempotency-Key、产品线和区域白名单、固定 endpoint、Body 和错误日志脱敏</td></tr>
+            <tr><td><code>GET /api/me/ai-connections/{id}</code></td><td>连接所有者</td><td>详情、模型、grant、用量</td><td>跨用户统一返回 404</td></tr>
+            <tr><td><code>PATCH /api/me/ai-connections/{id}</code></td><td>连接所有者</td><td>名称、模型、预算和状态</td><td>不可修改 provider 和 owner</td></tr>
+            <tr><td><code>POST /api/me/ai-connections/{id}/validate</code></td><td>连接所有者</td><td>立即验证和刷新模型</td><td>分钟级限制；付费验证要求 <code>confirmBillable=true</code> 和预算</td></tr>
+            <tr><td><code>POST /api/me/ai-connections/{id}/rotate</code></td><td>连接所有者</td><td>替换 API Key</td><td>原子切换，旧密文立即销毁</td></tr>
+            <tr><td><code>POST /api/me/ai-connections/{id}/revoke</code></td><td>连接所有者</td><td>撤销连接和全部 binding</td><td>二次确认，立即阻断路由</td></tr>
+            <tr><td><code>DELETE /api/me/ai-connections/{id}</code></td><td>连接所有者</td><td>删除连接</td><td>密文清零，保留最小审计记录</td></tr>
+            <tr><td><code>POST /api/me/ai-connections/oauth/{provider}/start</code></td><td>登录用户</td><td>启动已启用的正式 OAuth</td><td>PKCE、state、Secure Cookie nonce、10 分钟 TTL、固定 callback</td></tr>
+            <tr><td><code>GET /api/me/ai-connections/oauth/{provider}/callback</code></td><td>同一登录会话</td><td>处理提供者回调</td><td>原子单次消费、provider 和 client 绑定、防重放、防 mix-up</td></tr>
+            <tr><td><code>POST /api/me/ai-connections/{id}/grants</code></td><td>连接所有者</td><td>向当前工作区发起 route_only grant</td><td>仅允许已加入的工作区，限制模型和预算</td></tr>
+            <tr><td><code>POST /api/console/connection-grants/{id}/accept</code></td><td>owner / admin</td><td>接受成员贡献的连接</td><td>双向同意，完整审计</td></tr>
+            <tr><td><code>POST /api/console/connection-grants/{id}/reject</code></td><td>owner / admin</td><td>拒绝成员贡献的连接</td><td>拒绝理由使用枚举，不保存敏感自由文本</td></tr>
+            <tr><td><code>DELETE /api/me/ai-connections/{id}/grants/{grantID}</code></td><td>连接所有者</td><td>撤销共享</td><td>立即禁用关联 binding</td></tr>
+            <tr><td><code>POST /api/console/gateways/quick-create</code></td><td>owner / admin / operator</td><td>原子创建 Gateway、binding 和 Key</td><td>Idempotency-Key 必填；Key 明文只返回一次，失败时整笔回滚</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>8.1 对外响应字段</h3>
+        <p>
+          连接响应只包含：
+          <code>id</code>、<code>provider</code>、<code>productLine</code>、<code>region</code>、<code>authMethod</code>、<code>displayName</code>、
+          <code>accountLabel</code>、<code>secretMask</code>、<code>fingerprint</code>、<code>status</code>、
+          <code>health</code>、<code>tokenExpiresAt</code>、<code>lastValidatedAt</code>、
+          <code>policyVersion</code>、<code>models</code>、<code>quota</code>、<code>grants</code> 和聚合用量。
+          access_token、refresh_token、api_key、ID token、OAuth client secret 不进入任何响应。
+        </p>
+
+        <h3>8.2 OAuth 交易记录</h3>
+        <p>
+          Redis 记录交易 ID、state 哈希、加密 PKCE verifier、TokHub 用户 ID、登录会话哈希、Secure Cookie nonce 哈希、
+          provider、OAuth client ID、固定 callback、创建时间、过期时间和失败次数。回调先原子标记 consumed，
+          再交换 authorization code；相同 code、state 或交易 ID 的第二次请求统一失败。Cookie 使用
+          <code>HttpOnly</code>、<code>Secure</code>、<code>SameSite=Lax</code>，授权开始和回调必须处于同一 TokHub 登录会话。
+        </p>
+      </section>
+
+      <section id="routing" class="anchor">
+        <h2>9. 中转运行时、调度和额度</h2>
+        <ol>
+          <li>Gateway Key 完成身份、QPS 和月请求额度校验，现有逻辑继续生效。</li>
+          <li>请求模型先解析为 Gateway 中的逻辑模型，再匹配 connection model binding。没有显式映射时不自动换模型。</li>
+          <li>路由计划过滤停用、未授权、重授权、policy_blocked、能力不匹配、额度耗尽和冷却中的连接。</li>
+          <li>连接级并发槽和成员公平队列在 Redis 原子申请。Redis 持续不可用超过 30 秒时，受管连接停止接收新请求，现有手工通道继续运行。</li>
+          <li>Credential Resolver 解密当前连接，明文只存在于请求生命周期内存。首版禁止明文凭证缓存；数据库短暂故障时最多使用缓存的加密信封。</li>
+          <li>Provider Adapter 生成固定地址、请求头和提供者元数据。用户请求不能覆盖 Authorization、Host、上游地址和内部追踪头。</li>
+          <li>401 进入凭证异常计数；403 按提供者映射；429 解析 Retry-After 并进入连接级或账号级冷却；5xx 使用现有熔断。</li>
+          <li>首字节写出前允许切换连接，SSE 开始后保持当前上游，沿用 TokHub 现有流式语义。</li>
+          <li>每次尝试写入 attempt 事件，最终结果继续写入 gateway_request_events。请求正文、响应正文和完整错误体不落库。</li>
+        </ol>
+
+        <h3>9.1 公平性、粘性和能力匹配</h3>
+        <ul>
+          <li>共享 Gateway 按 subject_user_id 做加权公平排队，默认每位成员权重相同。空闲成员不会占用连接并发。</li>
+          <li>粘性键使用 Gateway Key ID 与可选 conversation ID 的 HMAC，默认 TTL 30 分钟。Prompt、文件名和用户输入不参与粘性计算。</li>
+          <li>只有候选连接支持请求声明的全部能力时才进入路由池。候选为空返回 <code>capability_unavailable</code>，不删除参数继续调用。</li>
+          <li>跨提供者切换要求同一个逻辑模型组、相同数据区域策略和用户主动允许。默认只在同提供者、同模型映射内切换。</li>
+        </ul>
+
+        <h3>9.2 默认限制</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>对象</th><th>推荐默认值</th><th>说明</th></tr></thead>
+            <tbody>
+            <tr><td>每用户连接数</td><td>10，总计；单提供者 3</td><td>允许七家各连一个，同时限制批量养号，可由平台配置</td></tr>
+            <tr><td>连接并发</td><td>2</td><td>提供者额度未知时使用保守值，探测到官方限制后取较小值</td></tr>
+            <tr><td>个人快速中转</td><td>10 QPS，10,000 请求 / 月</td><td>区别于现有手工 Gateway 的 60 QPS 默认值</td></tr>
+            <tr><td>共享成员 Key</td><td>5 QPS / Key</td><td>工作区 owner 和连接持有人均可继续下调</td></tr>
+            <tr><td>OAuth 会话</td><td>10 分钟</td><td>单次使用，成功或失败达到阈值后销毁</td></tr>
+            <tr><td>无计费健康检查</td><td>活跃 30 分钟，空闲 6 小时</td><td>按提供者分片并加入随机抖动，只调用无计费接口</td></tr>
+            <tr><td>付费生成探测</td><td>默认关闭</td><td>用户显式开启、选择模型并设置每日金额上限后运行</td></tr>
+            <tr><td>Token 提前刷新</td><td>到期前 10 分钟，加 0 到 90 秒随机抖动</td><td>降低刷新风暴</td></tr>
+            <tr><td>请求体</td><td>默认 8 MiB</td><td>提供者更低时取更小值；超限在读取完整正文前拒绝</td></tr>
+            <tr><td>流式时长</td><td>默认 5 分钟</td><td>按模型能力下调或经管理员提高，客户端断开立即取消上游</td></tr>
+            <tr><td>全局验证预算</td><td>每分钟 100 次</td><td>平台可配置，按提供者分片，防止批量连接形成上游尖峰</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>9.3 成本语义</h3>
+        <p>
+          TokHub 显示的是按版本化价格表计算的“提供者估算成本”，不会把它写成提供者账单或可用余额。
+          提供者返回官方用量时同时保存官方 Token 和 TokHub 估算；两者差异超过阈值时标记 <code>metering_mismatch</code>。
+          价格未知或模型刚发布时只显示 Token，不估算金额。预算执行优先使用 TokHub 实时计量，
+          官方余额仅作补充信息，避免余额接口缺失时失去保护。
+        </p>
+      </section>
+
+      <section id="risk" class="anchor">
+        <h2>10. 风控、安全与隐私</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+            <tr><th>风险</th><th>控制措施</th><th>自动动作</th><th>审计事件</th></tr>
+            </thead>
+            <tbody>
+            <tr>
+              <td>提供者条款和账号封禁</td>
+              <td>产品线、部署模式和官方方法白名单；CLI OAuth、Cookie、Session Token 无入口；适配器带 policy_version</td>
+              <td>策略过期关闭新增，严重变化按提供者关闭运行；已有连接显示原因和处理路径</td>
+              <td>connection.policy_blocked</td>
+            </tr>
+            <tr>
+              <td>凭证泄漏</td>
+              <td>AES-GCM、版本化 keyring、域内 HMAC 指纹、Mask、日志 allowlist、错误脱敏、无导出接口</td>
+              <td>命中 secret pattern 时丢弃日志字段并触发安全告警</td>
+              <td>connection.secret_rotated</td>
+            </tr>
+            <tr>
+              <td>实例运营者和备份访问</td>
+              <td>文档明确自托管实例管理员可以接触密钥注入和数据库；生产 keyring 放 Secret Manager，备份只含密文</td>
+              <td>keyring 缺失或 key_id 未知时连接功能 readiness 失败，禁止降级为明文</td>
+              <td>credential.key_unavailable</td>
+            </tr>
+            <tr>
+              <td>跨租户读取</td>
+              <td>所有查询强制 owner_user_id 或有效 grant；跨用户资源统一 404</td>
+              <td>拒绝并计入越权指标</td>
+              <td>connection.access_denied</td>
+            </tr>
+            <tr>
+              <td>批量试 Key 和凭证填充</td>
+              <td>按用户、IP、提供者限制创建和验证；失败采用稳定错误码，不回传上游完整错误体</td>
+              <td>连续失败进入递增冷却，达到阈值暂停该用户连接创建并通知安全运营</td>
+              <td>connection.validation_throttled</td>
+            </tr>
+            <tr>
+              <td>OAuth CSRF、重放、mix-up</td>
+              <td>state hash、PKCE、提供者绑定、浏览器会话绑定、固定 callback、单次消费</td>
+              <td>立即销毁交易，连续失败暂时锁定 OAuth start</td>
+              <td>oauth.exchange_rejected</td>
+            </tr>
+            <tr>
+              <td>开放重定向</td>
+              <td>callback 仅从 TOKHUB_PUBLIC_URL 生成，不接受请求方 redirect_uri</td>
+              <td>未知 callback 直接 400</td>
+              <td>oauth.redirect_rejected</td>
+            </tr>
+            <tr>
+              <td>SSRF 和出口滥用</td>
+              <td>官方连接使用固定 endpoint；自定义 endpoint 继续走现有 SSRF 检查；普通用户无代理字段</td>
+              <td>解析到私网或保留地址时拒绝</td>
+              <td>connection.endpoint_rejected</td>
+            </tr>
+            <tr>
+              <td>刷新风暴</td>
+              <td>connection 级 Redis 锁、提前刷新、随机抖动、指数退避</td>
+              <td>同一连接同时只允许一个刷新任务</td>
+              <td>connection.refresh_failed</td>
+            </tr>
+            <tr>
+              <td>凭证失效</td>
+              <td>401/403 单独分类，短窗口确认，禁止无界重试</td>
+              <td>5 分钟内 2 次确认后进入 reauth_required，停用 binding</td>
+              <td>connection.reauth_required</td>
+            </tr>
+            <tr>
+              <td>配额和成本失控</td>
+              <td>成员 Key、Gateway、grant、connection 四层额度；可设置 Token 和估算成本预算</td>
+              <td>80% 预警，95% 强预警，100% 停止路由</td>
+              <td>connection.budget_exhausted</td>
+            </tr>
+            <tr>
+              <td>429 和账号限流</td>
+              <td>解析 Retry-After、连接级或账号级 cooldown、并发槽、带抖动的有界重试</td>
+              <td>达到阈值后临时移出路由池</td>
+              <td>connection.rate_limited</td>
+            </tr>
+            <tr>
+              <td>请求走私和能力降级</td>
+              <td>请求体大小、方法、路径、Header allowlist 和模型能力校验；禁止覆盖认证头及上游地址</td>
+              <td>在进入路由前返回稳定 400 或 413，不把未知字段透传到上游</td>
+              <td>gateway.request_rejected</td>
+            </tr>
+            <tr>
+              <td>工作区滥用</td>
+              <td>route_only grant、独立成员 Key、成员身份绑定、连接持有人总预算</td>
+              <td>成员退出后 Key 吊销，grant 撤销后 binding 即时失效</td>
+              <td>connection.grant_revoked</td>
+            </tr>
+            <tr>
+              <td>内容合规和终端用户责任</td>
+              <td>Provider Policy 记录用途、地域、年龄、内容治理和终端用户披露要求；managed 模式配置实时安全检查</td>
+              <td>命中提供者或实例政策时在转发前拒绝，只保存策略版本和分类结果</td>
+              <td>gateway.policy_rejected</td>
+            </tr>
+            <tr>
+              <td>地域与出口限制</td>
+              <td>连接区域、实例部署区域和工作区数据区域共同参与路由；用户不能绕过区域 endpoint</td>
+              <td>不满足 Provider Policy 时连接保持 policy_blocked</td>
+              <td>connection.region_blocked</td>
+            </tr>
+            <tr>
+              <td>请求隐私</td>
+              <td>默认不保存 Prompt、响应正文和文件内容；共享前展示提供者、费用承担者和数据政策</td>
+              <td>异常追踪不采集 Authorization 和内容 Body；错误体只按字段 allowlist 提取</td>
+              <td>privacy.redaction_applied</td>
+            </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>10.1 凭证 keyring 和轮换</h3>
+        <ul>
+          <li><code>TOKHUB_CREDENTIAL_ACTIVE_KEY_ID</code> 指向当前写入密钥，<code>TOKHUB_CREDENTIAL_KEY_*</code> 由部署 Secret Manager 注入，每个值为独立的 32 字节随机密钥。</li>
+          <li>写入只使用 active key，读取按密文中的 key_id 选择密钥。旧 key 保留到数据库和可恢复备份都完成重加密。</li>
+          <li>轮换 Worker 按主键分页、使用行版本条件更新并限制速率。单行失败进入隔离队列，不阻塞其余连接；进度和失败数进入审计与指标。</li>
+          <li>原有 <code>TOKHUB_SECRET_KEY</code> 只用于读取历史 channel credential。连接功能不继续派生同一把密钥，避免一个旧配置同时控制全部凭证域。</li>
+          <li>Fingerprint 使用独立 key，输入包含 owner_user_id、provider、product_line 和 secret。Fingerprint key 轮换只影响重复提示，不影响凭证解密。</li>
+          <li>移除旧 key 前执行 readiness、全表 key_id 统计、备份恢复和抽样解密。任何未知 key_id 都会阻止发布。</li>
+        </ul>
+
+        <h3>10.2 凭证删除语义</h3>
+        <ul>
+          <li>撤销先停路由，再调用提供者 revoke 能力，最后销毁本地密文。</li>
+          <li>提供者不支持自动撤销时，页面给出官方控制台入口和待完成提示。</li>
+          <li>连接所有者删除 TokHub 账号时，先停用全部 binding 和 grant，再销毁其连接密文；删除任务失败会阻止用户删除流程宣告完成。</li>
+          <li>连接所有者离开已共享工作区时，对该工作区的 grant 自动撤销。工作区删除只撤销 grant 和 binding，个人连接继续归原所有者。</li>
+          <li>删除保留最小审计事实，包括连接 ID、提供者、操作人、时间和结果；账号标签、密文、Mask 和指纹清除。</li>
+          <li>数据库备份中的旧密文依赖密钥轮换和保留周期失效，恢复演练必须验证撤销后的密钥不可继续使用。</li>
+        </ul>
+
+        <h3>10.3 数据保留和用户披露</h3>
+        <p>
+          OAuth 交易保留 10 分钟；连接生命周期和安全审计默认保留 180 天；请求元数据默认保留 90 天；
+          Prompt、响应正文和上传内容保留时间为 0。实例管理员可以缩短元数据保留期，延长时必须更新隐私说明。
+          用户删除连接后，在线密文立即清除，备份按实例备份保留期自然过期。共享成员可以查看与自己调用相关的元数据，
+          连接所有者只能查看聚合用量和错误分类，不能查看成员的 Prompt 或响应。
+        </p>
+      </section>
+
+      <section id="observability" class="anchor">
+        <h2>11. 监控数据、看板和告警</h2>
+        <h3>11.1 用户可见指标</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>面板</th><th>指标</th><th>粒度</th></tr></thead>
+            <tbody>
+            <tr><td>连接健康</td><td>active、degraded、reauth_required、到期倒计时、最近验证、刷新结果</td><td>连接</td></tr>
+            <tr><td>额度</td><td>剩余额度比例、重置时间、请求、Token、估算成本、共享预算</td><td>连接、grant、成员</td></tr>
+            <tr><td>质量</td><td>成功率、401、403、429、5xx、P50/P95 延迟、首字节、排队时间</td><td>提供者、模型、连接</td></tr>
+            <tr><td>路由</td><td>命中次数、切换次数、冷却时长、并发占用、关联 Gateway</td><td>连接、Gateway</td></tr>
+            <tr><td>共享</td><td>活跃成员、成员 Key、每成员请求和 Token、grant 状态</td><td>工作区、成员</td></tr>
+            <tr><td>安全</td><td>授权失败、重放拒绝、越权拒绝、密钥轮换、异常用量</td><td>连接、用户、工作区</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>11.2 系统指标</h3>
+        <p>
+          Prometheus 或现有监控使用低基数标签，只按 <code>provider</code>、<code>auth_method</code>、
+          <code>product_line</code>、<code>region</code>、<code>status</code>、<code>result</code>、<code>error_type</code> 聚合。
+          连接 ID、用户 ID、工作区 ID 和 Gateway Key ID 保存在数据库事件中，禁止作为时序标签。
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>指标名</th><th>含义</th></tr></thead>
+            <tbody>
+            <tr><td><code>tokhub_ai_connections</code></td><td>按提供者、授权方式和状态统计连接数</td></tr>
+            <tr><td><code>tokhub_ai_connection_validate_total</code></td><td>验证成功、失败和错误类型</td></tr>
+            <tr><td><code>tokhub_ai_connection_refresh_total</code></td><td>Token 刷新成功率和失败原因</td></tr>
+            <tr><td><code>tokhub_ai_connection_expiry_seconds</code></td><td>有效 Token 剩余时间分布</td></tr>
+            <tr><td><code>tokhub_ai_connection_inflight</code></td><td>各提供者当前并发</td></tr>
+            <tr><td><code>tokhub_gateway_upstream_attempt_total</code></td><td>上游尝试、切换、状态码和错误类型</td></tr>
+            <tr><td><code>tokhub_gateway_upstream_queue_ms</code></td><td>等待连接并发槽的时间</td></tr>
+            <tr><td><code>tokhub_gateway_ttfb_ms</code></td><td>首字节延迟分布</td></tr>
+            <tr><td><code>tokhub_ai_connection_cooldown_total</code></td><td>429 或过载导致的冷却次数</td></tr>
+            <tr><td><code>tokhub_ai_connection_access_denied_total</code></td><td>连接越权和无效 grant 拒绝次数</td></tr>
+            <tr><td><code>tokhub_ai_connection_outbox_lag_seconds</code></td><td>连接异步事件从创建到处理的延迟</td></tr>
+            <tr><td><code>tokhub_ai_model_catalog_age_seconds</code></td><td>各提供者能力目录距离最近成功复核的时间</td></tr>
+            <tr><td><code>tokhub_ai_credential_reencrypt_remaining</code></td><td>各 key_id 待重加密密文数量</td></tr>
+            <tr><td><code>tokhub_ai_billable_probe_total</code></td><td>付费探测次数、Token 和估算金额</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>11.3 默认告警</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>告警</th><th>触发条件</th><th>动作</th></tr></thead>
+            <tbody>
+            <tr><td>需要重新授权</td><td>5 分钟内 2 次 401 或 403</td><td>停用连接路由，站内通知和邮件</td></tr>
+            <tr><td>刷新连续失败</td><td>15 分钟内连续 3 次</td><td>标记 degraded，触发重授权提示</td></tr>
+            <tr><td>配额预警</td><td>剩余 20% 和 5%</td><td>两级通知，5% 时建议切换或降低共享预算</td></tr>
+            <tr><td>持续限流</td><td>5 分钟至少 20 请求且 429 比例超过 20%</td><td>降低并发，延长 cooldown，通知持有人</td></tr>
+            <tr><td>连接质量下降</td><td>10 分钟至少 20 请求且成功率低于 90%</td><td>标记 degraded，路由降低优先级</td></tr>
+            <tr><td>异常用量</td><td>小时请求量超过过去 7 天同小时中位数 3 倍，且至少 100 请求</td><td>通知连接持有人和工作区 owner，可一键暂停 grant</td></tr>
+            <tr><td>共享预算耗尽</td><td>grant 达到 100%</td><td>停止该工作区使用连接，个人使用不受影响</td></tr>
+            <tr><td>Keyring 异常</td><td>出现未知 key_id 或任一受管连接解密失败</td><td>阻止连接功能发布，关闭受影响连接运行，P0 通知</td></tr>
+            <tr><td>Outbox 堆积</td><td>P95 延迟超过 60 秒或待处理超过 1,000</td><td>暂停批量模型同步，保留连接和网关主链路</td></tr>
+            <tr><td>模型目录过期</td><td>任一公开提供者超过 24 小时未成功刷新</td><td>禁止启用新模型，已有 binding 继续运行并通知管理员</td></tr>
+            <tr><td>策略复核到期</td><td>policy_version 到达 review_due_at</td><td>关闭该提供者新增连接，创建复核任务</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>11.4 SLO 和发布观察窗</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>目标</th><th>口径</th><th>发布门槛</th></tr></thead>
+            <tbody>
+            <tr><td>连接控制面可用性</td><td>排除用户凭证错误和提供者拒绝后的成功响应比例</td><td>30 天不低于 99.9%</td></tr>
+            <tr><td>个人中转可用性</td><td>TokHub 可控故障导致的失败，提供者 4xx 和 5xx 单独展示</td><td>30 天不低于 99.9%</td></tr>
+            <tr><td>凭证泄漏</td><td>日志、响应、指标、追踪和审计中的明文 Secret</td><td>必须为 0</td></tr>
+            <tr><td>越权访问</td><td>跨用户读取、未接受 grant 调用和 viewer 管理操作</td><td>安全测试必须 100% 拒绝</td></tr>
+            <tr><td>计量差异</td><td>上游官方 Token 与 TokHub 记录差异</td><td>P95 不高于 2%；无法比较时标记 unknown</td></tr>
+            <tr><td>灰度观察窗</td><td>每个提供者真实调用、错误分布、工单和预算告警</td><td>至少 72 小时且无 P0/P1 未关闭问题</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="delivery" class="anchor">
+        <h2>12. 实施阶段、依赖和验收</h2>
+        <div class="phase">
+          <div class="phase-label">阶段 1</div>
+          <div>
+            <h3>七家连接中心、安全底座和凭证验证</h3>
+            <p><span class="tag green">独立可用</span> Provider Registry、版本化 keyring、密文信封、三类协议适配器、连接向导、七家官方开发者凭证、模型发现和能力目录。</p>
+            <p><b>验收：</b>普通用户可添加、验证、轮换、停用和删除七家连接；产品线与区域可区分；无明文凭证；无授权付费探测；跨用户访问全部拒绝。</p>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="phase-label">阶段 2</div>
+          <div>
+            <h3>一键个人中转与运行时连接调度</h3>
+            <p><span class="tag green">独立可用</span> 幂等创建 Gateway、binding 和 Gateway Key；能力匹配、公平队列、连接并发、429 cooldown、错误映射、attempt 事件和用量。</p>
+            <p><b>验收：</b>七家文本和 SSE 最小调用全部通过；Gateway Key 只显示一次；重复请求不创建重复资源；不支持能力返回明确错误。</p>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="phase-label">阶段 3</div>
+          <div>
+            <h3>工作区 grant 和小组共享</h3>
+            <p><span class="tag violet">协作能力</span> 双向接受 grant、成员知情确认、独立成员 Key、成员预算、成员离开吊销、连接持有人总预算和共享看板。</p>
+            <p><b>验收：</b>成员可调用且无法读取凭证；角色矩阵生效；撤销 grant 后新请求即时失败；个人和共享用量分开核算。</p>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="phase-label">阶段 4</div>
+          <div>
+            <h3>正式 OAuth、工作负载身份和自动刷新</h3>
+            <p><span class="tag amber">外部依赖</span> 先接 TokHub 自有 Google OAuth 客户端的 Gemini API 授权。OpenAI 和 Claude 的 WIF 面向企业自托管场景；其余提供者等待正式能力。</p>
+            <p><b>验收：</b>PKCE、state、会话绑定、callback、刷新锁和重放测试通过；consent、scope、隐私政策和 deployment_mode 审核完成。</p>
+          </div>
+        </div>
+
+        <h3>12.1 配置和外部依赖</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>配置 / 依赖</th><th>推荐值或要求</th><th>阶段</th></tr></thead>
+            <tbody>
+            <tr><td><code>TOKHUB_AI_CONNECTIONS_ENABLED</code></td><td>功能写入开关，生产初始 false</td><td>1</td></tr>
+            <tr><td><code>TOKHUB_AI_CONNECTION_RUNTIME_ENABLED</code></td><td>已存在连接的运行开关，和写入开关分离</td><td>2</td></tr>
+            <tr><td><code>TOKHUB_AI_PROVIDER_{NAME}_CREATE_ENABLED</code></td><td>七家独立创建开关，生产初始 false</td><td>1</td></tr>
+            <tr><td><code>TOKHUB_AI_PROVIDER_{NAME}_RUNTIME_ENABLED</code></td><td>七家独立运行和紧急停用开关</td><td>2</td></tr>
+            <tr><td><code>TOKHUB_AI_CONNECTIONS_OFFICIAL_ONLY</code></td><td>true，正式环境不可由用户关闭</td><td>1</td></tr>
+            <tr><td><code>TOKHUB_DEPLOYMENT_MODE</code></td><td><code>self_hosted</code> 或 <code>managed</code>，Provider Policy 按模式决定可用产品线</td><td>1</td></tr>
+            <tr><td><code>TOKHUB_AI_CONNECTIONS_MAX_PER_USER</code></td><td>10，覆盖七家各一个并保留少量轮换空间</td><td>1</td></tr>
+            <tr><td><code>TOKHUB_AI_CONNECTIONS_MAX_PER_PROVIDER</code></td><td>3</td><td>1</td></tr>
+            <tr><td><code>TOKHUB_AI_SHARED_MEMBER_LIMIT</code></td><td>6</td><td>3</td></tr>
+            <tr><td><code>TOKHUB_AI_OAUTH_TTL</code></td><td>10m</td><td>4</td></tr>
+            <tr><td><code>TOKHUB_GOOGLE_OAUTH_CLIENT_ID</code></td><td>Google Cloud Web Application Client</td><td>4</td></tr>
+            <tr><td><code>TOKHUB_GOOGLE_OAUTH_CLIENT_SECRET</code></td><td>Secret Manager 或部署密钥注入</td><td>4</td></tr>
+            <tr><td>Google OAuth callback</td><td><code>{TOKHUB_PUBLIC_URL}/api/me/ai-connections/oauth/google/callback</code></td><td>4</td></tr>
+            <tr><td><code>TOKHUB_CREDENTIAL_ACTIVE_KEY_ID</code></td><td>当前连接凭证写入密钥 ID，生产环境必填</td><td>1</td></tr>
+            <tr><td><code>TOKHUB_CREDENTIAL_KEY_*</code></td><td>Secret Manager 注入的 32 字节随机密钥集合，至少包含 active key</td><td>1</td></tr>
+            <tr><td><code>TOKHUB_CREDENTIAL_FINGERPRINT_KEY_*</code></td><td>独立 HMAC keyring，不与加密密钥复用</td><td>1</td></tr>
+            <tr><td><code>TOKHUB_CREDENTIAL_FINGERPRINT_ACTIVE_KEY_ID</code></td><td>当前 HMAC 指纹密钥 ID</td><td>1</td></tr>
+            <tr><td><code>TOKHUB_AI_MODEL_CATALOG_MAX_AGE</code></td><td>24h，过期后禁止启用新模型</td><td>1</td></tr>
+            <tr><td><code>TOKHUB_AI_BILLABLE_PROBES_ENABLED</code></td><td>false；用户级显式开关和预算仍为必需条件</td><td>1</td></tr>
+            <tr><td>PostgreSQL</td><td>复用现有集群，迁移全部为 additive</td><td>1</td></tr>
+            <tr><td>Redis</td><td>复用现有集群，负责 OAuth、刷新锁、公平队列、并发槽和 cooldown；受管连接依赖其限额一致性</td><td>2、4</td></tr>
+            <tr><td>NATS</td><td>只承担 outbox 通知和异步加速，故障时数据库 outbox 保留任务</td><td>1</td></tr>
+            <tr><td>Worker</td><td>复用现有 worker role，执行 outbox、刷新、无计费健康和模型同步</td><td>1、4</td></tr>
+            <tr><td>凭证加密</td><td>复用 AES-GCM 算法，连接凭证使用独立版本化 keyring</td><td>1</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>12.2 预计代码影响面</h3>
+        <ul>
+          <li>数据库：新增连接、密文、模型能力、grant、事件、attempt、outbox 和幂等相关表及索引，扩展 channels、gateway_keys。</li>
+          <li>后端：新增 connection handler、store、Provider Registry、三类 adapter、credential resolver、keyring 和 worker job；扩展 Gateway route plan 和事件记录。</li>
+          <li>前端：新增 ConnectionsPage、连接向导、详情 Drawer、首页摘要、导航和国际化词条；扩展 Gateway 快速创建。</li>
+          <li>文档：更新 API、部署环境变量、隐私说明、恢复演练、Provider 支持矩阵和用户帮助。</li>
+          <li>影响面跨越数据库、API、网关、Worker、前端和部署，预计会修改二十个以上文件。实施时按阶段拆小提交，每阶段独立通过回归。</li>
+        </ul>
+
+        <h3>12.3 测试矩阵</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>测试层</th><th>必须覆盖</th></tr></thead>
+            <tbody>
+            <tr><td>单元测试</td><td>keyring、密文信封、域内 HMAC、Mask、状态机、七家错误分类、固定 endpoint、权限矩阵、额度、刷新锁和退避</td></tr>
+            <tr><td>Repository 集成</td><td>owner_user_id 隔离、grant 双向状态、删除清密文、成员离开吊销、受管通道同步、事务回滚</td></tr>
+            <tr><td>API 安全</td><td>CSRF、跨用户 404、OAuth state 重放、会话错配、callback 注入、provider mix-up、日志脱敏、请求头覆盖、Body 超限</td></tr>
+            <tr><td>Provider 契约</td><td>七家文本、SSE、模型发现、能力拒绝、401、403、余额不足、429、5xx、request ID 和用量映射</td></tr>
+            <tr><td>Gateway 集成</td><td>三类协议、并发槽、公平队列、粘性、429 cooldown、凭证停用、首字节前切换、SSE 和 Redis 故障关闭</td></tr>
+            <tr><td>端到端</td><td>首次连接、一键个人中转、一次性 Key、轮换、撤销、共享接受、成员调用、成员退出</td></tr>
+            <tr><td>故障演练</td><td>Redis、数据库、NATS、Worker、Provider 超时、目录过期、未知 key_id、轮换中断和提供者级回滚</td></tr>
+            <tr><td>负载测试</td><td>十倍连接量、共享公平性、验证和刷新风暴、outbox 堆积、attempt 吞吐和指标基数</td></tr>
+            <tr><td>真实提供者 RC</td><td>七家最小请求、模型发现、错误码、产品线、区域、撤销和额度；密钥只通过安全 CI Secret 注入</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>12.4 故障语义</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>故障</th><th>连接控制面</th><th>受管运行时</th><th>现有 TokHub 能力</th></tr></thead>
+            <tbody>
+            <tr><td>PostgreSQL 不可用</td><td>写操作返回 503，不产生半成品</td><td>缓存的加密信封和路由在短 TTL 内可用，过期后返回 503</td><td>按现有网关降级能力运行</td></tr>
+            <tr><td>Redis 不可用</td><td>OAuth、刷新和共享接受关闭</td><td>30 秒后停止受管连接新请求，保护并发和预算</td><td>手工通道沿用现有降级</td></tr>
+            <tr><td>NATS 不可用</td><td>事务正常提交，outbox 等待</td><td>不受影响</td><td>不受影响</td></tr>
+            <tr><td>Worker 停止</td><td>模型和健康状态变旧，刷新临近到期时告警</td><td>未到期 API Key 继续运行，过期 OAuth Token 停止</td><td>不受影响</td></tr>
+            <tr><td>Keyring 缺失</td><td>连接 readiness 失败，禁止创建和轮换</td><td>受影响连接停止，禁止尝试错误密钥</td><td>历史凭证按原密钥域处理</td></tr>
+            <tr><td>提供者故障</td><td>验证和目录刷新保留错误原因</td><td>熔断，只在允许的同能力连接间切换</td><td>其它提供者继续运行</td></tr>
+            <tr><td>策略到期</td><td>关闭新增连接</td><td>默认继续到管理员复核；严重条款变化可立即关闭</td><td>其它提供者继续运行</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="rollout" class="anchor">
+        <h2>13. 灰度、迁移与回滚</h2>
+        <ol>
+          <li><b>内部灰度：</b>功能只对测试账号开放，七家逐一通过 Provider 上线门禁、真实 RC 和 72 小时观察窗。</li>
+          <li><b>小流量：</b>通过 provider create flag 单家开放 5% 用户，只允许个人连接和个人中转；观察凭证错误、429、预算和工单。</li>
+          <li><b>七家公开个人模式：</b>所有提供者完成观察窗后开放连接中心和个人中转，共享开关保持关闭。</li>
+          <li><b>共享灰度：</b>先开放不超过 6 人的小型工作区，检查成员知情、归因、公平队列、grant 撤销和预算。</li>
+          <li><b>OAuth 与 WIF 灰度：</b>认证方式使用独立开关。Google 审核完成后从测试用户开始；WIF 只在匹配 deployment_mode 的企业实例开放。</li>
+        </ol>
+        <div class="callout">
+          <strong>回滚策略：</strong>
+          先关闭 <code>TOKHUB_AI_CONNECTIONS_ENABLED</code>，停止新增和修改，保持 runtime 继续服务已有连接。
+          单家异常使用 provider runtime flag 隔离；系统性风险再关闭 <code>TOKHUB_AI_CONNECTION_RUNTIME_ENABLED</code>。
+          迁移采用 additive 结构，回滚版本无需删除表。受管 binding 停用后，现有手工私有通道和平台通道继续运行。
+        </div>
+        <p>
+          现有私有通道不会自动迁移。后续可提供“升级为受管连接”动作，仅支持官方固定 endpoint 和已验证 API Key。
+          用户确认后创建新连接，验证通过再切换 Gateway binding，旧通道保留到用户主动删除。
+          回滚不删除连接表和密文，待修复版本恢复后继续使用；需要彻底退出时走逐连接撤销和密文销毁流程。
+        </p>
+      </section>
+
+      <section id="approval" class="anchor">
+        <h2>14. 需要确认的产品和实施边界</h2>
+        <p class="lead">
+          以下内容确认后进入实施。推荐先交付阶段 1 和阶段 2，阶段 1 已包含七家连接能力，阶段 2 交付七家个人中转。
+        </p>
+        <div class="checklist">
+          <div class="check"><b>入口：</b>使用“AI 服务连接”，路由 <code>/console/connections</code>。</div>
+          <div class="check"><b>七家首版：</b>OpenAI、Gemini、Kimi、DeepSeek、豆包、Claude、千问统一支持官方开发者凭证。</div>
+          <div class="check"><b>认证红线：</b>不接网页 Cookie、账号密码、消费者 Session 和 CLI 私有 OAuth。</div>
+          <div class="check"><b>共享：</b>连接归个人，小组通过 route_only grant、知情确认和独立成员 Key 调用。</div>
+          <div class="check"><b>部署模式：</b>自托管和 managed 分开过 Provider Policy，managed 未审核的提供者保持关闭。</div>
+          <div class="check"><b>实施顺序：</b>先完成阶段 1 和 2，通过七家验收后继续阶段 3；阶段 4 依赖官方授权条件。</div>
+        </div>
+        <div class="callout success">
+          <strong>建议确认口径：</strong>
+          “同意按 v2 方案实施阶段 1 和阶段 2。入口使用 AI 服务连接，七家首版只接官方开发者凭证，
+          小组共享随后按工作区 grant 实施，消费者登录态保持关闭。”
+        </div>
+      </section>
+
+      <section id="sources" class="anchor">
+        <h2>15. 调研来源</h2>
+        <p class="lead">
+          官方能力核对时间为 2026-07-28。提供者认证方式、区域、模型和条款会变化，实施和每次发布都要重新执行 Provider Policy 门禁。
+        </p>
+        <ul class="sources">
+          <li>
+            sub2api OpenAI OAuth：
+            <a href="https://github.com/Wei-Shaw/sub2api/blob/1aeacf4d412d41d91a01a458c29a0f25db9d5eea/backend/internal/pkg/openai/oauth.go">PKCE 与内存 SessionStore</a>，
+            <a href="https://github.com/Wei-Shaw/sub2api/blob/1aeacf4d412d41d91a01a458c29a0f25db9d5eea/backend/internal/handler/admin/openai_oauth_handler.go">管理员 OAuth Handler</a>
+          </li>
+          <li>
+            sub2api Gemini OAuth：
+            <a href="https://github.com/Wei-Shaw/sub2api/blob/1aeacf4d412d41d91a01a458c29a0f25db9d5eea/backend/internal/service/gemini_oauth_service.go">Gemini OAuth Service</a>，
+            <a href="https://github.com/Wei-Shaw/sub2api/blob/1aeacf4d412d41d91a01a458c29a0f25db9d5eea/backend/internal/handler/admin/gemini_oauth_handler.go">管理员 Gemini OAuth Handler</a>
+          </li>
+          <li>
+            sub2api 凭证模型：
+            <a href="https://github.com/Wei-Shaw/sub2api/blob/1aeacf4d412d41d91a01a458c29a0f25db9d5eea/backend/ent/schema/account.go">Account Schema</a>
+          </li>
+          <li>
+            OpenAI：
+            <a href="https://platform.openai.com/docs/api-reference/authentication">API 认证</a>，
+            <a href="https://help.openai.com/en/articles/20001410-sign-in-with-chatgpt">Sign in with ChatGPT 边界</a>，
+            <a href="https://help.openai.com/en/articles/10471989">账号共享政策</a>，
+            <a href="https://help.openai.com/en/articles/8156019">ChatGPT 与 API 分开计费</a>，
+            <a href="https://platform.openai.com/docs/models/default-usage-policies-by-endpoint">API 数据控制</a>
+          </li>
+          <li>
+            Google Gemini：
+            <a href="https://ai.google.dev/gemini-api/docs/api-key">Gemini API Key</a>，
+            <a href="https://ai.google.dev/gemini-api/docs/oauth?hl=en">Gemini API OAuth</a>，
+            <a href="https://github.com/google-gemini/gemini-cli/blob/main/docs/resources/faq.md">Gemini CLI OAuth 第三方使用限制</a>
+          </li>
+          <li>
+            Kimi：
+            <a href="https://platform.kimi.com/docs/api/overview">API 认证与 OpenAI 兼容协议</a>，
+            <a href="https://www.kimi.com/zh-cn/help/kimi-api/api-overview">开放平台、会员与 Kimi Code 边界</a>，
+            <a href="https://platform.kimi.com/docs/api/list-models">模型发现</a>
+          </li>
+          <li>
+            DeepSeek：
+            <a href="https://api-docs.deepseek.com/api/deepseek-api">API Bearer 认证</a>，
+            <a href="https://api-docs.deepseek.com/quick_start/error_codes/">错误语义</a>，
+            <a href="https://cdn.deepseek.com/policies/zh-CN/deepseek-open-platform-terms-of-service.html">开放平台协议与终端用户责任</a>
+          </li>
+          <li>
+            豆包 / 火山方舟：
+            <a href="https://www.volcengine.com/docs/82379/1795150">方舟 API Key、区域端点与 Responses API</a>，
+            <a href="https://www.volcengine.com/docs/82379/1330626?lang=zh">兼容 OpenAI SDK</a>
+          </li>
+          <li>
+            Claude / Anthropic：
+            <a href="https://platform.claude.com/docs/en/manage-claude/authentication">API Key 与 Workload Identity Federation</a>，
+            <a href="https://platform.claude.com/docs/en/api/overview">Messages、Models 与认证头</a>，
+            <a href="https://support.claude.com/en/articles/8987223-can-i-have-a-claude-account-and-a-console-account">Claude 和 Console 账号独立</a>
+          </li>
+          <li>
+            千问 / 阿里云百炼：
+            <a href="https://help.aliyun.com/zh/model-studio/get-api-key/">按量付费 API Key、区域和权限</a>，
+            <a href="https://help.aliyun.com/zh/model-studio/first-api-call-to-qwen">Workspace 区域端点</a>，
+            <a href="https://help.aliyun.com/zh/model-studio/more-tools">Coding Plan 与 Token Plan 用途限制</a>
+          </li>
+        </ul>
+      </section>
+
+      <p class="footer">TokHub AI 服务连接与个人中转站方案 v2 · 2026-07-28 · Review 完成，待确认</p>
+    </article>
+  </main>
+</div>
+</body>
+</html>

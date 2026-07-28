@@ -27,6 +27,7 @@ type Server struct {
 	repo           *store.Repository
 	auth           *auth.Service
 	secretBox      *secretcrypto.SecretBox
+	credentialKeys *secretcrypto.CredentialKeyring
 	gatewayCache   *gatewaycache.Cache
 	upstreamClient *gatewaycache.UpstreamClient
 	probeRunner    *prober.Runner
@@ -53,11 +54,21 @@ func NewServer(cfg Config, repo *store.Repository, authSvc *auth.Service, probeR
 	if err != nil {
 		logger.Error("secret box unavailable", "error", err)
 	}
+	credentialKeys, err := secretcrypto.NewCredentialKeyring(secretcrypto.CredentialKeyringConfig{
+		ActiveEncryptionKeyID:  cfg.CredentialActiveKeyID,
+		EncryptionKeys:         cfg.CredentialEncryptionKeys,
+		ActiveFingerprintKeyID: cfg.CredentialActiveFingerprintKeyID,
+		FingerprintKeys:        cfg.CredentialFingerprintKeys,
+	})
+	if err != nil {
+		logger.Error("credential keyring unavailable", "error", err)
+	}
 	s := &Server{
 		cfg:            cfg,
 		repo:           repo,
 		auth:           authSvc,
 		secretBox:      secretBox,
+		credentialKeys: credentialKeys,
 		gatewayCache:   gatewayCache,
 		upstreamClient: gatewaycache.NewUpstreamClient(),
 		probeRunner:    probeRunner,
@@ -115,6 +126,14 @@ func NewServer(cfg Config, repo *store.Repository, authSvc *auth.Service, probeR
 			mr.Delete("/private-channels/{channelID}", s.deletePrivateChannel)
 			mr.Post("/private-channels/{channelID}/probe-now", s.probePrivateChannelNow)
 			mr.Post("/private-channels/{channelID}/validate", s.validatePrivateChannel)
+			mr.Get("/ai-connection-providers", s.meAIConnectionProviders)
+			mr.Get("/ai-connections", s.meAIConnections)
+			mr.Post("/ai-connections", s.createAIConnection)
+			mr.Get("/ai-connections/{connectionID}", s.meAIConnection)
+			mr.Post("/ai-connections/{connectionID}/validate", s.validateAIConnection)
+			mr.Post("/ai-connections/{connectionID}/rotate", s.rotateAIConnectionCredential)
+			mr.Post("/ai-connections/{connectionID}/quick-relay", s.quickCreateAIConnectionRelay)
+			mr.Delete("/ai-connections/{connectionID}", s.deleteAIConnection)
 		})
 		api.Route("/public", func(pr chi.Router) {
 			pr.Use(s.publicRateLimit)
@@ -475,6 +494,10 @@ func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
+	if s.credentialKeys == nil {
+		writeError(w, r, http.StatusServiceUnavailable, "credential_vault_unavailable", "Credential vault is not ready")
+		return
+	}
 	if err := s.repo.Ping(r.Context()); err != nil {
 		writeError(w, r, http.StatusServiceUnavailable, "database_unavailable", "Database is not ready")
 		return
@@ -497,6 +520,11 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(&out, "# HELP tokhub_alert_deliveries_total Alert delivery events\n# TYPE tokhub_alert_deliveries_total counter\ntokhub_alert_deliveries_total %d\n", snapshot.AlertDeliveries)
 	fmt.Fprintf(&out, "# HELP tokhub_audit_events_total Audit events\n# TYPE tokhub_audit_events_total counter\ntokhub_audit_events_total %d\n", snapshot.AuditEvents)
 	fmt.Fprintf(&out, "# HELP tokhub_usage_rollups_total Usage rollup rows\n# TYPE tokhub_usage_rollups_total gauge\ntokhub_usage_rollups_total %d\n", snapshot.UsageRollups)
+	fmt.Fprintf(&out, "# HELP tokhub_ai_connections_active Active official developer credential connections\n# TYPE tokhub_ai_connections_active gauge\ntokhub_ai_connections_active %d\n", snapshot.AIConnectionsActive)
+	fmt.Fprintf(&out, "# HELP tokhub_ai_connections_attention Official developer credential connections requiring attention\n# TYPE tokhub_ai_connections_attention gauge\ntokhub_ai_connections_attention %d\n", snapshot.AIConnectionsAttention)
+	fmt.Fprintf(&out, "# HELP tokhub_ai_connection_validations_total AI connection validation attempts\n# TYPE tokhub_ai_connection_validations_total counter\ntokhub_ai_connection_validations_total %d\n", snapshot.AIConnectionValidations)
+	fmt.Fprintf(&out, "# HELP tokhub_ai_connection_validation_failures_total Failed AI connection validation attempts\n# TYPE tokhub_ai_connection_validation_failures_total counter\ntokhub_ai_connection_validation_failures_total %d\n", snapshot.AIConnectionValidationFailure)
+	fmt.Fprintf(&out, "# HELP tokhub_ai_quick_relays_total Completed personal relays created from AI connections\n# TYPE tokhub_ai_quick_relays_total counter\ntokhub_ai_quick_relays_total %d\n", snapshot.AIQuickRelays)
 	_, _ = w.Write([]byte(out.String()))
 }
 

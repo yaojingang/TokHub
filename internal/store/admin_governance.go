@@ -887,6 +887,62 @@ func deactivateDeletedUsersRuntimeResources(ctx context.Context, tx pgx.Tx, user
 	if len(userIDs) == 0 {
 		return nil
 	}
+	connectionRows, err := tx.Query(ctx, `
+		update ai_connections
+		set status='deleted',deleted_at=coalesce(deleted_at,now()),updated_at=now()
+		where owner_user_id=any($1) and status <> 'deleted' and deleted_at is null
+		returning id,owner_user_id
+	`, userIDs)
+	if err != nil {
+		return err
+	}
+	connectionIDs := []string{}
+	connectionOwners := map[string]string{}
+	for connectionRows.Next() {
+		var connectionID, ownerID string
+		if err := connectionRows.Scan(&connectionID, &ownerID); err != nil {
+			connectionRows.Close()
+			return err
+		}
+		connectionIDs = append(connectionIDs, connectionID)
+		connectionOwners[connectionID] = ownerID
+	}
+	if err := connectionRows.Err(); err != nil {
+		connectionRows.Close()
+		return err
+	}
+	connectionRows.Close()
+	if len(connectionIDs) > 0 {
+		if _, err := tx.Exec(ctx, `
+			update ai_connection_secrets
+			set ciphertext='',nonce='',mask='deleted',fingerprint='deleted:' || connection_id,
+				version=version+1,updated_at=now()
+			where connection_id=any($1)
+		`, connectionIDs); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+			update ai_quick_relay_requests
+			set status='expired',reveal_ciphertext='',reveal_nonce='',
+				reveal_encryption_key_id='',reveal_fingerprint='',
+				reveal_fingerprint_key_id='',reveal_mask='expired'
+			where connection_id=any($1) and status='completed'
+		`, connectionIDs); err != nil {
+			return err
+		}
+		for _, connectionID := range connectionIDs {
+			if err := writeAuditTx(ctx, tx, AuditEvent{
+				ActorType: "user", ActorID: actorID, Action: "admin.user.ai_connection_deleted",
+				ObjectType: "ai_connection", ObjectID: connectionID, Result: "success",
+				Metadata: map[string]any{
+					"owner_id": connectionOwners[connectionID], "credential_scrubbed": true,
+					"quick_relay_reveals_expired": true,
+				},
+			}); err != nil {
+				return err
+			}
+		}
+	}
 	orgIDs := personalOrgIDs(userIDs)
 	if _, err := tx.Exec(ctx, `
 		update gateways
@@ -938,6 +994,34 @@ func deactivateDeletedUsersRuntimeResources(ctx context.Context, tx pgx.Tx, user
 		return nil
 	}
 	if _, err := tx.Exec(ctx, `update gateway_upstreams set enabled=false where channel_id=any($1)`, channelIDs); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+		update gateways g
+		set status='paused',updated_at=now()
+		where g.status='active'
+			and exists (
+				select 1 from gateway_upstreams affected
+				where affected.gateway_id=g.id and affected.channel_id=any($1)
+			)
+			and not exists (
+				select 1 from gateway_upstreams remaining
+				where remaining.gateway_id=g.id and remaining.enabled=true
+			)
+	`, channelIDs); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+		update gateway_keys k
+		set status='revoked',revoked_at=coalesce(revoked_at,now())
+		where k.status='active'
+			and exists (
+				select 1
+				from gateways g
+				join gateway_upstreams affected on affected.gateway_id=g.id
+				where g.id=k.gateway_id and g.status='paused' and affected.channel_id=any($1)
+			)
+	`, channelIDs); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `

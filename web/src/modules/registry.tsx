@@ -14,6 +14,7 @@ import { AdminUserNewPage } from "../pages/AdminUserNewPage";
 import { AdminUsersPage } from "../pages/AdminUsersPage";
 import { AdminWebPage } from "../pages/AdminWebPage";
 import { AlertsPage } from "../pages/AlertsPage";
+import { AIConnectionsPage } from "../pages/AIConnectionsPage";
 import { AuditPage } from "../pages/AuditPage";
 import { ChannelDetailPage } from "../pages/ChannelDetailPage";
 import { ConsoleHelpPage } from "../pages/ConsoleHelpPage";
@@ -301,6 +302,19 @@ export const consoleModules: ModuleConfig[] = [
     icon: "▣",
     permission: "authenticated",
     component: DashboardFullscreenPage
+  },
+  {
+    id: "console.connections",
+    scope: "console",
+    path: "/console/connections",
+    titleKey: "console:nav.connections",
+    crumbKey: "console:crumbs.connections",
+    navKey: "console:nav.connections",
+    icon: "⌁",
+    permission: "authenticated",
+    component: AIConnectionsPage,
+    showInNav: true,
+    navGroupKey: "console:groups.channels"
   },
   {
     id: "console.channels",

@@ -30,19 +30,31 @@ type workspaceMemberRequest struct {
 }
 
 type connectionValidationResult struct {
+	OK             bool                              `json:"ok"`
+	Provider       string                            `json:"provider"`
+	Type           string                            `json:"type"`
+	Endpoint       string                            `json:"endpoint"`
+	Model          string                            `json:"model"`
+	Stage          string                            `json:"stage"`
+	StatusCode     int                               `json:"statusCode"`
+	LatencyMs      int                               `json:"latencyMs"`
+	ModelCount     int                               `json:"modelCount"`
+	Tokens         int                               `json:"tokens"`
+	UsageEstimated bool                              `json:"usageEstimated"`
+	ErrorType      string                            `json:"errorType,omitempty"`
+	Message        string                            `json:"message"`
+	Models         []connectionModelValidationResult `json:"models,omitempty"`
+}
+
+type connectionModelValidationResult struct {
 	OK             bool   `json:"ok"`
-	Provider       string `json:"provider"`
-	Type           string `json:"type"`
-	Endpoint       string `json:"endpoint"`
 	Model          string `json:"model"`
-	Stage          string `json:"stage"`
 	StatusCode     int    `json:"statusCode"`
 	LatencyMs      int    `json:"latencyMs"`
-	ModelCount     int    `json:"modelCount"`
 	Tokens         int    `json:"tokens"`
 	UsageEstimated bool   `json:"usageEstimated"`
 	ErrorType      string `json:"errorType,omitempty"`
-	Message        string `json:"message"`
+	Message        string `json:"message,omitempty"`
 }
 
 type gatewayDebugRequest struct {

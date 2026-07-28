@@ -130,3 +130,45 @@ func TestLoadConfigUpstreamModeDefaultsByEnvironment(t *testing.T) {
 		t.Fatalf("explicit UpstreamMode = %q, want mock", cfg.UpstreamMode)
 	}
 }
+
+func TestLoadConfigReadsCredentialKeyringRotationSet(t *testing.T) {
+	t.Setenv("TOKHUB_CREDENTIAL_ACTIVE_KEY_ID", "enc-v2")
+	t.Setenv("TOKHUB_CREDENTIAL_ENCRYPTION_KEYS", "enc-v1:11111111111111111111111111111111,enc-v2:22222222222222222222222222222222")
+	t.Setenv("TOKHUB_CREDENTIAL_ACTIVE_FINGERPRINT_KEY_ID", "fp-v2")
+	t.Setenv("TOKHUB_CREDENTIAL_FINGERPRINT_KEYS", "fp-v1:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,fp-v2:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+
+	cfg := LoadConfig()
+
+	if cfg.CredentialActiveKeyID != "enc-v2" || cfg.CredentialEncryptionKeys["enc-v1"] == "" {
+		t.Fatalf("credential encryption keyring was not loaded: %#v", cfg.CredentialEncryptionKeys)
+	}
+	if cfg.CredentialActiveFingerprintKeyID != "fp-v2" || cfg.CredentialFingerprintKeys["fp-v2"] == "" {
+		t.Fatalf("credential fingerprint keyring was not loaded: %#v", cfg.CredentialFingerprintKeys)
+	}
+}
+
+func TestLoadConfigRequiresDedicatedCredentialKeysInProduction(t *testing.T) {
+	t.Setenv("TOKHUB_ENV", "production")
+	t.Setenv("TOKHUB_CREDENTIAL_ENCRYPTION_KEYS", "")
+	t.Setenv("TOKHUB_CREDENTIAL_FINGERPRINT_KEYS", "")
+
+	cfg := LoadConfig()
+
+	if len(cfg.CredentialEncryptionKeys) != 0 || len(cfg.CredentialFingerprintKeys) != 0 {
+		t.Fatalf("production config fell back to the global secret: encryption=%d fingerprint=%d", len(cfg.CredentialEncryptionKeys), len(cfg.CredentialFingerprintKeys))
+	}
+}
+
+func TestLoadConfigUsesSeparatedCredentialFallbacksInDevelopment(t *testing.T) {
+	t.Setenv("TOKHUB_ENV", "development")
+	t.Setenv("TOKHUB_SECRET_KEY", "development-secret-material-32-bytes")
+	t.Setenv("TOKHUB_CREDENTIAL_ENCRYPTION_KEYS", "")
+	t.Setenv("TOKHUB_CREDENTIAL_FINGERPRINT_KEYS", "")
+
+	cfg := LoadConfig()
+	encryptionSecret := cfg.CredentialEncryptionKeys[cfg.CredentialActiveKeyID]
+	fingerprintSecret := cfg.CredentialFingerprintKeys[cfg.CredentialActiveFingerprintKeyID]
+	if encryptionSecret == "" || fingerprintSecret == "" || encryptionSecret == fingerprintSecret {
+		t.Fatalf("development credential fallback keys were not separated")
+	}
+}

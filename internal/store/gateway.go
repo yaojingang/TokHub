@@ -177,11 +177,17 @@ type GatewayRequestEvent struct {
 }
 
 type GatewayChannelCredential struct {
-	ChannelID   string
-	Ciphertext  string
-	Nonce       string
-	Mask        string
-	Fingerprint string
+	ChannelID        string
+	ConnectionID     string
+	OwnerUserID      string
+	Provider         string
+	Ciphertext       string
+	Nonce            string
+	Mask             string
+	Fingerprint      string
+	EncryptionKeyID  string
+	FingerprintKeyID string
+	Algorithm        string
 }
 
 type GatewayUsageSummary struct {
@@ -411,6 +417,7 @@ func gatewayEligiblePlatformPredicate(alias string) string {
 func gatewayEligiblePrivatePredicate(alias string, orgParam string) string {
 	prefix := gatewaySQLAlias(alias)
 	return prefix + "owner_type='user' and " +
+		"coalesce(" + prefix + "managed_source,'')='' and " +
 		prefix + "gateway_enabled is true and " +
 		"coalesce(" + prefix + "org_id,'org_' || coalesce(" + prefix + "owner_id,''))=" + orgParam + " and " +
 		prefix + "status in ('healthy','degraded') and " +
@@ -1452,12 +1459,45 @@ func CalculateModelCostUSD(promptTokens int, completionTokens int, inputPerMTok 
 func (r *Repository) GatewayChannelCredential(ctx context.Context, orgID string, channelID string) (GatewayChannelCredential, error) {
 	var cred GatewayChannelCredential
 	err := r.db.QueryRow(ctx, `
-		select cc.channel_id,cc.key_ciphertext,cc.key_nonce,cc.key_mask,cc.key_fingerprint
-		from channel_credentials cc
-		join channels c on c.id=cc.channel_id
-		where cc.channel_id=$1
+		select c.id,coalesce(ac.id,''),coalesce(ac.owner_user_id,''),coalesce(ac.provider,''),
+			coalesce(cc.key_ciphertext,acs.ciphertext,''),coalesce(cc.key_nonce,acs.nonce,''),
+			coalesce(cc.key_mask,acs.mask,''),coalesce(cc.key_fingerprint,acs.fingerprint,''),
+			coalesce(acs.encryption_key_id,''),coalesce(acs.fingerprint_key_id,''),
+			coalesce(acs.algorithm,'aes-256-gcm')
+		from channels c
+			left join channel_credentials cc on cc.channel_id=c.id
+			left join ai_connections ac on ac.id=c.ai_connection_id
+			left join ai_connection_secrets acs on acs.connection_id=ac.id
+			left join ai_connection_models acm on acm.id=c.ai_connection_model_id and acm.connection_id=ac.id
+		where c.id=$1
 			and c.status not in ('disabled','deleted')
 			and c.deleted_at is null
+			and (
+				cc.channel_id is not null
+				or (
+					ac.id is not null
+					and ac.owner_user_id=c.owner_id
+					and ac.org_id=$2
+						and ac.status in ('active','attention')
+						and ac.deleted_at is null
+						and acm.enabled=true
+						and acm.verification_status='verified'
+						and exists (
+							select 1
+							from users owner_user
+							where owner_user.id=ac.owner_user_id
+								and owner_user.status='active'
+								and owner_user.deleted_at is null
+						)
+						and exists (
+							select 1
+							from org_members owner_member
+							where owner_member.org_id=ac.org_id
+								and owner_member.user_id=ac.owner_user_id
+								and owner_member.status='active'
+						)
+					)
+				)
 			and (
 				(`+gatewayRuntimePlatformCredentialPredicate("c", "$2", "$3")+`)
 				or (
@@ -1466,7 +1506,11 @@ func (r *Repository) GatewayChannelCredential(ctx context.Context, orgID string,
 					and coalesce(c.org_id,'org_' || coalesce(c.owner_id,'')) = $2
 				)
 			)
-	`, channelID, orgID, DefaultOrgID).Scan(&cred.ChannelID, &cred.Ciphertext, &cred.Nonce, &cred.Mask, &cred.Fingerprint)
+	`, channelID, orgID, DefaultOrgID).Scan(
+		&cred.ChannelID, &cred.ConnectionID, &cred.OwnerUserID, &cred.Provider,
+		&cred.Ciphertext, &cred.Nonce, &cred.Mask, &cred.Fingerprint,
+		&cred.EncryptionKeyID, &cred.FingerprintKeyID, &cred.Algorithm,
+	)
 	return cred, err
 }
 

@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 
+	secretcrypto "tokhub/internal/crypto"
 	gatewaycache "tokhub/internal/gateway"
 	"tokhub/internal/store"
 )
@@ -915,51 +916,16 @@ func (s *Server) gatewayModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	start := time.Now()
-	if s.cfg.UpstreamMode == "real" {
-		candidates := s.availableGatewayCandidates(r.Context(), authn.Gateway)
-		if len(candidates) == 0 {
-			s.recordGatewayFailure(r, authn, "", "", http.StatusBadGateway, "no_upstream", start, false)
-			writeError(w, r, http.StatusBadGateway, "no_upstream", "No healthy upstream is available")
-			return
-		}
-		lastErrType := "upstream_failed"
-		for _, upstream := range candidates {
-			apiKey, err := s.gatewayUpstreamAPIKey(r.Context(), authn, upstream)
-			if err != nil {
-				lastErrType = "upstream_credential_unavailable"
-				continue
-			}
-			result, err := s.upstreamClient.Models(r.Context(), gatewaycache.Upstream{
-				Name: upstream.Name, Provider: upstream.Provider, Type: upstream.Type, Endpoint: upstream.Endpoint, Model: upstream.Model, ProviderConfig: upstream.ProviderConfig,
-			}, apiKey)
-			if err != nil {
-				if result.ErrorType != "" {
-					lastErrType = result.ErrorType
-				}
-				s.openCircuit(upstream.ChannelID)
-				continue
-			}
-			_ = s.repo.RecordGatewayEvent(r.Context(), store.GatewayRequestEvent{
-				GatewayID:         authn.Gateway.ID,
-				GatewayKeyID:      authn.Key.ID,
-				UpstreamChannelID: upstream.ChannelID,
-				RequestPath:       "/gateway/v1/models",
-				StatusCode:        result.StatusCode,
-				LatencyMs:         int(time.Since(start).Milliseconds()),
-			})
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(result.StatusCode)
-			_, _ = w.Write(result.Body)
-			return
-		}
-		s.recordGatewayFailure(r, authn, "", "", http.StatusBadGateway, lastErrType, start, false)
-		writeError(w, r, http.StatusBadGateway, "upstream_failed", "All upstreams failed before first byte")
+	candidates := s.availableGatewayCandidates(r.Context(), authn.Gateway)
+	if len(candidates) == 0 {
+		s.recordGatewayFailure(r, authn, "", "", http.StatusBadGateway, "no_upstream", start, false)
+		writeError(w, r, http.StatusBadGateway, "no_upstream", "No healthy upstream is available")
 		return
 	}
 	models := []map[string]any{}
 	seen := map[string]bool{}
-	for _, upstream := range authn.Gateway.Upstreams {
-		if !upstream.Enabled || seen[upstream.Model] {
+	for _, upstream := range candidates {
+		if seen[upstream.Model] {
 			continue
 		}
 		seen[upstream.Model] = true
@@ -1005,8 +971,13 @@ func (s *Server) handleGatewayGeneration(w http.ResponseWriter, r *http.Request,
 		payload.Model = firstGatewayModel(authn.Gateway)
 	}
 	start := time.Now()
-	candidates := s.availableGatewayCandidates(r.Context(), authn.Gateway)
+	candidates := s.availableGatewayCandidates(r.Context(), authn.Gateway, payload.Model)
 	if len(candidates) == 0 {
+		if !gatewaySupportsModel(authn.Gateway, payload.Model) {
+			s.recordGatewayFailure(r, authn, "", payload.Model, http.StatusBadRequest, "model_not_available", start, payload.Stream)
+			writeError(w, r, http.StatusBadRequest, "model_not_available", "The requested model is not available on this gateway")
+			return
+		}
 		s.recordGatewayFailure(r, authn, "", payload.Model, http.StatusBadGateway, "no_upstream", start, payload.Stream)
 		writeError(w, r, http.StatusBadGateway, "no_upstream", "No healthy upstream is available")
 		return
@@ -1057,8 +1028,13 @@ func (s *Server) handleGatewayAnthropicMessages(w http.ResponseWriter, r *http.R
 		payload.Model = firstGatewayModel(authn.Gateway)
 	}
 	start := time.Now()
-	candidates := s.availableGatewayCandidates(r.Context(), authn.Gateway)
+	candidates := s.availableGatewayCandidates(r.Context(), authn.Gateway, payload.Model)
 	if len(candidates) == 0 {
+		if !gatewaySupportsModel(authn.Gateway, payload.Model) {
+			s.recordGatewayFailure(r, authn, "", payload.Model, http.StatusBadRequest, "model_not_available", start, payload.Stream)
+			writeAnthropicError(w, http.StatusBadRequest, "invalid_request_error", "The requested model is not available on this gateway")
+			return
+		}
 		s.recordGatewayFailure(r, authn, "", payload.Model, http.StatusBadGateway, "no_upstream", start, payload.Stream)
 		writeAnthropicError(w, http.StatusBadGateway, "api_error", "No healthy upstream is available")
 		return
@@ -1232,10 +1208,17 @@ func (s *Server) authenticateGatewayRequest(w http.ResponseWriter, r *http.Reque
 	return authn, true
 }
 
-func (s *Server) availableGatewayCandidates(ctx context.Context, gateway store.Gateway) []store.GatewayUpstream {
+func (s *Server) availableGatewayCandidates(ctx context.Context, gateway store.Gateway, model ...string) []store.GatewayUpstream {
 	candidates := s.repo.PlanGatewayRoute(ctx, gateway)
+	requestedModel := ""
+	if len(model) > 0 {
+		requestedModel = strings.TrimSpace(model[0])
+	}
 	out := []store.GatewayUpstream{}
 	for _, upstream := range candidates {
+		if requestedModel != "" && strings.TrimSpace(upstream.Model) != requestedModel {
+			continue
+		}
 		if s.circuitOpen(upstream.ChannelID) {
 			continue
 		}
@@ -1249,6 +1232,19 @@ func (s *Server) availableGatewayCandidates(ctx context.Context, gateway store.G
 		s.logger.Warn("store redis route plan failed", "gateway_id", gateway.ID, "error", err)
 	}
 	return out
+}
+
+func gatewaySupportsModel(gateway store.Gateway, model string) bool {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return false
+	}
+	for _, upstream := range gateway.Upstreams {
+		if upstream.Enabled && strings.TrimSpace(upstream.Model) == model {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) recordGatewaySuccess(r *http.Request, authn store.AuthenticatedGatewayKey, upstream store.GatewayUpstream, model string, usage gatewayUsage, statusCode int, start time.Time, stream bool) {
@@ -1298,6 +1294,16 @@ func (s *Server) gatewayUpstreamAPIKey(ctx context.Context, authn store.Authenti
 	cred, err := s.repo.GatewayChannelCredential(ctx, authn.Key.OrgID, upstream.ChannelID)
 	if err != nil {
 		return "", err
+	}
+	if cred.ConnectionID != "" {
+		if s.credentialKeys == nil {
+			return "", errors.New("credential keyring is unavailable")
+		}
+		return s.credentialKeys.Decrypt(cred.OwnerUserID, cred.Provider, secretcrypto.CredentialEnvelope{
+			Ciphertext: cred.Ciphertext, Nonce: cred.Nonce, EncryptionKeyID: cred.EncryptionKeyID,
+			Fingerprint: cred.Fingerprint, FingerprintKeyID: cred.FingerprintKeyID,
+			Mask: cred.Mask, Algorithm: cred.Algorithm,
+		})
 	}
 	if s.secretBox == nil {
 		return "", errors.New("encryption is unavailable")

@@ -94,7 +94,8 @@ function workspaceHeaders(input: RequestInfo | URL): HeadersInit {
 function shouldAttachWorkspace(input: RequestInfo | URL) {
   const raw = typeof input === "string" ? input : input instanceof URL ? input.pathname : input.url;
   const path = raw.startsWith("http") ? new URL(raw).pathname : raw;
-  return path.startsWith("/api/console") || path.startsWith("/api/me/private-channels");
+  return path.startsWith("/api/console")
+    || path.startsWith("/api/me/private-channels");
 }
 
 async function readJSON<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
@@ -822,6 +823,100 @@ export type ConnectionValidationResult = {
   usageEstimated: boolean;
   errorType?: string;
   message: string;
+  models?: ConnectionModelValidationResult[];
+};
+
+export type ConnectionModelValidationResult = {
+  ok: boolean;
+  model: string;
+  statusCode: number;
+  latencyMs: number;
+  tokens: number;
+  usageEstimated: boolean;
+  errorType?: string;
+  message?: string;
+};
+
+export type AIConnectionProviderRegion = {
+  code: string;
+  name: string;
+  endpoint?: string;
+  workspaceId: boolean;
+};
+
+export type AIConnectionProvider = {
+  code: string;
+  name: string;
+  productLine: string;
+  protocol: string;
+  type: string;
+  authMethod: "api_key";
+  credentialLabel: string;
+  defaultRegion: string;
+  regions: AIConnectionProviderRegion[];
+  validationMode: string;
+  generationKind: string;
+  recommendedModels: string[];
+  docsUrl: string;
+};
+
+export type AIConnectionModel = {
+  id: string;
+  connectionId: string;
+  providerModelId: string;
+  displayName: string;
+  enabled: boolean;
+  verificationStatus: string;
+  validationLatencyMs: number;
+  lastErrorCode?: string;
+  lastErrorMessage?: string;
+  lastValidatedAt?: string;
+  capabilities: Record<string, unknown>;
+  routeChannelId?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AIConnection = {
+  id: string;
+  orgId: string;
+  provider: string;
+  productLine: string;
+  region: string;
+  workspaceId?: string;
+  authMethod: "api_key";
+  protocol: string;
+  adapterType: string;
+  endpoint: string;
+  providerConfig: Record<string, unknown>;
+  displayName: string;
+  status: "active" | "attention" | "deleted" | string;
+  validationStage: string;
+  validationLatencyMs: number;
+  modelCount: number;
+  lastErrorCode?: string;
+  lastErrorMessage?: string;
+  lastValidatedAt?: string;
+  policyVersion: string;
+  secretMask: string;
+  models: AIConnectionModel[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AIConnectionProviderCatalog = {
+  items: AIConnectionProvider[];
+  policyVersion: string;
+  credentialPolicy: {
+    accepted: string[];
+    rejected: string[];
+  };
+};
+
+export type AIQuickRelayResult = {
+  gateway: Gateway;
+  key: GatewayKey;
+  replay: boolean;
 };
 
 export type GatewayDebugResult = {
@@ -1416,6 +1511,53 @@ export async function bulkRemoveFavorites(ids: string[]): Promise<{ items: Publi
 
 export async function privateChannels(): Promise<{ items: PrivateChannel[] }> {
   return readJSON<{ items: PrivateChannel[] }>("/api/me/private-channels", { credentials: "include" });
+}
+
+export async function aiConnectionProviders(): Promise<AIConnectionProviderCatalog> {
+  return readJSON<AIConnectionProviderCatalog>("/api/me/ai-connection-providers", { credentials: "include" });
+}
+
+export async function aiConnections(): Promise<{ items: AIConnection[] }> {
+  return readJSON<{ items: AIConnection[] }>("/api/me/ai-connections", { credentials: "include" });
+}
+
+export async function createAIConnection(input: {
+  provider: string;
+  region: string;
+  workspaceId?: string;
+  displayName: string;
+  apiKey: string;
+  models: string[];
+  confirmBillable: boolean;
+}): Promise<{ connection: AIConnection; validation: ConnectionValidationResult }> {
+  return writeJSONRequest<{ connection: AIConnection; validation: ConnectionValidationResult }>("/api/me/ai-connections", input);
+}
+
+export async function validateAIConnection(connectionID: string): Promise<{ connection: AIConnection; validation: ConnectionValidationResult }> {
+  return writeJSONRequest<{ connection: AIConnection; validation: ConnectionValidationResult }>(`/api/me/ai-connections/${connectionID}/validate`, {
+    confirmBillable: true
+  });
+}
+
+export async function rotateAIConnectionCredential(connectionID: string, apiKey: string): Promise<{ connection: AIConnection; validation: ConnectionValidationResult }> {
+  return writeJSONRequest<{ connection: AIConnection; validation: ConnectionValidationResult }>(`/api/me/ai-connections/${connectionID}/rotate`, {
+    apiKey,
+    confirmBillable: true
+  });
+}
+
+export async function deleteAIConnection(connectionID: string): Promise<void> {
+  await writeJSONRequest(`/api/me/ai-connections/${connectionID}`, {}, { method: "DELETE" });
+}
+
+export async function quickCreateAIConnectionRelay(
+  connectionID: string,
+  input: { modelIds: string[]; name: string; policy: string; qpsLimit: number; quotaMonth: number },
+  idempotencyKey: string
+): Promise<AIQuickRelayResult> {
+  return writeJSONRequest<AIQuickRelayResult>(`/api/me/ai-connections/${connectionID}/quick-relay`, input, {
+    headers: { "Idempotency-Key": idempotencyKey }
+  });
 }
 
 export async function createPrivateChannel(input: PrivateChannelInput): Promise<{ channel: PrivateChannel }> {

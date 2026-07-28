@@ -12,7 +12,7 @@ curl http://localhost:8080/openapi.yaml
 | --- | --- | --- | --- |
 | `/api/public/*` | 前台页面、匿名访客 | 无 | 首页、详情页、推荐页公开数据 |
 | `/api/auth/*` | 浏览器用户 | Cookie + CSRF | 登录、注册、会话、邮箱验证、找回密码 |
-| `/api/me/*` | 登录用户 | Cookie + CSRF | 收藏和个人私有通道 |
+| `/api/me/*` | 登录用户 | Cookie + CSRF | 收藏、个人私有通道和 AI 开发者服务连接 |
 | `/api/console/*` | 用户/企业工作区 | Cookie + CSRF | 专属网关、成员、用量、告警、审计 |
 | `/api/admin/*` | 平台管理员 | Cookie + CSRF + admin role | 平台通道、推荐、站点配置、全局治理 |
 | `/v1/status/*` | 第三方只读接入 | `X-Site-Key` 或 Bearer | 公开状态数据 Open API |
@@ -96,6 +96,72 @@ curl -b cookies.txt -c cookies.txt -X POST http://localhost:8080/api/auth/login 
 - `PATCH /api/me/private-channels/{channelID}`
 - `DELETE /api/me/private-channels/{channelID}`
 - `POST /api/me/private-channels/{channelID}/probe-now`
+- `GET /api/me/ai-connection-providers`
+- `GET/POST /api/me/ai-connections`
+- `GET/DELETE /api/me/ai-connections/{connectionID}`
+- `POST /api/me/ai-connections/{connectionID}/validate`
+- `POST /api/me/ai-connections/{connectionID}/rotate`
+- `POST /api/me/ai-connections/{connectionID}/quick-relay`
+
+### AI 开发者服务连接
+
+AI 连接中心支持 OpenAI、Gemini、Kimi、DeepSeek、豆包、Claude 和千问的官方开发者 API 产品线。服务端 Provider Registry 固定地域和官方 API Endpoint，客户端不能提交任意上游地址。
+
+AI 服务连接固定归属当前用户的个人工作区。`X-TokHub-Workspace` 和工作区查询参数不会改变连接归属。团队共享需要独立的授权、接受和撤销流程，当前版本没有开放。
+
+创建连接：
+
+```bash
+curl -b cookies.txt -X POST http://localhost:8080/api/me/ai-connections \
+  -H "Content-Type: application/json" \
+  -H "X-CSRF-Token: <csrfToken>" \
+  -d '{
+    "provider":"openai",
+    "region":"global",
+    "displayName":"我的 OpenAI",
+    "apiKey":"<official_api_key>",
+    "models":["gpt-5.5"],
+    "confirmBillable":true
+  }'
+```
+
+服务端会按产品能力验证模型列表，并为每个已配置模型发送一次最小生成请求，再使用版本化 AES-256-GCM 密钥环保存凭证。创建、复验和轮换请求都要显式提交 `confirmBillable:true`。响应只包含凭证 mask 和 HMAC 指纹关联信息。验证结果按模型保存；连接处于 `attention` 时，已经验证通过的模型仍可创建个人中转，失败模型继续隔离。同一用户、个人工作区、服务商 Endpoint 和凭证指纹不能重复创建连接。每位用户最多保存 32 个有效连接。
+
+安全轮换遵循“验证新凭证、事务替换旧凭证”的顺序。新凭证验证失败时，当前可用凭证保持不变，并写入拒绝轮换审计事件。
+
+一键创建个人中转：
+
+```bash
+curl -b cookies.txt -X POST \
+  http://localhost:8080/api/me/ai-connections/<connection_id>/quick-relay \
+  -H "Content-Type: application/json" \
+  -H "X-CSRF-Token: <csrfToken>" \
+  -H "Idempotency-Key: ai-relay-<uuid>" \
+  -d '{
+    "modelIds":["<connection_model_id>"],
+    "name":"个人 OpenAI 中转",
+    "policy":"latency",
+    "qpsLimit":20,
+    "quotaMonth":100000
+  }'
+```
+
+同一用户、个人工作区和 `Idempotency-Key` 在 10 分钟内返回同一个网关和同一个一次性 Gateway Key。请求内容变化会返回 `idempotency_conflict`。Gateway Key 完整值只在创建结果或有效期内的幂等重放中展示。
+
+`quotaMonth` 沿用现有网关字段名，当前语义是 Gateway Key 的累计请求次数上限。
+
+删除连接会立即擦除凭证密文和未过期的一次性密钥密文，停用受管通道。失去全部可用路由的关联中转站会被暂停，其 Gateway Key 会被吊销。
+
+连接密钥环配置：
+
+- `TOKHUB_CREDENTIAL_ACTIVE_KEY_ID`
+- `TOKHUB_CREDENTIAL_ENCRYPTION_KEYS`，格式为 `enc-v1:<secret>,enc-v2:<secret>`
+- `TOKHUB_CREDENTIAL_ACTIVE_FINGERPRINT_KEY_ID`
+- `TOKHUB_CREDENTIAL_FINGERPRINT_KEYS`，格式为 `fp-v1:<secret>,fp-v2:<secret>`
+
+生产预检要求同时配置独立的加密密钥环和指纹密钥环。生产运行时不会回落到 `TOKHUB_SECRET_KEY`，两个密钥环也不能使用相同的密钥材料。轮换时先加入新 Key ID 并切换 active ID，历史 Key 保留到全部旧凭证完成重加密。
+
+生产环境应使用独立的加密密钥和指纹密钥，并保留旧 Key ID 直到关联凭证完成轮换。`/metrics` 暴露 active、attention、验证总量、验证失败量和一键中转总量。
 
 用户/企业工作区能力：
 
@@ -121,6 +187,8 @@ curl -b cookies.txt -c cookies.txt -X POST http://localhost:8080/api/auth/login 
 
 - 私有通道 Key 永不通过 API 明文返回。
 - Gateway Key 列表只展示 mask；完整 Key 只在创建响应展示一次，后续只能轮换或重新签发。
+- AI 连接只接受官方开发者 API Key。密码、验证码、浏览器 Cookie、消费者会话 Token 和 CLI OAuth 会话会被产品策略拒绝。
+- 受管通道只引用 `ai_connection_id`，凭证密文在连接密钥表集中保存，不复制到通道凭证表。
 - `/api/console/*` 必须按当前用户工作区过滤。
 - 普通用户不应依赖 `/api/admin/*`。
 

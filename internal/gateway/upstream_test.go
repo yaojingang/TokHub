@@ -150,6 +150,26 @@ func TestUpstreamTypeSelectsAdapterOverProviderName(t *testing.T) {
 	}
 }
 
+func TestProviderPathModeDirectKeepsOfficialVersionedPrefix(t *testing.T) {
+	client := NewUpstreamClient()
+	req, err := client.newRequest(context.Background(), Upstream{
+		Provider: "豆包",
+		Type:     "openai-compatible",
+		Endpoint: "https://ark.cn-beijing.volces.com/api/v3",
+		Model:    "doubao-seed-2-0-lite-260215",
+		ProviderConfig: map[string]any{
+			"pathMode": "direct",
+		},
+	}, "test-key", http.MethodPost, "/responses", []byte(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "https://ark.cn-beijing.volces.com/api/v3/responses"
+	if got := req.URL.String(); got != want {
+		t.Fatalf("newRequest URL = %q, want %q", got, want)
+	}
+}
+
 func TestAnthropicProviderConfigCanUseBearerAuth(t *testing.T) {
 	client := NewUpstreamClient()
 	req, err := client.newRequest(context.Background(), Upstream{

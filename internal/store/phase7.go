@@ -213,13 +213,18 @@ type GovernanceSummary struct {
 }
 
 type MetricsSnapshot struct {
-	GatewayRequests int
-	GatewayErrors   int
-	ProbeRuns       int
-	OpenIncidents   int
-	AlertDeliveries int
-	AuditEvents     int
-	UsageRollups    int
+	GatewayRequests               int
+	GatewayErrors                 int
+	ProbeRuns                     int
+	OpenIncidents                 int
+	AlertDeliveries               int
+	AuditEvents                   int
+	UsageRollups                  int
+	AIConnectionsActive           int
+	AIConnectionsAttention        int
+	AIConnectionValidations       int
+	AIConnectionValidationFailure int
+	AIQuickRelays                 int
 }
 
 func (r *Repository) RecomputeUsageDailyRollups(ctx context.Context, orgID string) error {
@@ -1577,8 +1582,28 @@ func (r *Repository) MetricsSnapshot(ctx context.Context) (MetricsSnapshot, erro
 			(select count(*) from incidents where deleted_at is null and resolved_at is null),
 			(select count(*) from alert_deliveries),
 			(select count(*) from audit_events),
-			(select count(*) from usage_daily_rollups)
-	`).Scan(&m.GatewayRequests, &m.GatewayErrors, &m.ProbeRuns, &m.OpenIncidents, &m.AlertDeliveries, &m.AuditEvents, &m.UsageRollups)
+			(select count(*) from usage_daily_rollups),
+			(select count(*) from ai_connections where status='active' and deleted_at is null),
+			(select count(*) from ai_connections where status='attention' and deleted_at is null),
+			(select count(*) from audit_events where action in (
+				'ai_connection.created',
+				'ai_connection.validated',
+				'ai_connection.credential_rotated',
+				'ai_connection.credential_rotation_rejected'
+			)),
+			(select count(*) from audit_events where action in (
+				'ai_connection.created',
+				'ai_connection.validated',
+				'ai_connection.credential_rotated',
+				'ai_connection.credential_rotation_rejected'
+			) and result='failed'),
+			(select count(*) from audit_events where action='ai_connection.quick_relay_created' and result='success')
+	`).Scan(
+		&m.GatewayRequests, &m.GatewayErrors, &m.ProbeRuns, &m.OpenIncidents,
+		&m.AlertDeliveries, &m.AuditEvents, &m.UsageRollups, &m.AIConnectionsActive,
+		&m.AIConnectionsAttention, &m.AIConnectionValidations,
+		&m.AIConnectionValidationFailure, &m.AIQuickRelays,
+	)
 	return m, err
 }
 
