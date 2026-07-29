@@ -200,7 +200,9 @@ func TestChatGPTCodexAdapterParsesFixedCallbackAndPinsPrivateEndpoint(t *testing
 	}
 	if material.Endpoint != "https://chatgpt.com/backend-api/codex" ||
 		material.Headers.Get("ChatGPT-Account-Id") != "account-1" ||
-		material.Headers.Get("Originator") != "codex_cli_rs" {
+		material.Headers.Get("Originator") != "codex_cli_rs" ||
+		material.Headers.Get("Version") != CodexBridgeVersion ||
+		!strings.Contains(material.Headers.Get("User-Agent"), "codex_cli_rs/"+CodexBridgeVersion) {
 		t.Fatalf("Codex material = %#v", material)
 	}
 }

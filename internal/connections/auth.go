@@ -83,6 +83,20 @@ func ParseCredentialBundle(raw string) (CredentialBundle, error) {
 	return bundle, nil
 }
 
+func SameCredentialIdentity(current CredentialBundle, replacement CredentialBundle) bool {
+	currentSubject := strings.TrimSpace(current.ProviderSubject)
+	replacementSubject := strings.TrimSpace(replacement.ProviderSubject)
+	if currentSubject == "" || replacementSubject == "" || currentSubject != replacementSubject {
+		return false
+	}
+	currentAccount := strings.TrimSpace(current.AccountID)
+	replacementAccount := strings.TrimSpace(replacement.AccountID)
+	if currentAccount != "" || replacementAccount != "" {
+		return currentAccount != "" && currentAccount == replacementAccount
+	}
+	return true
+}
+
 type AccountProfile struct {
 	Subject     string
 	AccountID   string
@@ -106,6 +120,7 @@ var trustedAuthHeaders = map[string]bool{
 	"Openai-Beta":         true,
 	"Originator":          true,
 	"User-Agent":          true,
+	"Version":             true,
 }
 
 func (m AuthMaterial) Validate() error {

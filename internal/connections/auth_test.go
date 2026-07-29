@@ -2,8 +2,12 @@ package connections
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -150,4 +154,128 @@ func TestCredentialBundleRoundTripsWithoutDroppingRefreshToken(t *testing.T) {
 	if decoded.RefreshToken != bundle.RefreshToken || !decoded.ExpiresAt.Equal(expiresAt) {
 		t.Fatalf("decoded bundle = %#v", decoded)
 	}
+}
+
+func TestParseOIDCClaimsAcceptsBothDocumentedGoogleIssuers(t *testing.T) {
+	now := time.Date(2026, 7, 29, 10, 0, 0, 0, time.UTC)
+	for _, issuer := range []string{"https://accounts.google.com", "accounts.google.com"} {
+		token := unsignedClaimsToken(t, map[string]any{
+			"iss": issuer, "aud": "google-client", "sub": "subject-1",
+			"nonce": "nonce-1", "exp": now.Add(time.Hour).Unix(),
+		})
+		claims, err := parseOIDCClaims(token, "https://accounts.google.com", "google-client", "nonce-1", true, now)
+		if err != nil {
+			t.Fatalf("parseOIDCClaims() rejected issuer %q: %v", issuer, err)
+		}
+		if claims.Subject != "subject-1" {
+			t.Fatalf("claims = %#v", claims)
+		}
+	}
+
+	token := unsignedClaimsToken(t, map[string]any{
+		"iss": "https://attacker.example.test", "aud": "google-client", "sub": "subject-1",
+		"nonce": "nonce-1", "exp": now.Add(time.Hour).Unix(),
+	})
+	if _, err := parseOIDCClaims(token, "https://accounts.google.com", "google-client", "nonce-1", true, now); err == nil {
+		t.Fatal("parseOIDCClaims() accepted an unrelated issuer")
+	}
+}
+
+func TestParseOIDCClaimsRequiresAuthorizedPartyForMultipleAudiences(t *testing.T) {
+	now := time.Date(2026, 7, 29, 10, 0, 0, 0, time.UTC)
+	base := map[string]any{
+		"iss": "https://accounts.google.com", "aud": []string{"google-client", "other-client"},
+		"sub": "subject-1", "nonce": "nonce-1", "exp": now.Add(time.Hour).Unix(),
+	}
+	if _, err := parseOIDCClaims(unsignedClaimsToken(t, base), "https://accounts.google.com", "google-client", "nonce-1", true, now); err == nil {
+		t.Fatal("parseOIDCClaims() accepted multiple audiences without azp")
+	}
+	base["azp"] = "google-client"
+	if _, err := parseOIDCClaims(unsignedClaimsToken(t, base), "https://accounts.google.com", "google-client", "nonce-1", true, now); err != nil {
+		t.Fatalf("parseOIDCClaims() rejected matching azp: %v", err)
+	}
+}
+
+func TestExchangeOAuthFormClassifiesPermanentRefreshFailures(t *testing.T) {
+	for _, code := range []string{
+		"invalid_grant", "invalid_token", "invalid_refresh_token", "token_expired",
+		"app_session_terminated", "refresh_token_reused", "refresh_token_invalidated",
+	} {
+		t.Run(code, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.WriteHeader(http.StatusBadRequest)
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"error": code, "error_description": "sensitive provider detail",
+				})
+			}))
+			t.Cleanup(server.Close)
+			_, err := exchangeOAuthForm(context.Background(), server.Client(), server.URL, nil)
+			if !errors.Is(err, ErrCredentialReauth) {
+				t.Fatalf("exchangeOAuthForm() error = %v, want ErrCredentialReauth", err)
+			}
+			if strings.Contains(err.Error(), "sensitive provider detail") {
+				t.Fatalf("exchangeOAuthForm() leaked provider detail: %v", err)
+			}
+		})
+	}
+}
+
+func TestExchangeOAuthFormClassifiesNestedProviderErrorWithoutLeakingBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{
+			"error":{
+				"code":"refresh_token_reused",
+				"message":"refresh-token-secret must not leak"
+			}
+		}`))
+	}))
+	t.Cleanup(server.Close)
+	_, err := exchangeOAuthForm(context.Background(), server.Client(), server.URL, nil)
+	if !errors.Is(err, ErrCredentialReauth) {
+		t.Fatalf("exchangeOAuthForm() error = %v, want ErrCredentialReauth", err)
+	}
+	if strings.Contains(err.Error(), "refresh-token-secret") {
+		t.Fatalf("exchangeOAuthForm() leaked provider body: %v", err)
+	}
+}
+
+func TestSameCredentialIdentityLocksSubjectAndOptionalAccount(t *testing.T) {
+	current := CredentialBundle{ProviderSubject: "subject-1", AccountID: "account-1"}
+	for _, test := range []struct {
+		name        string
+		replacement CredentialBundle
+		want        bool
+	}{
+		{name: "same identity", replacement: CredentialBundle{ProviderSubject: "subject-1", AccountID: "account-1"}, want: true},
+		{name: "different subject", replacement: CredentialBundle{ProviderSubject: "subject-2", AccountID: "account-1"}},
+		{name: "different account", replacement: CredentialBundle{ProviderSubject: "subject-1", AccountID: "account-2"}},
+		{name: "missing account", replacement: CredentialBundle{ProviderSubject: "subject-1"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := SameCredentialIdentity(current, test.replacement); got != test.want {
+				t.Fatalf("SameCredentialIdentity() = %v, want %v", got, test.want)
+			}
+		})
+	}
+	if !SameCredentialIdentity(
+		CredentialBundle{ProviderSubject: "google-subject", ProjectID: "project-a"},
+		CredentialBundle{ProviderSubject: "google-subject", ProjectID: "project-b"},
+	) {
+		t.Fatal("SameCredentialIdentity() treated a Gemini project change as an account change")
+	}
+}
+
+func unsignedClaimsToken(t *testing.T, claims map[string]any) string {
+	t.Helper()
+	header, err := json.Marshal(map[string]any{"alg": "none"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(claims)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return base64.RawURLEncoding.EncodeToString(header) + "." +
+		base64.RawURLEncoding.EncodeToString(payload) + "."
 }

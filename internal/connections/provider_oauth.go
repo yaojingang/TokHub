@@ -15,21 +15,22 @@ import (
 )
 
 var (
-	ErrAdapterDisabled       = errors.New("authorization adapter is disabled")
-	ErrCredentialReauth      = errors.New("credential requires reauthorization")
-	ErrCredentialTemporary   = errors.New("credential provider is temporarily unavailable")
-	ErrCredentialUnsupported = errors.New("credential operation is unsupported")
+	ErrAdapterDisabled            = errors.New("authorization adapter is disabled")
+	ErrCredentialReauth           = errors.New("credential requires reauthorization")
+	ErrCredentialIdentityMismatch = errors.New("credential identity does not match the existing connection")
+	ErrCredentialTemporary        = errors.New("credential provider is temporarily unavailable")
+	ErrCredentialUnsupported      = errors.New("credential operation is unsupported")
 )
 
 type oauthTokenResponse struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	IDToken      string `json:"id_token"`
-	TokenType    string `json:"token_type"`
-	ExpiresIn    int64  `json:"expires_in"`
-	Scope        string `json:"scope"`
-	Error        string `json:"error"`
-	Description  string `json:"error_description"`
+	AccessToken  string          `json:"access_token"`
+	RefreshToken string          `json:"refresh_token"`
+	IDToken      string          `json:"id_token"`
+	TokenType    string          `json:"token_type"`
+	ExpiresIn    int64           `json:"expires_in"`
+	Scope        string          `json:"scope"`
+	Error        json.RawMessage `json:"error"`
+	Description  string          `json:"error_description"`
 }
 
 func exchangeOAuthForm(ctx context.Context, client *http.Client, endpoint string, form url.Values) (oauthTokenResponse, error) {
@@ -52,9 +53,10 @@ func exchangeOAuthForm(ctx context.Context, client *http.Client, endpoint string
 	if err := json.Unmarshal(body, &token); err != nil {
 		return oauthTokenResponse{}, fmt.Errorf("%w: token endpoint returned an invalid response", ErrCredentialTemporary)
 	}
-	if response.StatusCode < 200 || response.StatusCode >= 300 || strings.TrimSpace(token.Error) != "" {
-		if token.Error == "invalid_grant" || token.Error == "invalid_token" {
-			return oauthTokenResponse{}, fmt.Errorf("%w: %s", ErrCredentialReauth, token.Error)
+	errorCode := oauthTokenErrorCode(token.Error)
+	if response.StatusCode < 200 || response.StatusCode >= 300 || errorCode != "" {
+		if oauthErrorRequiresReauth(errorCode) {
+			return oauthTokenResponse{}, fmt.Errorf("%w: %s", ErrCredentialReauth, errorCode)
 		}
 		return oauthTokenResponse{}, fmt.Errorf("%w: token endpoint status %d", ErrCredentialTemporary, response.StatusCode)
 	}
@@ -65,13 +67,14 @@ func exchangeOAuthForm(ctx context.Context, client *http.Client, endpoint string
 }
 
 type oidcClaims struct {
-	Issuer    string
-	Subject   string
-	Audience  []string
-	Email     string
-	Nonce     string
-	ExpiresAt time.Time
-	Raw       map[string]any
+	Issuer          string
+	Subject         string
+	Audience        []string
+	Email           string
+	Nonce           string
+	AuthorizedParty string
+	ExpiresAt       time.Time
+	Raw             map[string]any
 }
 
 func parseOIDCClaims(raw string, expectedIssuer string, expectedAudience string, expectedNonce string, requireNonce bool, now time.Time) (oidcClaims, error) {
@@ -88,11 +91,12 @@ func parseOIDCClaims(raw string, expectedIssuer string, expectedAudience string,
 		return oidcClaims{}, fmt.Errorf("id token claims are invalid")
 	}
 	claims := oidcClaims{
-		Issuer:  stringClaim(values, "iss"),
-		Subject: stringClaim(values, "sub"),
-		Email:   stringClaim(values, "email"),
-		Nonce:   stringClaim(values, "nonce"),
-		Raw:     values,
+		Issuer:          stringClaim(values, "iss"),
+		Subject:         stringClaim(values, "sub"),
+		Email:           stringClaim(values, "email"),
+		Nonce:           stringClaim(values, "nonce"),
+		AuthorizedParty: stringClaim(values, "azp"),
+		Raw:             values,
 	}
 	switch audience := values["aud"].(type) {
 	case string:
@@ -109,7 +113,10 @@ func parseOIDCClaims(raw string, expectedIssuer string, expectedAudience string,
 		return oidcClaims{}, err
 	}
 	claims.ExpiresAt = time.Unix(exp, 0)
-	if claims.Issuer != expectedIssuer || claims.Subject == "" || !containsString(claims.Audience, expectedAudience) {
+	if !oidcIssuerMatches(claims.Issuer, expectedIssuer) ||
+		claims.Subject == "" ||
+		!containsString(claims.Audience, expectedAudience) ||
+		(len(claims.Audience) > 1 && claims.AuthorizedParty != expectedAudience) {
 		return oidcClaims{}, fmt.Errorf("id token issuer, audience, or subject is invalid")
 	}
 	if !claims.ExpiresAt.After(now.Add(-2 * time.Minute)) {
@@ -119,6 +126,51 @@ func parseOIDCClaims(raw string, expectedIssuer string, expectedAudience string,
 		return oidcClaims{}, fmt.Errorf("id token nonce is invalid")
 	}
 	return claims, nil
+}
+
+func oauthErrorRequiresReauth(code string) bool {
+	switch strings.ToLower(strings.TrimSpace(code)) {
+	case "invalid_grant",
+		"invalid_token",
+		"invalid_refresh_token",
+		"token_expired",
+		"app_session_terminated",
+		"refresh_token_reused",
+		"refresh_token_invalidated":
+		return true
+	default:
+		return false
+	}
+}
+
+func oauthTokenErrorCode(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+	var code string
+	if json.Unmarshal(raw, &code) == nil {
+		return strings.TrimSpace(code)
+	}
+	var detail struct {
+		Code string `json:"code"`
+		Type string `json:"type"`
+	}
+	if json.Unmarshal(raw, &detail) != nil {
+		return ""
+	}
+	if strings.TrimSpace(detail.Code) != "" {
+		return strings.TrimSpace(detail.Code)
+	}
+	return strings.TrimSpace(detail.Type)
+}
+
+func oidcIssuerMatches(actual string, expected string) bool {
+	actual = strings.TrimRight(strings.TrimSpace(actual), "/")
+	expected = strings.TrimRight(strings.TrimSpace(expected), "/")
+	if actual == expected {
+		return true
+	}
+	return expected == "https://accounts.google.com" && actual == "accounts.google.com"
 }
 
 func tokenExpiry(token oauthTokenResponse, now time.Time) time.Time {

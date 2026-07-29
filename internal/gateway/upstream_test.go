@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -442,5 +443,366 @@ func TestCodexOAuthMapsCompletedSSEForResponsesAndChatClients(t *testing.T) {
 	}
 	if !strings.Contains(string(chatBody), `"content":"hello"`) || usage.TotalTokens != 3 {
 		t.Fatalf("chat body=%s usage=%#v", chatBody, usage)
+	}
+}
+
+func TestGeminiStreamingUsesSSEQueryAndPreservesItInTargetURL(t *testing.T) {
+	upstream := Upstream{
+		Provider: "gemini",
+		Type:     "gemini",
+		Endpoint: "https://generativelanguage.googleapis.com/v1beta",
+		Model:    "gemini-2.5-pro",
+	}
+	path, body, err := adaptRequestBody(upstream, "chat", []byte(`{"messages":[{"role":"user","content":"ping"}]}`), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != "/models/gemini-2.5-pro:streamGenerateContent?alt=sse" {
+		t.Fatalf("stream path = %q", path)
+	}
+	request, err := NewUpstreamClient().newRequest(context.Background(), upstream, "key", http.MethodPost, path, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := request.URL.String(); got != "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:streamGenerateContent?alt=sse" {
+		t.Fatalf("request URL = %q", got)
+	}
+}
+
+func TestContentsForGeminiExtractsTextFromOpenAIContentParts(t *testing.T) {
+	contents := contentsForGemini(map[string]any{
+		"messages": []any{map[string]any{
+			"role": "user",
+			"content": []any{
+				map[string]any{"type": "text", "text": "first"},
+				map[string]any{"type": "text", "text": "second"},
+			},
+		}},
+	})
+	if len(contents) != 1 {
+		t.Fatalf("contents = %#v", contents)
+	}
+	parts, _ := contents[0]["parts"].([]map[string]any)
+	if len(parts) != 1 || parts[0]["text"] != "first\nsecond" {
+		t.Fatalf("Gemini parts = %#v", parts)
+	}
+}
+
+func TestGeminiRequestSeparatesSystemInstructionFromConversation(t *testing.T) {
+	_, body, err := adaptRequestBody(Upstream{
+		Provider: "gemini",
+		Type:     "gemini",
+		Model:    "gemini-2.5-pro",
+	}, "chat", []byte(`{
+		"messages":[
+			{"role":"system","content":"Follow policy."},
+			{"role":"developer","content":"Return concise text."},
+			{"role":"user","content":"ping"}
+		]
+	}`), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	instruction, _ := payload["systemInstruction"].(map[string]any)
+	parts, _ := instruction["parts"].([]any)
+	if len(parts) != 1 {
+		t.Fatalf("systemInstruction = %#v", instruction)
+	}
+	part, _ := parts[0].(map[string]any)
+	if part["text"] != "Follow policy.\n\nReturn concise text." {
+		t.Fatalf("system instruction text = %#v", part["text"])
+	}
+	contents, _ := payload["contents"].([]any)
+	if len(contents) != 1 {
+		t.Fatalf("Gemini contents retained system messages: %#v", contents)
+	}
+}
+
+func TestCopyHeadersDropsCredentialAndServerHeaders(t *testing.T) {
+	source := http.Header{
+		"Content-Type":          {"text/event-stream"},
+		"Retry-After":           {"3"},
+		"X-Request-Id":          {"req_1"},
+		"X-Ratelimit-Remaining": {"5"},
+		"Set-Cookie":            {"session=secret"},
+		"Www-Authenticate":      {`Bearer realm="upstream"`},
+		"Server":                {"upstream-internal"},
+	}
+	target := make(http.Header)
+	copyHeaders(target, source)
+	if target.Get("Content-Type") != "text/event-stream" ||
+		target.Get("Retry-After") != "3" ||
+		target.Get("X-Request-Id") != "req_1" ||
+		target.Get("X-Ratelimit-Remaining") != "5" {
+		t.Fatalf("safe headers were dropped: %v", target)
+	}
+	for _, name := range []string{"Set-Cookie", "Www-Authenticate", "Server"} {
+		if target.Get(name) != "" {
+			t.Fatalf("copyHeaders() forwarded %s", name)
+		}
+	}
+}
+
+func TestUpstreamClientReliesOnPerRequestTimeout(t *testing.T) {
+	client := NewUpstreamClient()
+	if client.httpClient.Timeout != 0 {
+		t.Fatalf("HTTP client timeout = %s, want per-request context only", client.httpClient.Timeout)
+	}
+	upstream := Upstream{ProviderConfig: map[string]any{"timeoutMs": 120000}}
+	if got := upstreamTimeout(upstream); got != 120*time.Second {
+		t.Fatalf("upstreamTimeout() = %s", got)
+	}
+	if got := upstreamTimeout(withManagedAuthTimeout(Upstream{})); got != managedAuthTimeout {
+		t.Fatalf("managed OAuth timeout = %s", got)
+	}
+}
+
+func TestStreamGeminiResponseMapsChunksAndUsageToOpenAIChatSSE(t *testing.T) {
+	response := &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": {"text/event-stream"},
+			"Set-Cookie":   {"session=secret"},
+		},
+		Body: io.NopCloser(strings.NewReader(
+			"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hel\"}]}}]}\n\n" +
+				"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"lo\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":2,\"candidatesTokenCount\":1,\"totalTokenCount\":3}}\n\n",
+		)),
+	}
+	recorder := httptest.NewRecorder()
+	result, err := streamGeminiResponse(response, "chat", "gemini-2.5-pro", UpstreamUsage{}, recorder)
+	if err != nil {
+		t.Fatalf("streamGeminiResponse() error = %v", err)
+	}
+	body := recorder.Body.String()
+	if !strings.Contains(body, `"content":"hel"`) ||
+		!strings.Contains(body, `"content":"lo"`) ||
+		!strings.Contains(body, `"finish_reason":"stop"`) ||
+		!strings.Contains(body, "data: [DONE]") {
+		t.Fatalf("mapped stream = %s", body)
+	}
+	if result.Usage.TotalTokens != 3 || !result.Wrote {
+		t.Fatalf("result = %#v", result)
+	}
+	if recorder.Header().Get("Set-Cookie") != "" {
+		t.Fatal("Gemini stream forwarded Set-Cookie")
+	}
+}
+
+func TestStreamGeminiResponseEmitsCompleteResponsesEventLifecycle(t *testing.T) {
+	response := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": {"text/event-stream"}},
+		Body: io.NopCloser(strings.NewReader(
+			"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hello\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":2,\"candidatesTokenCount\":1,\"totalTokenCount\":3}}\n\n",
+		)),
+	}
+	recorder := httptest.NewRecorder()
+	result, err := streamGeminiResponse(response, "responses", "gemini-2.5-pro", UpstreamUsage{}, recorder)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := recorder.Body.String()
+	for _, event := range []string{
+		"response.created",
+		"response.output_item.added",
+		"response.content_part.added",
+		"response.output_text.delta",
+		"response.output_text.done",
+		"response.content_part.done",
+		"response.output_item.done",
+		"response.completed",
+	} {
+		if !strings.Contains(body, "event: "+event) {
+			t.Fatalf("Responses stream omitted %s: %s", event, body)
+		}
+	}
+	if !strings.Contains(body, `"input_tokens":2`) ||
+		!strings.Contains(body, `"output_tokens":1`) ||
+		result.Usage.TotalTokens != 3 {
+		t.Fatalf("Responses stream usage mismatch: body=%s result=%#v", body, result)
+	}
+}
+
+func TestStreamGeminiResponseTreatsSSEErrorAsFailure(t *testing.T) {
+	response := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": {"text/event-stream"}},
+		Body: io.NopCloser(strings.NewReader(
+			"data: {\"error\":{\"code\":429,\"message\":\"provider detail\"}}\n\n",
+		)),
+	}
+	recorder := httptest.NewRecorder()
+	result, err := streamGeminiResponse(response, "chat", "gemini-2.5-pro", UpstreamUsage{}, recorder)
+	if !errors.Is(err, ErrUpstreamUnavailable) || !result.Wrote ||
+		result.ErrorType != "upstream_stream_interrupted" {
+		t.Fatalf("streamGeminiResponse() result=%#v err=%v", result, err)
+	}
+	if strings.Contains(recorder.Body.String(), "provider detail") {
+		t.Fatal("Gemini stream exposed provider error detail")
+	}
+}
+
+func TestStreamWithAuthRunsGeminiOAuthThroughMappedSSEPath(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1beta/models/gemini-2.5-pro:streamGenerateContent" ||
+			r.URL.Query().Get("alt") != "sse" {
+			t.Fatalf("Gemini upstream target = %s", r.URL.String())
+		}
+		if r.Header.Get("Authorization") != "Bearer access" ||
+			r.Header.Get("X-Goog-User-Project") != "project-1" ||
+			r.Header.Get("X-Goog-Api-Key") != "" {
+			t.Fatalf("Gemini auth headers = %v", r.Header)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w,
+			"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"ok\"}]},\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"totalTokenCount\":2}}\n\n",
+		)
+	}))
+	t.Cleanup(server.Close)
+	client := NewUpstreamClient()
+	client.httpClient = server.Client()
+	recorder := httptest.NewRecorder()
+	result, err := client.StreamWithAuth(context.Background(), Upstream{
+		Provider: "gemini",
+		Type:     "gemini",
+		Endpoint: "https://user-controlled.example.test/v1beta",
+		Model:    "gemini-2.5-pro",
+	}, connections.AuthMaterial{
+		Mode:     connections.AuthModeOAuthBearer,
+		Endpoint: server.URL + "/v1beta",
+		Headers: http.Header{
+			"Authorization":       {"Bearer access"},
+			"X-Goog-User-Project": {"project-1"},
+		},
+	}, "chat", []byte(`{"messages":[{"role":"user","content":"ping"}]}`), UpstreamUsage{}, recorder)
+	if err != nil {
+		t.Fatalf("StreamWithAuth() error = %v", err)
+	}
+	if !strings.Contains(recorder.Body.String(), `"content":"ok"`) ||
+		!strings.Contains(recorder.Body.String(), "data: [DONE]") ||
+		result.Usage.TotalTokens != 2 {
+		t.Fatalf("StreamWithAuth() body=%s result=%#v", recorder.Body.String(), result)
+	}
+}
+
+func TestCodexChatRequestMapsToolResultsAndChoice(t *testing.T) {
+	_, body, err := adaptRequestBody(Upstream{
+		Provider: "openai",
+		Type:     "openai",
+		Model:    "gpt-5.1-codex",
+		ProviderConfig: map[string]any{
+			"authMethod": "codex_oauth",
+		},
+	}, "chat", []byte(`{
+		"messages":[
+			{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\"q\":\"x\"}"}}]},
+			{"role":"tool","tool_call_id":"call_1","content":"result"}
+		],
+		"tool_choice":{"type":"function","function":{"name":"lookup"}},
+		"parallel_tool_calls":false
+	}`), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	input, _ := payload["input"].([]any)
+	if len(input) != 2 {
+		t.Fatalf("Codex input = %#v", input)
+	}
+	call, _ := input[0].(map[string]any)
+	output, _ := input[1].(map[string]any)
+	if call["type"] != "function_call" || call["call_id"] != "call_1" ||
+		output["type"] != "function_call_output" || output["output"] != "result" {
+		t.Fatalf("Codex tool input = %#v", input)
+	}
+	choice, _ := payload["tool_choice"].(map[string]any)
+	if choice["type"] != "function" || choice["name"] != "lookup" || payload["parallel_tool_calls"] != false {
+		t.Fatalf("Codex tool controls = %#v", payload)
+	}
+}
+
+func TestCodexCompletedResponseMapsFunctionCallsToChat(t *testing.T) {
+	sse := []byte("event: response.completed\n" +
+		"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"object\":\"response\",\"status\":\"completed\",\"output\":[{\"type\":\"function_call\",\"call_id\":\"call_1\",\"name\":\"lookup\",\"arguments\":\"{\\\"q\\\":\\\"x\\\"}\"}],\"usage\":{\"input_tokens\":2,\"output_tokens\":3,\"total_tokens\":5}}}\n\n")
+	body, usage, err := mapCodexEventResponse(Upstream{Model: "gpt-5.1-codex"}, "chat", sse)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"finish_reason":"tool_calls"`) ||
+		!strings.Contains(string(body), `"id":"call_1"`) ||
+		!strings.Contains(string(body), `"name":"lookup"`) {
+		t.Fatalf("mapped response = %s", body)
+	}
+	if usage.TotalTokens != 5 {
+		t.Fatalf("usage = %#v", usage)
+	}
+}
+
+func TestCodexAuthMaterialForwardsPairedClientIdentityHeaders(t *testing.T) {
+	request, err := NewUpstreamClient().newRequestWithAuth(context.Background(), Upstream{
+		Provider: "openai",
+		Type:     "openai",
+		Endpoint: "https://user-controlled.example.test",
+		Model:    "gpt-5.1-codex",
+	}, connections.AuthMaterial{
+		Mode:     connections.AuthModeCodexOAuth,
+		Endpoint: "https://chatgpt.com/backend-api/codex",
+		Headers: http.Header{
+			"Authorization":      {"Bearer access"},
+			"ChatGPT-Account-Id": {"account-1"},
+			"OpenAI-Beta":        {"responses=experimental"},
+			"Originator":         {"codex_cli_rs"},
+			"User-Agent":         {"codex_cli_rs/0.144.1 (Ubuntu 22.4.0; x86_64) xterm-256color"},
+			"Version":            {"0.144.1"},
+		},
+	}, http.MethodPost, "/responses", []byte(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.URL.String() != "https://chatgpt.com/backend-api/codex/responses" ||
+		request.Header.Get("Version") != "0.144.1" ||
+		request.Header.Get("Originator") != "codex_cli_rs" ||
+		!strings.HasPrefix(request.UserAgent(), "codex_cli_rs/0.144.1") {
+		t.Fatalf("Codex request = %s headers=%v", request.URL, request.Header)
+	}
+}
+
+func TestCodexChatStreamKeepsFunctionItemAndCallOnOneToolIndex(t *testing.T) {
+	response := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": {"text/event-stream"}},
+		Body: io.NopCloser(strings.NewReader(
+			"event: response.output_item.added\n" +
+				"data: {\"type\":\"response.output_item.added\",\"item\":{\"id\":\"fc_item_1\",\"type\":\"function_call\",\"call_id\":\"call_1\",\"name\":\"lookup\",\"arguments\":\"\"}}\n\n" +
+				"event: response.function_call_arguments.delta\n" +
+				"data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"fc_item_1\",\"delta\":\"{\\\"q\\\":\"}\n\n" +
+				"event: response.function_call_arguments.delta\n" +
+				"data: {\"type\":\"response.function_call_arguments.delta\",\"item_id\":\"fc_item_1\",\"delta\":\"\\\"x\\\"}\"}\n\n" +
+				"event: response.completed\n" +
+				"data: {\"type\":\"response.completed\",\"response\":{\"object\":\"response\",\"output\":[{\"id\":\"fc_item_1\",\"type\":\"function_call\",\"call_id\":\"call_1\",\"name\":\"lookup\",\"arguments\":\"{\\\"q\\\":\\\"x\\\"}\"}],\"usage\":{\"input_tokens\":2,\"output_tokens\":3,\"total_tokens\":5}}}\n\n",
+		)),
+	}
+	recorder := httptest.NewRecorder()
+	result, err := streamCodexChatResponse(response, "gpt-5.1-codex", UpstreamUsage{}, recorder)
+	if err != nil {
+		t.Fatalf("streamCodexChatResponse() error = %v", err)
+	}
+	body := recorder.Body.String()
+	if strings.Contains(body, `"index":1`) ||
+		!strings.Contains(body, `"id":"call_1"`) ||
+		!strings.Contains(body, `"arguments":"{\"q\":"`) ||
+		!strings.Contains(body, `"finish_reason":"tool_calls"`) {
+		t.Fatalf("mapped tool stream = %s", body)
+	}
+	if result.Usage.TotalTokens != 5 {
+		t.Fatalf("result = %#v", result)
 	}
 }

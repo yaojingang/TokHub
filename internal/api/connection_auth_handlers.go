@@ -16,6 +16,7 @@ import (
 
 	"tokhub/internal/auth"
 	"tokhub/internal/connections"
+	secretcrypto "tokhub/internal/crypto"
 	gatewaycache "tokhub/internal/gateway"
 	"tokhub/internal/store"
 )
@@ -343,6 +344,14 @@ func (s *Server) finishAIConnectionAuthorization(ctx context.Context, transactio
 		_ = s.repo.FailAIAuthorizationAttempt(ctx, transaction.UserID, transaction.ID, authorizationErrorCode(err), "Provider token exchange failed")
 		return store.AIConnection{}, err
 	}
+	if err := s.verifyReauthorizationIdentity(ctx, transaction, &bundle); err != nil {
+		message := "Stored connection identity could not be verified"
+		if errors.Is(err, connections.ErrCredentialIdentityMismatch) {
+			message = "Reauthorization identity did not match the existing connection"
+		}
+		_ = s.repo.FailAIAuthorizationAttempt(ctx, transaction.UserID, transaction.ID, authorizationErrorCode(err), message)
+		return store.AIConnection{}, err
+	}
 	material, err := adapter.ResolveAuthMaterial(ctx, bundle)
 	if err != nil {
 		_ = s.repo.FailAIAuthorizationAttempt(ctx, transaction.UserID, transaction.ID, authorizationErrorCode(err), "Provider credential could not be resolved")
@@ -362,6 +371,9 @@ func (s *Server) finishAIConnectionAuthorization(ctx context.Context, transactio
 	}
 	resolved.ProviderConfig["authMethod"] = transaction.Method
 	resolved.ProviderConfig["sharingScope"] = "personal"
+	if strings.TrimSpace(bundle.ProjectID) != "" {
+		resolved.ProviderConfig["projectId"] = strings.TrimSpace(bundle.ProjectID)
+	}
 	validation := s.validateAuthorizedCredentialSet(ctx, resolved, transaction.Models, material)
 	rawBundle, err := bundle.Marshal()
 	if err != nil {
@@ -421,6 +433,52 @@ func (s *Server) finishAIConnectionAuthorization(ctx context.Context, transactio
 		return store.AIConnection{}, err
 	}
 	return connection, nil
+}
+
+func (s *Server) verifyReauthorizationIdentity(
+	ctx context.Context,
+	transaction connections.AuthorizationTransaction,
+	replacement *connections.CredentialBundle,
+) error {
+	if strings.TrimSpace(transaction.ExistingID) == "" {
+		return nil
+	}
+	if s.credentialKeys == nil {
+		return fmt.Errorf("credential keyring is unavailable")
+	}
+	secret, err := s.repo.AIConnectionSecretForOwnerOrg(
+		ctx,
+		transaction.UserID,
+		transaction.OrgID,
+		transaction.ExistingID,
+	)
+	if err != nil {
+		return fmt.Errorf("load existing credential identity: %w", err)
+	}
+	if !strings.EqualFold(strings.TrimSpace(secret.Provider), strings.TrimSpace(transaction.Provider)) ||
+		secret.SecretType != "oauth_bundle" ||
+		secret.PayloadFormat != connections.CredentialBundleSchemaV1 {
+		return fmt.Errorf("existing credential identity format is invalid")
+	}
+	raw, err := s.credentialKeys.Decrypt(transaction.UserID, secret.Provider, secretcrypto.CredentialEnvelope{
+		Ciphertext: secret.Ciphertext, Nonce: secret.Nonce,
+		EncryptionKeyID: secret.EncryptionKeyID, Fingerprint: secret.Fingerprint,
+		FingerprintKeyID: secret.FingerprintKeyID, Mask: secret.Mask, Algorithm: secret.Algorithm,
+	})
+	if err != nil {
+		return fmt.Errorf("decrypt existing credential identity: %w", err)
+	}
+	current, err := connections.ParseCredentialBundle(raw)
+	if err != nil {
+		return fmt.Errorf("parse existing credential identity: %w", err)
+	}
+	if replacement == nil || !connections.SameCredentialIdentity(current, *replacement) {
+		return connections.ErrCredentialIdentityMismatch
+	}
+	if strings.TrimSpace(transaction.ProjectID) == "" && strings.TrimSpace(current.ProjectID) != "" {
+		replacement.ProjectID = current.ProjectID
+	}
+	return nil
 }
 
 func (s *Server) validateAuthorizedCredentialSet(ctx context.Context, resolved connections.ResolvedProvider, models []string, material connections.AuthMaterial) connectionValidationResult {
@@ -512,6 +570,8 @@ func (s *Server) aiAuthorizationAvailable(w http.ResponseWriter, r *http.Request
 
 func authorizationErrorCode(err error) string {
 	switch {
+	case errors.Is(err, connections.ErrCredentialIdentityMismatch):
+		return "identity_mismatch"
 	case errors.Is(err, connections.ErrCredentialReauth):
 		return "reauth_required"
 	case errors.Is(err, connections.ErrCredentialTemporary):

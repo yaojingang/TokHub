@@ -1282,6 +1282,24 @@ type AuthMaterial struct {
     <div class="takeaway-label">确认后实施顺序</div>
     Phase 0 → Phase 1 → Phase 2 可以连续实施并分别提交。Phase 3 在 ChatGPT 实验边界获得明确确认后单独实施、单独评审、单独灰度。
   </div>
+
+  <h2>2026.07.29 二次 Review 加固结果</h2>
+  <table class="compact striped">
+    <thead><tr><th>检查面</th><th>发现</th><th>完成的加固</th></tr></thead>
+    <tbody>
+      <tr><td>Google 登录态识别</td><td>Google OIDC 文档允许两种 issuer；多 audience 令牌还需要确认 authorized party</td><td>兼容两种官方 issuer，并在多 audience 时校验 <code>azp</code></td></tr>
+      <tr><td>重新授权身份</td><td>原流程允许同服务商的另一账号覆盖现有连接</td><td>锁定 provider subject；ChatGPT 额外锁定 account id；Gemini 默认保留原 Project ID</td></tr>
+      <tr><td>刷新失效分类</td><td>部分永久错误和嵌套错误对象会进入临时退避</td><td>覆盖七类永久失效码，统一进入 <code>reauth_required</code>，错误详情保持脱敏</td></tr>
+      <tr><td>ChatGPT Codex 出站身份</td><td>旧客户端标识可能被上游拒绝</td><td>配套发送 Codex CLI User-Agent、Originator、Version 0.144.1 与 OpenAI-Beta</td></tr>
+      <tr><td>ChatGPT 工具调用</td><td>tool result、tool choice、函数参数增量和完成结果缺少完整映射</td><td>补齐 Chat Completions 与 Responses 双向工具子集，并固定流式工具索引</td></tr>
+      <tr><td>Gemini 流式反代</td><td>原流程透传 Gemini 原生 chunk，OpenAI 客户端无法直接消费</td><td>使用 <code>alt=sse</code>，转换 Chat chunk 与完整 Responses 事件生命周期</td></tr>
+      <tr><td>超时与响应头</td><td>30 秒写超时会截断长响应，上游 Cookie 和认证挑战可能被透传</td><td>OAuth 请求上限 300 秒，服务端写上限 310 秒；响应头改为安全允许列表</td></tr>
+    </tbody>
+  </table>
+  <p>
+    回归测试覆盖合法与非法 issuer、账号切换、永久刷新错误、嵌套错误脱敏、Codex 身份头、工具调用、
+    Gemini Chat 与 Responses SSE、长请求超时和敏感响应头过滤。Go 单元测试、竞态检测和静态检查均作为发布门禁执行。
+  </p>
 </section>
 
 <section class="chapter">

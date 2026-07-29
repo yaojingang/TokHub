@@ -11,10 +11,12 @@ import (
 const (
 	CodexOAuthClientID    = "app_EMoamEEZ73f0CkXaXp7hrann"
 	CodexOAuthRedirectURI = "http://localhost:1455/auth/callback"
+	CodexBridgeVersion    = "0.144.1"
 	defaultOpenAIAuthURL  = "https://auth.openai.com/oauth/authorize"
 	defaultOpenAITokenURL = "https://auth.openai.com/oauth/token"
 	chatGPTCodexEndpoint  = "https://chatgpt.com/backend-api/codex"
 	codexOAuthScope       = "openid profile email offline_access api.connectors.read api.connectors.invoke"
+	codexBridgeUserAgent  = "codex_cli_rs/" + CodexBridgeVersion + " (Ubuntu 22.4.0; x86_64) xterm-256color"
 )
 
 type ChatGPTCodexAdapter struct {
@@ -154,7 +156,8 @@ func (a *ChatGPTCodexAdapter) ResolveAuthMaterial(_ context.Context, bundle Cred
 	headers.Set("ChatGPT-Account-Id", bundle.AccountID)
 	headers.Set("OpenAI-Beta", "responses=experimental")
 	headers.Set("Originator", "codex_cli_rs")
-	headers.Set("User-Agent", "codex_cli_rs/0.0.0 (TokHub experimental bridge)")
+	headers.Set("User-Agent", codexBridgeUserAgent)
+	headers.Set("Version", CodexBridgeVersion)
 	material := AuthMaterial{
 		Mode: AuthModeCodexOAuth, Endpoint: chatGPTCodexEndpoint, ExpiresAt: bundle.ExpiresAt,
 		Headers: headers,
