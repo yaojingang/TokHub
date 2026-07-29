@@ -10,15 +10,29 @@
 |---|---|---|---|
 | Gemini Google OAuth | `TOKHUB_AI_GEMINI_OAUTH_ENABLED` | Google OAuth Client、Cloud Project、HTTPS Public URL、Redis | 完成 Google 配置与回调验证后灰度 |
 | DeepSeek 开放平台引导 | `TOKHUB_AI_DEEPSEEK_GUIDED_ENABLED` | Redis、凭证密钥环 | 可先发布 |
+| DeepSeek 网页账号 | `TOKHUB_AI_DEEPSEEK_WEB_EXPERIMENTAL` | Redis、凭证密钥环、DS2API v4.6.1、固定风险确认值 | 仅个人实验 |
 | ChatGPT Codex OAuth | `TOKHUB_AI_CHATGPT_CODEX_EXPERIMENTAL` | Redis、凭证密钥环、固定风险确认值 | 仅自托管实验 |
 
-DeepSeek 官方 API 当前采用 API Key Bearer 认证，未公开消费者账号 OAuth 或网页会话委托接口。TokHub 的 DeepSeek 引导会打开官方密钥页面，用户返回后粘贴 API Key；消费者网页登录项会保持可见且不可操作，服务端也不会注册对应适配器。引导事务由用户提交 API Key 时完成，前端不会持续轮询等待不存在的服务商回调。
+DeepSeek 官方 API 使用 API Key Bearer 认证。网页账号实验能力面向已登录的消费者账号，用户手动导入 Local Storage `userToken.value`。TokHub 通过独立 DS2API 桥完成网页私有协议、PoW 和 OpenAI SSE 转换。该路径依赖平台私有协议，接口变化、风控升级和账号限制都可能导致中断。
 
 ChatGPT 实验开关还要求：
 
 ```env
 TOKHUB_AI_EXPERIMENTAL_BRIDGE_ACK=I_ACCEPT_CHATGPT_CODEX_EXPERIMENTAL_RISK
 ```
+
+DeepSeek 网页账号实验开关要求：
+
+```env
+TOKHUB_AI_DEEPSEEK_WEB_EXPERIMENTAL=true
+TOKHUB_AI_DEEPSEEK_WEB_BRIDGE_URL=http://deepseek-web-bridge:5001
+TOKHUB_AI_DEEPSEEK_WEB_ACK=I_ACCEPT_DEEPSEEK_WEB_SESSION_EXPERIMENTAL_RISK
+TOKHUB_DEEPSEEK_WEB_BRIDGE_ADMIN_KEY=<至少 24 位随机值>
+```
+
+Compose 使用带多架构摘要的 `ghcr.io/cjackhwang/ds2api:v4.6.1` 镜像。桥服务没有宿主机端口，只加入 TokHub API/Gateway 专用网络，并使用只读根文件系统、临时数据目录、全部 capability 删除和 `no-new-privileges`。运行配置保持空账号池，TokHub 每次只以当前用户的 Token 进入 DS2API direct-token 模式。
+
+Helm 部署在 `aiAuthorization.deepseekWeb.enabled=true` 且 `deployBridge=true` 时创建同一固定摘要的独立 Deployment、ClusterIP Service 和 NetworkPolicy。桥 Pod 使用非 root 用户、只读根文件系统与内存 `emptyDir`，入口只允许同一 Release 的 API/Gateway Pod。部署前必须设置 `aiAuthorization.enabled` 和精确的 `aiAuthorization.deepseekWeb.riskAcknowledgement`。生产环境优先把至少 24 位的随机管理密钥放入已有 Kubernetes Secret，并通过 `aiAuthorization.deepseekWeb.existingAdminSecret` 引用；`adminKey` 只适合受控测试环境。已有外部桥时可设置 `deployBridge=false` 并填写 HTTPS `bridgeUrl`。
 
 ## Gemini 配置
 
@@ -43,10 +57,10 @@ TOKHUB_GOOGLE_OAUTH_PROJECT_ID=
 - state、PKCE verifier、nonce 与当前用户和登录 Session 绑定。
 - OIDC ID Token 使用服务商 discovery 和 JWKS 完成 RS256 签名校验，再校验 issuer、audience、authorized party、subject、expiry 和 Google nonce。Google 文档列出的 `https://accounts.google.com` 与 `accounts.google.com` 均可识别。
 - OAuth bundle 使用版本化 AES-256-GCM 密钥环加密。
-- 服务端日志、审计和指标不记录 Token、Cookie、授权 code、密码或完整账号。
+- 服务端日志、审计和指标不记录 Token、Cookie、授权 code、密码或完整账号。DeepSeek `userToken` 只在请求内存、AES-256-GCM 密文和发往内部桥的 Authorization Header 中出现。
 - 出站请求只能使用适配器固定 endpoint 与允许的认证头。
 - 重新授权会锁定原 `provider subject`；ChatGPT 同时锁定原 `account id`。账号不一致时记录 `identity_mismatch` 并保留原连接。Gemini 未明确提交新 Project ID 时沿用原项目。
-- 删除 OAuth 连接需要再次验证当前 TokHub 登录密码。本地路由与凭证会先停用和擦除，再尝试调用服务商撤销接口，避免撤销接口故障延长本地暴露窗口。
+- 删除受管授权连接需要再次验证当前 TokHub 登录密码。本地路由与凭证会先停用和擦除，再尝试调用服务商撤销接口，避免撤销接口故障延长本地暴露窗口。
 
 ## 刷新与故障状态
 
@@ -64,6 +78,19 @@ TOKHUB_AI_OAUTH_REFRESH_ATTEMPT_TIMEOUT=20s
 退避时间依次为 1、5、15、60 分钟。`invalid_grant`、`invalid_refresh_token`、`token_expired`、`app_session_terminated`、`refresh_token_reused`、`refresh_token_invalidated`、缺少 Refresh Token 或明确撤销会进入 `reauth_required`。错误码可以来自 OAuth 标准字符串或服务商嵌套错误对象，错误详情不会写入用户响应和日志。临时网络错误保留当前凭证并进入下一次退避。
 
 网关在发送响应前收到 401 时会执行一次受锁保护的刷新和一次重试。流式响应写出首字节后不会重放。
+
+DeepSeek `userToken` 没有公开 Refresh Token。创建时会执行真实最小生成验证，运行期的首个 401 会将连接标记为 `reauth_required`，后续请求停止转发。用户在连接详情中重新登录 DeepSeek 并导入新 Token 后恢复。桥不可达或 5xx 会记录临时上游错误，当前 Token 密文保持不变。
+
+## DeepSeek 网页账号保护
+
+- 仅接受 `userToken.value`，输入字符和长度使用严格允许列表。
+- Cookie、账号密码、验证码、`cf_clearance` 和完整 Local Storage 对象会被拒绝。
+- 每个连接最多创建一个 active 或 paused 中转。
+- 网关 QPS 强制为 1，Redis 并发槽强制为 1。
+- 桥接 endpoint 由部署配置固定。HTTP 只允许回环、私有 IP 或单标签容器服务名；其他地址要求 HTTPS。
+- Token 验证失败时授权事务进入 failed，连接和密文均不会创建。
+- DS2API 远端会话使用 `auto_delete: single`，临时数据保存在容器 tmpfs。
+- 紧急关闭时设置 `TOKHUB_AI_DEEPSEEK_WEB_EXPERIMENTAL=false` 并重启 TokHub。已有连接会因为适配器不可用而停止转发。
 
 ## ChatGPT 实验保护
 
@@ -103,13 +130,15 @@ Prometheus 指标：
 - 任一 provider 的连续刷新失败数大于 3。
 - 授权 `failed / (completed + failed)` 在 15 分钟窗口超过 30%。
 - ChatGPT 实验网关出现持续 401、403、404 或协议解析错误。
+- DeepSeek 网页账号授权失败率超过 30%、桥 `/healthz` 不可用或 `reauth_required` 数量持续增长。
 
 ## 发布检查
 
-1. 数据库迁移 `0047_ai_web_authorization.sql` 已完成。
+1. 数据库迁移 `0047_ai_web_authorization.sql` 和 `0048_deepseek_web_session.sql` 已完成。
 2. Redis 可用，`/readyz` 返回 ready。
 3. 加密密钥环和指纹密钥环使用独立材料。
 4. `TOKHUB_PUBLIC_URL` 使用 HTTPS，Google 回调精确匹配。
-5. 先开启全局开关和 DeepSeek 引导，观察授权状态指标。
-6. Gemini 在测试用户验证授权、刷新、重新授权和删除后再扩大范围。
-7. ChatGPT 只在完成风险确认、自托管环境和紧急关闭演练后启用。
+5. 先开启全局开关和 DeepSeek 开放平台引导，观察授权状态指标。
+6. DeepSeek 网页账号在测试用户完成登录、Token 验证、非流式、流式、401 失效和重新授权验证后再灰度。
+7. Gemini 在测试用户验证授权、刷新、重新授权和删除后再扩大范围。
+8. ChatGPT 和 DeepSeek 网页实验能力在完成风险确认、自托管环境和紧急关闭演练后启用。

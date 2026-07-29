@@ -1,0 +1,153 @@
+{{- if .Values.aiAuthorization.deepseekWeb.enabled }}
+{{- if not .Values.aiAuthorization.enabled }}
+{{- fail "aiAuthorization.enabled must be true when the DeepSeek web bridge is enabled" }}
+{{- end }}
+{{- if ne .Values.aiAuthorization.deepseekWeb.riskAcknowledgement "I_ACCEPT_DEEPSEEK_WEB_SESSION_EXPERIMENTAL_RISK" }}
+{{- fail "aiAuthorization.deepseekWeb.riskAcknowledgement must contain the exact DeepSeek experimental acknowledgement" }}
+{{- end }}
+{{- if and (not .Values.aiAuthorization.deepseekWeb.deployBridge) (not .Values.aiAuthorization.deepseekWeb.bridgeUrl) }}
+{{- fail "aiAuthorization.deepseekWeb.bridgeUrl is required when deployBridge is false" }}
+{{- end }}
+{{- if .Values.aiAuthorization.deepseekWeb.deployBridge }}
+{{- if and (not .Values.aiAuthorization.deepseekWeb.existingAdminSecret) (lt (len .Values.aiAuthorization.deepseekWeb.adminKey) 24) }}
+{{- fail "aiAuthorization.deepseekWeb.adminKey must contain at least 24 characters when existingAdminSecret is empty" }}
+{{- end }}
+{{- if not .Values.aiAuthorization.deepseekWeb.existingAdminSecret }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "tokhub.fullname" . }}-deepseek-web-bridge
+  labels:
+    {{- include "tokhub.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  DS2API_ADMIN_KEY: {{ .Values.aiAuthorization.deepseekWeb.adminKey | quote }}
+---
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "tokhub.fullname" . }}-deepseek-web-bridge
+  labels:
+    {{- include "tokhub.labels" . | nindent 4 }}
+    tokhub.io/component: deepseek-web-bridge
+spec:
+  replicas: {{ .Values.aiAuthorization.deepseekWeb.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/name: {{ include "tokhub.name" . }}
+      tokhub.io/component: deepseek-web-bridge
+  template:
+    metadata:
+      labels:
+        {{- include "tokhub.labels" . | nindent 8 }}
+        tokhub.io/component: deepseek-web-bridge
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: bridge
+          image: {{ .Values.aiAuthorization.deepseekWeb.image | quote }}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: PORT
+              value: "5001"
+            - name: LOG_LEVEL
+              value: WARN
+            - name: DS2API_ADMIN_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default (printf "%s-deepseek-web-bridge" (include "tokhub.fullname" .)) .Values.aiAuthorization.deepseekWeb.existingAdminSecret }}
+                  key: {{ .Values.aiAuthorization.deepseekWeb.existingAdminSecretKey | quote }}
+            - name: DS2API_CONFIG_JSON
+              value: '{"keys":[],"accounts":[],"runtime":{"account_max_inflight":1,"account_max_queue":1,"global_max_inflight":1},"auto_delete":{"mode":"single"},"current_input_file":{"enabled":false}}'
+            - name: DS2API_ENV_WRITEBACK
+              value: "0"
+          ports:
+            - name: http
+              containerPort: 5001
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: data
+              mountPath: /app/data
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+        - name: data
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "tokhub.fullname" . }}-deepseek-web-bridge
+  labels:
+    {{- include "tokhub.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/name: {{ include "tokhub.name" . }}
+    tokhub.io/component: deepseek-web-bridge
+  ports:
+    - name: http
+      port: 5001
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "tokhub.fullname" . }}-deepseek-web-bridge
+  labels:
+    {{- include "tokhub.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/name: {{ include "tokhub.name" . }}
+      tokhub.io/component: deepseek-web-bridge
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/name: {{ include "tokhub.name" . }}
+            matchExpressions:
+              - key: tokhub.io/role
+                operator: In
+                values: ["api", "gateway"]
+      ports:
+        - protocol: TCP
+          port: 5001
+{{- end }}
+{{- end }}

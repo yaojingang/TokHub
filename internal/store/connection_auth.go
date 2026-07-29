@@ -98,7 +98,7 @@ func (r *Repository) AIAuthorizationMetrics(ctx context.Context) (AIAuthorizatio
 	rows, err = r.db.Query(ctx, `
 		select provider,auth_method,auth_status,count(*)
 		from ai_connections
-		where auth_method in ('oauth','codex_oauth') and status <> 'deleted' and deleted_at is null
+		where auth_method in ('oauth','codex_oauth','deepseek_web_token') and status <> 'deleted' and deleted_at is null
 		group by provider,auth_method,auth_status
 		order by provider,auth_method,auth_status
 	`)

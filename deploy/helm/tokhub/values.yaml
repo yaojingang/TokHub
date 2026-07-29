@@ -14,6 +14,33 @@ databaseUrl: postgres://tokhub:tokhub@postgres:5432/tokhub?sslmode=disable
 redisUrl: redis://redis:6379/0
 natsUrl: nats://nats:4222
 
+aiAuthorization:
+  enabled: false
+  geminiOAuthEnabled: false
+  deepseekGuidedEnabled: true
+  chatgptCodexExperimental: false
+  chatgptRiskAcknowledgement: ""
+  oauthTtl: 10m
+  oauthRefreshSkew: 5m
+  oauthRefreshWorkers: 8
+  oauthProviderConcurrency: 4
+  oauthProviderQps: 2
+  oauthRefreshAttemptTimeout: 20s
+  google:
+    clientId: ""
+    clientSecret: ""
+    projectId: ""
+  deepseekWeb:
+    enabled: false
+    deployBridge: true
+    bridgeUrl: ""
+    riskAcknowledgement: ""
+    adminKey: ""
+    existingAdminSecret: ""
+    existingAdminSecretKey: DS2API_ADMIN_KEY
+    image: ghcr.io/cjackhwang/ds2api:v4.6.1@sha256:afa05fa8d4f7ee886d11798a8c573f9df0aff8b12f9ac2635f8efd2ce7b55232
+    replicas: 1
+
 service:
   type: ClusterIP
   port: 8080

@@ -74,8 +74,13 @@ func (s *Server) meAIConnectionProviders(w http.ResponseWriter, r *http.Request)
 		"items":         items,
 		"policyVersion": "ai-authorization-v2",
 		"credentialPolicy": map[string]any{
-			"accepted": []string{"official developer API keys", "official OAuth grants", "explicitly enabled Codex OAuth grants"},
-			"rejected": []string{"provider passwords", "one-time codes", "browser cookies", "local storage", "cf_clearance", "proof-of-work bypass"},
+			"accepted": []string{
+				"official developer API keys",
+				"official OAuth grants",
+				"explicitly enabled Codex OAuth grants",
+				"explicitly enabled DeepSeek userToken grants",
+			},
+			"rejected": []string{"provider passwords", "one-time codes", "browser cookies", "unrelated local storage", "cf_clearance"},
 		},
 	})
 }
@@ -292,6 +297,14 @@ func (s *Server) validateAIConnection(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusInternalServerError, "ai_connection_validate_failed", "Could not update connection validation")
 		return
 	}
+	if item.AuthMethod == "deepseek_web_token" && validation.ErrorType == "upstream_auth_error" {
+		if markErr := s.repo.MarkOAuthRefreshFailure(r.Context(), connectionID, true, "invalid_grant", time.Time{}); markErr != nil {
+			s.logger.Warn("failed to mark DeepSeek web session for reauthorization",
+				"connection_id", connectionID, "error", markErr)
+		} else if refreshed, readErr := s.repo.AIConnectionForOwnerOrg(r.Context(), user.ID, orgID, connectionID); readErr == nil {
+			updated = refreshed
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"connection": updated, "validation": validation})
 }
 
@@ -411,7 +424,7 @@ func (s *Server) deleteAIConnectionRecord(w http.ResponseWriter, r *http.Request
 	}
 	var revokeAdapter connections.AuthAdapter
 	var revokeBundle connections.CredentialBundle
-	if (item.AuthMethod == "oauth" || item.AuthMethod == "codex_oauth") && s.credentialKeys != nil {
+	if isManagedAuthorizationMethod(item.AuthMethod) && s.credentialKeys != nil {
 		adapter, exists := s.authRegistry.Adapter(item.Provider, item.AuthMethod)
 		if !exists && item.Provider == "gemini" && item.AuthMethod == "oauth" {
 			adapter = connections.NewGeminiOAuthAdapter(connections.AdapterConfig{})
@@ -470,8 +483,16 @@ func (s *Server) deleteAIConnectionRecord(w http.ResponseWriter, r *http.Request
 }
 
 func requiresAIConnectionDisconnectStepUp(authMethod string) bool {
-	authMethod = strings.ToLower(strings.TrimSpace(authMethod))
-	return authMethod == "oauth" || authMethod == "codex_oauth"
+	return isManagedAuthorizationMethod(authMethod)
+}
+
+func isManagedAuthorizationMethod(authMethod string) bool {
+	switch strings.ToLower(strings.TrimSpace(authMethod)) {
+	case "oauth", "codex_oauth", "deepseek_web_token":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) quickCreateAIConnectionRelay(w http.ResponseWriter, r *http.Request) {
@@ -516,7 +537,7 @@ func (s *Server) quickCreateAIConnectionRelay(w http.ResponseWriter, r *http.Req
 		writeError(w, r, http.StatusConflict, "ai_connection_reauthorization_required", "Reauthorize this AI service connection before creating a relay")
 		return
 	}
-	if item.AuthMethod == "codex_oauth" {
+	if item.AuthMethod == "codex_oauth" || item.AuthMethod == "deepseek_web_token" {
 		req.QPSLimit = 1
 	}
 	if len(req.ModelIDs) == 0 {
@@ -664,6 +685,10 @@ func (s *Server) validateStoredOAuthCredentialSet(
 	if item.AuthMethod == "codex_oauth" {
 		resolved.Manifest.ValidationMode = "generation"
 		resolved.Manifest.GenerationKind = "responses"
+	}
+	if item.AuthMethod == "deepseek_web_token" {
+		resolved.Manifest.ValidationMode = "generation"
+		resolved.Manifest.GenerationKind = "chat"
 	}
 	return s.validateAuthorizedCredentialSet(ctx, resolved, models, material), nil
 }

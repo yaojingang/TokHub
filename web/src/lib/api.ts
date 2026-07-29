@@ -1603,11 +1603,15 @@ export async function aiConnectionAuthorization(id: string): Promise<{ authoriza
 
 export async function completeAIConnectionAuthorization(
   id: string,
-  callbackUrl: string
+  input: {
+    callbackUrl?: string;
+    deepSeekToken?: string;
+    termsAckVersion?: string;
+  }
 ): Promise<{ connection: AIConnection; authorizationId: string }> {
   return writeJSONRequest<{ connection: AIConnection; authorizationId: string }>(
     `/api/me/ai-authorizations/${id}/complete`,
-    { callbackUrl }
+    input
   );
 }
 

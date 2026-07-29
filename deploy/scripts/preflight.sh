@@ -159,6 +159,21 @@ if [[ "${TOKHUB_AI_WEB_AUTH_ENABLED:-false}" == "true" ]]; then
     "${TOKHUB_AI_EXPERIMENTAL_BRIDGE_ACK:-}" != "I_ACCEPT_CHATGPT_CODEX_EXPERIMENTAL_RISK" ]]; then
     fail "ChatGPT Codex experimental mode requires the exact risk acknowledgement"
   fi
+  if [[ "${TOKHUB_AI_DEEPSEEK_WEB_EXPERIMENTAL:-false}" == "true" ]]; then
+    require_env TOKHUB_AI_DEEPSEEK_WEB_BRIDGE_URL
+    require_env TOKHUB_DEEPSEEK_WEB_BRIDGE_ADMIN_KEY
+    if [[ "${TOKHUB_AI_DEEPSEEK_WEB_ACK:-}" != "I_ACCEPT_DEEPSEEK_WEB_SESSION_EXPERIMENTAL_RISK" ]]; then
+      fail "DeepSeek web-session experimental mode requires the exact risk acknowledgement"
+    fi
+    if [[ "${TOKHUB_DEEPSEEK_WEB_BRIDGE_ADMIN_KEY:-}" == "replace-with-a-long-random-bridge-admin-key" ||
+      ${#TOKHUB_DEEPSEEK_WEB_BRIDGE_ADMIN_KEY} -lt 24 ]]; then
+      fail "TOKHUB_DEEPSEEK_WEB_BRIDGE_ADMIN_KEY must be a non-default value with at least 24 characters"
+    fi
+    if [[ ! "${TOKHUB_AI_DEEPSEEK_WEB_BRIDGE_URL}" =~ ^https://[A-Za-z0-9][A-Za-z0-9.-]*(:[0-9]+)?/?$ &&
+      ! "${TOKHUB_AI_DEEPSEEK_WEB_BRIDGE_URL}" =~ ^http://[A-Za-z0-9][A-Za-z0-9-]*(:[0-9]+)?/?$ ]]; then
+      fail "DeepSeek web bridge must use HTTPS or a single-label internal HTTP service name"
+    fi
+  fi
 fi
 
 if [[ "${REQUIRE_SMTP:-0}" == "1" && -z "${SMTP_URL:-}" ]]; then

@@ -37,7 +37,9 @@ type startAIAuthorizationRequest struct {
 }
 
 type completeAIAuthorizationRequest struct {
-	CallbackURL string `json:"callbackUrl"`
+	CallbackURL     string `json:"callbackUrl"`
+	DeepSeekToken   string `json:"deepSeekToken"`
+	TermsAckVersion string `json:"termsAckVersion"`
 }
 
 type disconnectAIConnectionRequest struct {
@@ -141,6 +143,10 @@ func (s *Server) startAIConnectionAuthorization(w http.ResponseWriter, r *http.R
 		writeError(w, r, http.StatusUnprocessableEntity, "experimental_terms_required", "请确认 ChatGPT Codex 实验功能风险说明")
 		return
 	}
+	if method == "deepseek_web_token" && strings.TrimSpace(request.TermsAckVersion) != connections.DeepSeekWebTermsVersion {
+		writeError(w, r, http.StatusUnprocessableEntity, "experimental_terms_required", "请确认 DeepSeek 网页账号实验功能风险说明")
+		return
+	}
 	if request.ExistingConnectionID != "" {
 		existing, existingErr := s.repo.AIConnectionForOwnerOrg(r.Context(), user.ID, orgID, request.ExistingConnectionID)
 		if existingErr != nil || existing.Provider != provider || existing.AuthMethod != method {
@@ -210,7 +216,7 @@ func (s *Server) aiConnectionAuthorizationStatus(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, map[string]any{"authorization": attempt})
 }
 
-func (s *Server) completeChatGPTAuthorization(w http.ResponseWriter, r *http.Request) {
+func (s *Server) completeAIConnectionAuthorization(w http.ResponseWriter, r *http.Request) {
 	if !s.aiAuthorizationAvailable(w, r) {
 		return
 	}
@@ -219,31 +225,70 @@ func (s *Server) completeChatGPTAuthorization(w http.ResponseWriter, r *http.Req
 		writeError(w, r, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
-	code, state, err := connections.ParseCodexCallback(strings.TrimSpace(request.CallbackURL))
-	if err != nil {
-		writeError(w, r, http.StatusBadRequest, "invalid_callback_url", "请粘贴完整的 localhost Codex 回调地址")
-		return
-	}
 	authorizationID := chi.URLParam(r, "authorizationID")
-	stateID, err := connections.AuthorizationIDFromState(state)
-	if err != nil || stateID != authorizationID {
-		writeError(w, r, http.StatusConflict, "authorization_state_mismatch", "Authorization state does not match")
+	user, _ := s.userFromRequest(r)
+	if !s.allowRate(s.authLimiter, "ai-auth-complete:"+user.ID+":"+clientIP(r), 8, time.Hour) {
+		writeError(w, r, http.StatusTooManyRequests, "authorization_rate_limited", "授权提交过于频繁，请稍后再试")
 		return
 	}
-	user, _ := s.userFromRequest(r)
 	sessionHash, ok := s.authorizationSessionHash(r)
 	if !ok {
 		writeError(w, r, http.StatusUnauthorized, "unauthorized", "Login required")
 		return
 	}
+	pending, err := s.authzStore.Get(r.Context(), authorizationID)
+	if err != nil ||
+		!connections.SecureStateEqual(pending.UserID, user.ID) ||
+		!connections.SecureStateEqual(pending.SessionHash, sessionHash) {
+		writeError(w, r, http.StatusConflict, "authorization_expired", "Authorization expired or was already used")
+		return
+	}
+	code := ""
+	switch {
+	case pending.Provider == "openai" && pending.Method == "codex_oauth":
+		var state string
+		code, state, err = connections.ParseCodexCallback(strings.TrimSpace(request.CallbackURL))
+		if err != nil {
+			writeError(w, r, http.StatusBadRequest, "invalid_callback_url", "请粘贴完整的 localhost Codex 回调地址")
+			return
+		}
+		stateID, stateErr := connections.AuthorizationIDFromState(state)
+		if stateErr != nil || stateID != authorizationID || !connections.SecureStateEqual(pending.State, state) {
+			writeError(w, r, http.StatusConflict, "authorization_state_mismatch", "Authorization state does not match")
+			return
+		}
+	case pending.Provider == "deepseek" && pending.Method == "deepseek_web_token":
+		if pending.TermsVersion != connections.DeepSeekWebTermsVersion ||
+			strings.TrimSpace(request.TermsAckVersion) != connections.DeepSeekWebTermsVersion {
+			writeError(w, r, http.StatusUnprocessableEntity, "experimental_terms_required", "请确认 DeepSeek 网页账号实验功能风险说明")
+			return
+		}
+		code, err = connections.NormalizeDeepSeekWebToken(request.DeepSeekToken)
+		if err != nil {
+			writeError(w, r, http.StatusBadRequest, "invalid_deepseek_token", "请粘贴 DeepSeek userToken 的 value，不要粘贴 Cookie、密码或完整存储对象")
+			return
+		}
+	default:
+		writeError(w, r, http.StatusBadRequest, "authorization_completion_invalid", "This authorization method cannot be completed here")
+		return
+	}
 	transaction, err := s.authzStore.Consume(r.Context(), authorizationID, user.ID, sessionHash)
-	if err != nil || transaction.Provider != "openai" || transaction.Method != "codex_oauth" ||
-		!connections.SecureStateEqual(transaction.State, state) {
+	if err != nil || transaction.Provider != pending.Provider || transaction.Method != pending.Method {
 		writeError(w, r, http.StatusConflict, "authorization_expired", "Authorization expired or was already used")
 		return
 	}
 	connection, err := s.finishAIConnectionAuthorization(r.Context(), transaction, code)
 	if err != nil {
+		if transaction.Method == "deepseek_web_token" {
+			status := http.StatusBadGateway
+			message := "DeepSeek 登录态验证失败，请重新登录 DeepSeek 后复制新的 userToken"
+			if errors.Is(err, connections.ErrCredentialTemporary) {
+				status = http.StatusServiceUnavailable
+				message = "DeepSeek 网页协议桥暂时不可用，请稍后重试"
+			}
+			writeError(w, r, status, "deepseek_web_authorization_failed", message)
+			return
+		}
 		writeError(w, r, http.StatusBadGateway, "authorization_exchange_failed", "ChatGPT authorization could not be completed")
 		return
 	}
@@ -369,12 +414,34 @@ func (s *Server) finishAIConnectionAuthorization(ctx context.Context, transactio
 		resolved.ProviderConfig["pathMode"] = "direct"
 		resolved.ProviderConfig["experimental"] = true
 	}
+	if transaction.Method == "deepseek_web_token" {
+		resolved.Manifest.ValidationMode = "generation"
+		resolved.Manifest.GenerationKind = "chat"
+		resolved.Manifest.ProductLine = "DeepSeek Web"
+		resolved.ProviderConfig["experimental"] = true
+		resolved.ProviderConfig["bridge"] = "ds2api"
+		resolved.ProviderConfig["bridgeVersion"] = connections.DeepSeekWebAdapterVersion()
+	}
 	resolved.ProviderConfig["authMethod"] = transaction.Method
 	resolved.ProviderConfig["sharingScope"] = "personal"
 	if strings.TrimSpace(bundle.ProjectID) != "" {
 		resolved.ProviderConfig["projectId"] = strings.TrimSpace(bundle.ProjectID)
 	}
 	validation := s.validateAuthorizedCredentialSet(ctx, resolved, transaction.Models, material)
+	if transaction.Method == "deepseek_web_token" && !validation.OK {
+		validationErr := connections.ErrCredentialTemporary
+		if validation.ErrorType == "upstream_auth_error" || validation.ErrorType == "upstream_rejected" {
+			validationErr = connections.ErrCredentialReauth
+		}
+		_ = s.repo.FailAIAuthorizationAttempt(
+			ctx,
+			transaction.UserID,
+			transaction.ID,
+			authorizationErrorCode(validationErr),
+			"DeepSeek web credential validation failed",
+		)
+		return store.AIConnection{}, validationErr
+	}
 	rawBundle, err := bundle.Marshal()
 	if err != nil {
 		return store.AIConnection{}, err
@@ -390,16 +457,33 @@ func (s *Server) finishAIConnectionAuthorization(ctx context.Context, transactio
 	if accountMask == "" {
 		accountMask = "已授权账号"
 	}
-	encrypted.Mask = "OAuth · " + accountMask
-	nextRefresh := bundle.ExpiresAt.Add(-s.cfg.AIOAuthRefreshSkew)
-	if nextRefresh.Before(time.Now().Add(time.Minute)) {
-		nextRefresh = time.Now().Add(time.Minute)
+	credentialMaskPrefix := "OAuth · "
+	if transaction.Method == "deepseek_web_token" {
+		credentialMaskPrefix = "Web Session · "
+	}
+	encrypted.Mask = credentialMaskPrefix + accountMask
+	var expiresAt *time.Time
+	var nextRefresh *time.Time
+	if !bundle.ExpiresAt.IsZero() {
+		expiry := bundle.ExpiresAt
+		expiresAt = &expiry
+		if transaction.Method != "deepseek_web_token" {
+			refreshAt := bundle.ExpiresAt.Add(-s.cfg.AIOAuthRefreshSkew)
+			if refreshAt.Before(time.Now().Add(time.Minute)) {
+				refreshAt = time.Now().Add(time.Minute)
+			}
+			nextRefresh = &refreshAt
+		}
 	}
 	riskLevel := "standard"
 	adapterVersion := "gemini-oauth-v1"
 	if transaction.Method == "codex_oauth" {
 		riskLevel = "experimental"
 		adapterVersion = "chatgpt-codex-v1"
+	}
+	if transaction.Method == "deepseek_web_token" {
+		riskLevel = "experimental"
+		adapterVersion = connections.DeepSeekWebAdapterVersion()
 	}
 	connectionInput := store.AIConnectionCreateInput{
 		OwnerUserID: transaction.UserID, OrgID: transaction.OrgID,
@@ -413,8 +497,8 @@ func (s *Server) finishAIConnectionAuthorization(ctx context.Context, transactio
 			Fingerprint: encrypted.Fingerprint, EncryptionKeyID: encrypted.EncryptionKeyID,
 			FingerprintKeyID: encrypted.FingerprintKeyID, Algorithm: encrypted.Algorithm,
 			SecretType: "oauth_bundle", PayloadFormat: connections.CredentialBundleSchemaV1,
-			SubjectFingerprint: encrypted.Fingerprint, ExpiresAt: &bundle.ExpiresAt,
-			NextRefreshAt: &nextRefresh,
+			SubjectFingerprint: encrypted.Fingerprint, ExpiresAt: expiresAt,
+			NextRefreshAt: nextRefresh,
 		},
 		Validation: validationStoreValue(validation), AuthMethod: transaction.Method,
 		AuthStatus:   "active",

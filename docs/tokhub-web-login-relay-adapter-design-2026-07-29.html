@@ -486,7 +486,7 @@
   <h1>执行摘要与实施状态</h1>
 
   <p class="lead">
-    TokHub 可以增加统一的「网页登录授权」入口，并复用现有个人中转链路。三家平台目前没有同一种可长期依赖的消费者登录接口，因此首版需要采用<span class="hl">一套框架、三种落地等级</span>：Gemini 正式 OAuth，ChatGPT Codex 自托管实验适配，DeepSeek 官方 API Key 引导。
+    TokHub 已增加统一的「网页登录授权」入口，并复用现有个人中转链路。三家平台采用<span class="hl">一套框架、多级稳定性</span>：Gemini 正式 OAuth，ChatGPT Codex 自托管实验适配，DeepSeek 官方 API Key 引导与 userToken 网页账号实验适配。
   </p>
 
   <table class="striped">
@@ -516,10 +516,10 @@
       </tr>
       <tr>
         <td>DeepSeek</td>
-        <td>跳转开放平台创建 API Key</td>
-        <td>官方 DeepSeek API</td>
-        <td>可生产</td>
-        <td>不能复用网页消费者登录态</td>
+        <td>开放平台 API Key；网页登录后导入 userToken</td>
+        <td>官方 DeepSeek API；DS2API 独立桥接</td>
+        <td>API Key 可生产；网页账号实验</td>
+        <td>网页账号实验可复用当前消费者登录态</td>
       </tr>
     </tbody>
   </table>
@@ -528,8 +528,8 @@
     <h2>推荐结论</h2>
     <ol>
       <li>新增认证适配层，把现有网关从「读取一个 API Key」升级为「解析一份受信任的 Auth Material」。</li>
-      <li>授权页只打开服务商官方页面，TokHub 不嵌入登录页，不采集密码、验证码、Cookie、<code>cf_clearance</code> 或网页本地存储。</li>
-      <li>OAuth 连接首版固定为个人范围；ChatGPT Codex 连接固定 QPS 1、并发 2，并限制单连接的活动中转数量。</li>
+      <li>授权页只打开服务商官方页面。TokHub 接受官方授权结果和显式开启的 DeepSeek <code>userToken.value</code>，并拒绝密码、验证码、完整 Cookie 与 <code>cf_clearance</code>。</li>
+      <li>消费者权益连接固定为个人范围；ChatGPT Codex 固定 QPS 1、并发 2，DeepSeek 网页账号固定 QPS 1、并发 1，两者都限制单连接的活动中转数量。</li>
       <li>ChatGPT 私有接口适配拥有全局与提供商双层熔断开关，一旦出现条款、协议或稳定性变化，可在不回滚数据库的情况下立即停用。</li>
     </ol>
   </div>
@@ -538,14 +538,14 @@
   <div class="takeaway">
     <div class="takeaway-label">DECISION GATE</div>
     <ol>
-      <li>接受「网页登录授权」采用 OAuth 或官方开放平台凭证，不采集浏览器 Cookie。</li>
+      <li>接受「网页登录授权」采用 OAuth、官方开放平台凭证或显式开启的 DeepSeek <code>userToken.value</code>。</li>
       <li>接受 ChatGPT Codex 适配仅用于自托管实验环境，默认关闭，界面明确显示稳定性与条款风险。</li>
-      <li>接受 DeepSeek 首版采用官方 API Key 引导，暂不实现消费者网页接口、Cloudflare 绕过或 PoW 逆向。</li>
+      <li>接受 DeepSeek 同时提供官方 API Key 引导和网页账号实验适配。PoW 与 SSE 转换由独立 DS2API v4.6.1 桥接服务完成。</li>
       <li>接受 OAuth 与消费者权益连接首版为个人范围，不开放工作区共享和成员分发。</li>
     </ol>
   </div>
 
-  <p><strong>最脆弱假设：</strong>OpenAI Codex OAuth 令牌与私有 Responses 接口继续允许第三方桥接使用。该假设没有公开稳定性承诺，所以 ChatGPT 阶段必须单独验收，并保留随时关闭的产品路径。</p>
+  <p><strong>最脆弱假设：</strong>OpenAI Codex 和 DeepSeek 网页私有协议继续允许当前桥接方式。两条路径都没有公开稳定性承诺，因此必须单独验收并保留随时关闭的产品开关。</p>
 </section>
 
 <section class="chapter">
@@ -573,7 +573,7 @@
   <ul>
     <li>新增「网页登录授权」入口，支持外部浏览器、复制回调地址、状态轮询和取消。</li>
     <li>建立提供商认证适配器、凭证加密包、续期调度、失效检测、重新授权和撤销。</li>
-    <li>首批适配 Gemini、ChatGPT Codex、DeepSeek 官方开放平台引导。</li>
+    <li>首批适配 Gemini、ChatGPT Codex，以及 DeepSeek 官方开放平台和网页账号双路径。</li>
     <li>让现有 OpenAI 兼容网关继续提供 <code>/chat/completions</code>、<code>/responses</code> 和流式输出。</li>
     <li>增加平台级开关、个人范围限制、审计、监控、告警和回滚手段。</li>
   </ul>
@@ -581,7 +581,7 @@
   <h2>范围外</h2>
   <ul>
     <li>采集或代填服务商账号密码、短信验证码、MFA 秘钥。</li>
-    <li>读取浏览器 Cookie、本地存储、系统浏览器配置文件或第三方密码管理器。</li>
+    <li>自动读取浏览器 Cookie、本地存储、系统浏览器配置文件或第三方密码管理器；DeepSeek 仅允许用户手动提交单个 <code>userToken.value</code>。</li>
     <li>绕过 Cloudflare、逆向 PoW、防机器人校验或服务商保护措施。</li>
     <li>把消费者订阅连接分发给工作区成员、公开用户或多租户池。</li>
     <li>承诺私有网页接口与官方 API 一样稳定，或承诺消费者订阅可以替代开发者计费。</li>
@@ -597,7 +597,7 @@
   <h1>开源实现对比与可复用经验</h1>
 
   <p class="lead">
-    调研覆盖 sub2api、CLIProxyAPI、OpenAI Codex、Gemini 非官方网页适配器和 DeepSeek 非官方网页适配器。可复用的是接口拆分、刷新并发控制、状态管理和请求转换；带有强许可证或平台绕过特征的源码不进入 TokHub。
+    调研覆盖 sub2api、CLIProxyAPI、OpenAI Codex、Gemini 非官方网页适配器、deepseek4free 和 DS2API。TokHub 复用接口拆分、刷新并发控制、状态管理和请求转换思路；DS2API 以独立 AGPL-3.0 容器运行，通过 HTTP 与 Apache-2.0 主程序隔离。
   </p>
 
   <table class="compact striped">
@@ -646,6 +646,13 @@
         <td>用于确认不可接受的风控边界</td>
         <td>MIT 代码许可不改变平台条款与绕过风险</td>
       </tr>
+      <tr>
+        <td>CJackHwang/ds2api v4.6.1</td>
+        <td>Direct token 模式接收 DeepSeek userToken</td>
+        <td>网页私有协议、PoW、SSE 与 OpenAI 兼容转换</td>
+        <td>作为独立桥接服务接入，TokHub 保留个人隔离、加密和风控</td>
+        <td>AGPL-3.0，镜像固定版本和摘要，源码与许可在 NOTICE 中披露</td>
+      </tr>
     </tbody>
   </table>
 
@@ -656,7 +663,7 @@
     <li><strong>稳定指纹：</strong>以服务商 subject、账号 ID 与认证方式生成 HMAC 指纹，刷新令牌变化不会制造重复连接。</li>
     <li><strong>刷新并发控制：</strong>进程内 singleflight 加 Redis 分布式锁，100 个并发请求只允许一个刷新请求访问服务商。</li>
     <li><strong>平台级风险等级：</strong>官方、实验、不可用三档同时进入注册表、界面、审计和开关，避免用同一种「已支持」标签混淆稳定性。</li>
-    <li><strong>许可隔离：</strong>LGPL 与 AGPL 项目只作为行为参考，具体接口和算法根据公开协议、官方文档与 TokHub 现有代码独立实现。</li>
+    <li><strong>许可隔离：</strong>TokHub 主程序独立实现授权与风控。DS2API 作为单独进程运行，保留 AGPL-3.0 许可和上游源码地址。</li>
   </ol>
 
   <div class="takeaway">
@@ -841,24 +848,27 @@ type AuthMaterial struct {
   <h3>暂不采用 Gemini CLI / Google One 私有桥接</h3>
   <p>sub2api 的 Gemini Code Assist 与 Google One 模式能接近消费者权益，但依赖内置 CLI 客户端身份、项目发现和非公开稳定性。首版把这条路径保留在研究清单，待取得正式许可或独立完成条款评审后再进入实验适配器。</p>
 
-  <h2>DeepSeek：官方开放平台引导</h2>
+  <h2>DeepSeek：官方开放平台与网页账号双路径</h2>
   <ol>
     <li>新增「前往 DeepSeek 开放平台创建密钥」按钮，以新标签页打开官方控制台。</li>
     <li>用户返回 TokHub 粘贴 API Key，沿用现有加密、模型验证和个人中转流程。</li>
     <li>连接中心仍显示为统一的网页引导入口，但认证方式标记为 <code>api_key_guided</code>。</li>
+    <li>实验方式引导用户登录 <code>chat.deepseek.com</code>，从 Local Storage 的 <code>userToken</code> 对象复制 <code>value</code>。</li>
+    <li>TokHub 严格校验输入，通过 DS2API v4.6.1 发送真实最小生成请求，验证成功后加密保存。</li>
+    <li>网页账号连接固定个人范围、单中转、QPS 1 和并发 1，401 会进入 <code>reauth_required</code>。</li>
   </ol>
 
-  <p>DeepSeek 目前没有公开的消费者 OAuth 或网页会话委托接口。非官方项目需要 <code>userToken</code>、<code>cf_clearance</code>、Cloudflare 绕过与 PoW 逆向；这些路径不进入 TokHub。</p>
+  <p>DeepSeek 当前没有公开的消费者 OAuth 或网页会话委托接口。网页账号方式依赖私有协议，默认关闭并要求部署端完成固定风险确认。TokHub 接受单个 <code>userToken.value</code>，完整 Cookie、密码、验证码与 <code>cf_clearance</code> 均被拒绝。</p>
 
   <table class="striped">
     <thead><tr><th>能力</th><th>ChatGPT</th><th>Gemini</th><th>DeepSeek</th></tr></thead>
     <tbody>
-      <tr><td>打开官方网页完成操作</td><td>支持，OAuth</td><td>支持，OAuth</td><td>支持，开放平台引导</td></tr>
-      <tr><td>TokHub 自动获得授权结果</td><td>半自动，粘贴回调地址</td><td>支持，固定回调</td><td>用户粘贴 API Key</td></tr>
-      <tr><td>自动续期</td><td>支持，实验</td><td>支持，正式</td><td>无刷新令牌，定期验证</td></tr>
-      <tr><td>消费者网页接口反代</td><td>Codex 私有接口，实验</td><td>首版不支持</td><td>不支持</td></tr>
-      <tr><td>个人中转</td><td>支持，严格限额</td><td>支持</td><td>支持</td></tr>
-      <tr><td>工作区共享</td><td>关闭</td><td>首版关闭</td><td>沿用 API Key 连接策略</td></tr>
+      <tr><td>打开官方网页完成操作</td><td>支持，OAuth</td><td>支持，OAuth</td><td>支持，开放平台或网页版登录</td></tr>
+      <tr><td>TokHub 获得授权结果</td><td>半自动，粘贴回调地址</td><td>支持，固定回调</td><td>粘贴 API Key 或 userToken.value</td></tr>
+      <tr><td>自动续期</td><td>支持，实验</td><td>支持，正式</td><td>网页 Token 失效后重新登录</td></tr>
+      <tr><td>消费者网页接口反代</td><td>Codex 私有接口，实验</td><td>首版关闭</td><td>DS2API 桥接，实验</td></tr>
+      <tr><td>个人中转</td><td>支持，严格限额</td><td>支持</td><td>支持，网页账号严格限额</td></tr>
+      <tr><td>工作区共享</td><td>关闭</td><td>首版关闭</td><td>网页账号关闭，API Key 沿用现有策略</td></tr>
     </tbody>
   </table>
 </section>
@@ -1057,11 +1067,11 @@ type AuthMaterial struct {
     数据库采用向后兼容迁移。现有 API Key 数据原样保留，新列提供授权状态、稳定指纹、过期时间和刷新调度。迁移发布后，旧版本应用仍能读取原字段，回滚无需反向转换密文。
   </p>
 
-  <h2>数据库迁移 0047</h2>
+  <h2>数据库迁移 0047 与 0048</h2>
   <table class="compact striped">
     <thead><tr><th>对象</th><th>新增或调整字段</th><th>用途</th></tr></thead>
     <tbody>
-      <tr><td><code>ai_connections</code></td><td><code>auth_method</code> 扩展为 api_key、api_key_guided、oauth、codex_oauth</td><td>认证方式路由</td></tr>
+      <tr><td><code>ai_connections</code></td><td><code>auth_method</code> 扩展为 api_key、api_key_guided、oauth、codex_oauth、deepseek_web_token</td><td>认证方式路由</td></tr>
       <tr><td><code>ai_connections</code></td><td><code>auth_status</code>、<code>sharing_scope</code>、<code>risk_level</code></td><td>生命周期与产品限制</td></tr>
       <tr><td><code>ai_connections</code></td><td><code>provider_adapter_version</code>、<code>terms_ack_version</code></td><td>协议变化与用户确认追踪</td></tr>
       <tr><td><code>ai_connection_secrets</code></td><td><code>secret_type</code>、<code>payload_format</code></td><td>区分 API Key 与 OAuth JSON 包</td></tr>
@@ -1093,7 +1103,7 @@ type AuthMaterial struct {
       <tr><td><code>POST /api/me/ai-auth/step-up</code></td><td>验证 TokHub 密码并签发短期 grant</td><td>CSRF、限流、密码不记录</td></tr>
       <tr><td><code>POST /api/me/ai-authorizations</code></td><td>开始 OAuth 或网页引导</td><td>消费 step-up grant</td></tr>
       <tr><td><code>GET /api/me/ai-authorizations/{id}</code></td><td>轮询授权状态</td><td>用户与会话绑定</td></tr>
-      <tr><td><code>POST /api/me/ai-authorizations/{id}/complete</code></td><td>提交 ChatGPT 回调 URL</td><td>8 KB 上限、固定 URL allowlist</td></tr>
+      <tr><td><code>POST /api/me/ai-authorizations/{id}/complete</code></td><td>提交 ChatGPT 回调 URL 或 DeepSeek userToken</td><td>8 KB 上限、固定 URL allowlist、Token 字符允许列表</td></tr>
       <tr><td><code>DELETE /api/me/ai-authorizations/{id}</code></td><td>取消授权事务</td><td>一次性终止</td></tr>
       <tr><td><code>GET /api/me/ai-authorizations/google/callback</code></td><td>Google OAuth 回调</td><td>state、PKCE、会话绑定</td></tr>
       <tr><td><code>POST /api/me/ai-connections/{id}/reauthorize</code></td><td>重新授权失效连接</td><td>复用连接 ID，版本原子更新</td></tr>
@@ -1124,6 +1134,9 @@ type AuthMaterial struct {
       <tr><td><code>TOKHUB_AI_GEMINI_OAUTH_ENABLED</code></td><td>false</td><td>Google 审核完成后开启</td></tr>
       <tr><td><code>TOKHUB_AI_CHATGPT_CODEX_EXPERIMENTAL</code></td><td>false</td><td>自托管实验开关</td></tr>
       <tr><td><code>TOKHUB_AI_DEEPSEEK_GUIDED_ENABLED</code></td><td>true</td><td>开放平台引导</td></tr>
+      <tr><td><code>TOKHUB_AI_DEEPSEEK_WEB_EXPERIMENTAL</code></td><td>false</td><td>DeepSeek 网页账号实验开关</td></tr>
+      <tr><td><code>TOKHUB_AI_DEEPSEEK_WEB_BRIDGE_URL</code></td><td>http://deepseek-web-bridge:5001</td><td>内部 DS2API 固定地址</td></tr>
+      <tr><td><code>TOKHUB_AI_DEEPSEEK_WEB_ACK</code></td><td>空</td><td>必须填入固定风险确认值</td></tr>
       <tr><td><code>TOKHUB_AI_OAUTH_TTL</code></td><td>10m</td><td>授权事务有效期</td></tr>
       <tr><td><code>TOKHUB_AI_OAUTH_REFRESH_SKEW</code></td><td>5m</td><td>提前刷新窗口</td></tr>
       <tr><td><code>TOKHUB_AI_OAUTH_REFRESH_WORKERS</code></td><td>8</td><td>单实例并发刷新上限</td></tr>
@@ -1134,7 +1147,7 @@ type AuthMaterial struct {
     </tbody>
   </table>
 
-  <p>基础阶段不增加新运行时，继续使用 Go、PostgreSQL、Redis、NATS 与现有前端栈。若未来采用 Codex app-server 侧车，需要单独批准 Rust/Codex 二进制、镜像供应链、进程隔离和升级策略。</p>
+  <p>DeepSeek 网页账号阶段增加独立 DS2API v4.6.1 运行时，镜像固定多架构摘要并启用进程隔离。TokHub 主程序继续使用 Go、PostgreSQL、Redis、NATS 与现有前端栈。</p>
 </section>
 
 <section class="chapter">
@@ -1200,7 +1213,7 @@ type AuthMaterial struct {
     <tbody>
       <tr>
         <td>Phase 0<br>认证基础</td>
-        <td>迁移 0047、Auth Adapter、Redis 事务、step-up、加密包、刷新锁、指标</td>
+        <td>迁移 0047 与 0048、Auth Adapter、Redis 事务、step-up、加密包、刷新锁、指标</td>
         <td>API Key 全量回归；模拟 OAuth 完成、续期、失效</td>
         <td>全部关闭</td>
       </tr>
@@ -1217,6 +1230,12 @@ type AuthMaterial struct {
         <td>开启</td>
       </tr>
       <tr>
+        <td>Phase 2.5<br>DeepSeek 网页账号实验</td>
+        <td>登录引导、userToken 导入、DS2API v4.6.1、真实验证、单中转与失效检测</td>
+        <td>非流式、流式、401 重登、桥故障和密文检查</td>
+        <td>关闭，需显式确认</td>
+      </tr>
+      <tr>
         <td>Phase 3<br>ChatGPT Codex 实验</td>
         <td>PKCE、复制回调、Codex token、私有 Responses 转换、严格限额、kill switch</td>
         <td>自托管环境 7 天稳定性试验，条款再次评审</td>
@@ -1229,7 +1248,7 @@ type AuthMaterial struct {
   <table class="compact">
     <thead><tr><th>模块</th><th>计划文件</th><th>变化</th></tr></thead>
     <tbody>
-      <tr><td>迁移</td><td><code>db/migrations/0047_ai_web_authorization.sql</code></td><td>认证状态、凭证格式、授权尝试</td></tr>
+      <tr><td>迁移</td><td><code>db/migrations/0047_ai_web_authorization.sql</code>、<code>0048_deepseek_web_session.sql</code></td><td>认证状态、凭证格式、授权尝试、DeepSeek 网页登录态</td></tr>
       <tr><td>认证核心</td><td><code>internal/connections/auth.go</code>、<code>auth_registry.go</code></td><td>接口、能力清单、可信 Auth Material</td></tr>
       <tr><td>授权事务</td><td><code>internal/connections/authorization_store.go</code></td><td>Redis TTL、原子绑定校验与消费、会话绑定</td></tr>
       <tr><td>平台适配器</td><td><code>internal/connections/providers/*.go</code></td><td>Gemini、ChatGPT、DeepSeek</td></tr>
@@ -1262,7 +1281,7 @@ type AuthMaterial struct {
   <ul>
     <li>所有现有 API Key 连接、快速中转与网关测试保持通过。</li>
     <li>Gemini 可以从授权开始走到自动续期，并完成一次真实个人中转请求。</li>
-    <li>DeepSeek 用户从官方开放平台返回后可在同一页面完成连接，不再需要理解平台通道配置。</li>
+    <li>DeepSeek 用户可选择官方开放平台 API Key 或网页账号 userToken，并在同一页面完成连接与个人中转。</li>
     <li>ChatGPT 实验连接在开关关闭时无路由、无入口、无后台刷新；开启后只允许个人范围和受限协议。</li>
     <li>任何 token、code、Cookie 与 Prompt 均不出现在应用日志、审计元数据或 Prometheus 标签中。</li>
     <li>Redis 暂时不可用时禁止开始新 OAuth；现有仍有效 token 可以继续请求，刷新失败不会形成风暴。</li>
@@ -1273,9 +1292,9 @@ type AuthMaterial struct {
     <li>先发布数据库迁移与关闭状态的后端，确认 API Key 回归。</li>
     <li>发布前端入口，注册表只返回已开启平台，避免空入口。</li>
     <li>Gemini 按内部账号、5%、25%、100% 四档灰度，逐档观察授权完成率与刷新失败率。</li>
-    <li>DeepSeek 引导可直接启用；ChatGPT 只在自托管测试部署开放。</li>
+    <li>DeepSeek 开放平台引导可直接启用；DeepSeek 网页账号和 ChatGPT 仅在自托管测试部署开放。</li>
     <li>回滚优先关闭平台开关；Auth Resolver 回退到 API Key 分支，OAuth 数据保留但停止解密和刷新。</li>
-    <li>若必须回滚应用版本，新列保持向后兼容；0047 不做破坏性 down migration，后续维护窗口再清理。</li>
+    <li>若必须回滚应用版本，新列保持向后兼容；0047 与 0048 不做破坏性 down migration，后续维护窗口再清理。</li>
   </ol>
 
   <div class="takeaway">
@@ -1334,7 +1353,7 @@ type AuthMaterial struct {
 
   <h2>许可执行规则</h2>
   <ol>
-    <li>TokHub 保持 Apache-2.0 主许可，LGPL 与 AGPL 项目的源码不复制、不改写进入仓库。</li>
+    <li>TokHub 保持 Apache-2.0 主许可。DS2API 使用独立 AGPL-3.0 容器，镜像版本、摘要、源码地址和许可在 NOTICE 中披露。</li>
     <li>协议和算法根据官方文档、公开网络行为与 TokHub 既有代码独立实现，并保留研究记录。</li>
     <li>MIT 与 Apache 项目的接口思想可以参考；若复制任何可识别代码片段，必须保留版权与许可通知并进入 SBOM。</li>
     <li>每个阶段合并前运行许可证扫描、依赖清单与源码相似度抽查。</li>
@@ -1342,7 +1361,7 @@ type AuthMaterial struct {
 
   <div class="takeaway">
     <div class="takeaway-label">实施结论</div>
-    方案中的 4 项决策已经确认并完成首版实施。Gemini 正式 OAuth、DeepSeek 官方开放平台引导和 ChatGPT Codex 自托管实验适配均已进入统一授权框架；Cookie、密码、验证码、Cloudflare 绕过与 PoW 逆向继续排除在系统能力之外。
+    方案已经完成升级实施。Gemini 正式 OAuth、DeepSeek 官方开放平台引导、DeepSeek userToken 网页账号实验和 ChatGPT Codex 自托管实验适配均已进入统一授权框架；密码、验证码、完整 Cookie 与 Cloudflare 凭证保持拒绝，DeepSeek PoW 由独立桥接服务处理。
   </div>
 </section>
 

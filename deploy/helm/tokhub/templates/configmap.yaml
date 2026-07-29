@@ -10,3 +10,19 @@ data:
   DATABASE_URL: {{ .Values.databaseUrl | quote }}
   REDIS_URL: {{ .Values.redisUrl | quote }}
   NATS_URL: {{ .Values.natsUrl | quote }}
+  TOKHUB_AI_WEB_AUTH_ENABLED: {{ .Values.aiAuthorization.enabled | quote }}
+  TOKHUB_AI_GEMINI_OAUTH_ENABLED: {{ .Values.aiAuthorization.geminiOAuthEnabled | quote }}
+  TOKHUB_AI_DEEPSEEK_GUIDED_ENABLED: {{ .Values.aiAuthorization.deepseekGuidedEnabled | quote }}
+  TOKHUB_AI_DEEPSEEK_WEB_EXPERIMENTAL: {{ .Values.aiAuthorization.deepseekWeb.enabled | quote }}
+  TOKHUB_AI_DEEPSEEK_WEB_BRIDGE_URL: {{ default (printf "http://%s-deepseek-web-bridge:5001" (include "tokhub.fullname" .)) .Values.aiAuthorization.deepseekWeb.bridgeUrl | quote }}
+  TOKHUB_AI_DEEPSEEK_WEB_ACK: {{ .Values.aiAuthorization.deepseekWeb.riskAcknowledgement | quote }}
+  TOKHUB_AI_CHATGPT_CODEX_EXPERIMENTAL: {{ .Values.aiAuthorization.chatgptCodexExperimental | quote }}
+  TOKHUB_AI_EXPERIMENTAL_BRIDGE_ACK: {{ .Values.aiAuthorization.chatgptRiskAcknowledgement | quote }}
+  TOKHUB_AI_OAUTH_TTL: {{ .Values.aiAuthorization.oauthTtl | quote }}
+  TOKHUB_AI_OAUTH_REFRESH_SKEW: {{ .Values.aiAuthorization.oauthRefreshSkew | quote }}
+  TOKHUB_AI_OAUTH_REFRESH_WORKERS: {{ .Values.aiAuthorization.oauthRefreshWorkers | quote }}
+  TOKHUB_AI_OAUTH_PROVIDER_CONCURRENCY: {{ .Values.aiAuthorization.oauthProviderConcurrency | quote }}
+  TOKHUB_AI_OAUTH_PROVIDER_QPS: {{ .Values.aiAuthorization.oauthProviderQps | quote }}
+  TOKHUB_AI_OAUTH_REFRESH_ATTEMPT_TIMEOUT: {{ .Values.aiAuthorization.oauthRefreshAttemptTimeout | quote }}
+  TOKHUB_GOOGLE_OAUTH_CLIENT_ID: {{ .Values.aiAuthorization.google.clientId | quote }}
+  TOKHUB_GOOGLE_OAUTH_PROJECT_ID: {{ .Values.aiAuthorization.google.projectId | quote }}

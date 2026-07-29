@@ -71,6 +71,9 @@ func NewServer(cfg Config, repo *store.Repository, authSvc *auth.Service, probeR
 		WebAuthEnabled:           cfg.AIWebAuthEnabled,
 		GeminiOAuthEnabled:       cfg.AIGeminiOAuthEnabled,
 		DeepSeekGuidedEnabled:    cfg.AIDeepSeekGuidedEnabled,
+		DeepSeekWebExperimental:  cfg.AIDeepSeekWebExperimental,
+		DeepSeekWebBridgeURL:     cfg.AIDeepSeekWebBridgeURL,
+		DeepSeekWebBridgeAck:     cfg.AIDeepSeekWebBridgeAck,
 		ChatGPTCodexExperimental: cfg.AIChatGPTCodexExperimental,
 		ExperimentalBridgeAck:    cfg.AIExperimentalBridgeAck,
 		PublicURL:                cfg.PublicURL,
@@ -155,7 +158,7 @@ func NewServer(cfg Config, repo *store.Repository, authSvc *auth.Service, probeR
 			mr.Post("/ai-authorizations", s.startAIConnectionAuthorization)
 			mr.Get("/ai-authorizations/google/callback", s.googleAIAuthorizationCallback)
 			mr.Get("/ai-authorizations/{authorizationID}", s.aiConnectionAuthorizationStatus)
-			mr.Post("/ai-authorizations/{authorizationID}/complete", s.completeChatGPTAuthorization)
+			mr.Post("/ai-authorizations/{authorizationID}/complete", s.completeAIConnectionAuthorization)
 			mr.Delete("/ai-authorizations/{authorizationID}", s.cancelAIConnectionAuthorization)
 			mr.Get("/ai-connections", s.meAIConnections)
 			mr.Post("/ai-connections", s.createAIConnection)

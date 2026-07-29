@@ -12,11 +12,11 @@ test("AI connection center exposes seven official developer products and a respo
   await expect(page.getByRole("heading", { name: "连接你的 AI 服务" })).toBeVisible();
   await expect(page.locator(".ai-provider-item")).toHaveCount(7);
   await expect(page.getByText(/连接固定保存在个人空间/)).toBeVisible();
-  await expect(page.getByText(/服务商密码、验证码、浏览器 Cookie、Local Storage、cf_clearance 与 PoW 数据均不采集/)).toBeVisible();
+  await expect(page.getByText(/服务商密码、验证码、完整 Cookie、cf_clearance 与其他浏览器数据均不采集/)).toBeVisible();
 
   await page.getByRole("button", { name: /DeepSeek/ }).click();
   await expect(page.getByRole("radio", { name: /前往 DeepSeek 开放平台/ })).toBeEnabled();
-  await expect(page.getByRole("radio", { name: /登录 DeepSeek 消费者账号/ })).toBeDisabled();
+  await expect(page.getByRole("radio", { name: /登录 DeepSeek 网页账号/ })).toBeVisible();
 
   await page.getByRole("button", { name: /千问/ }).click();
   const setup = page.locator(".ai-setup-panel");
@@ -31,7 +31,7 @@ test("AI connection center exposes seven official developer products and a respo
   await expect(page.getByRole("button", { name: "连接并验证", exact: true })).toBeVisible();
 });
 
-test("AI connection center renders Gemini OAuth, DeepSeek guided key, and ChatGPT experimental authorization controls", async ({ page }) => {
+test("AI connection center renders Gemini OAuth, DeepSeek web login, guided key, and ChatGPT experimental controls", async ({ page }) => {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   let deepSeekStatusPolls = 0;
   const providers = [
@@ -43,12 +43,13 @@ test("AI connection center renders Gemini OAuth, DeepSeek guided key, and ChatGP
       authMethod("api_key", "官方 API Key", "stable"),
       authMethod("api_key_guided", "前往 DeepSeek 开放平台", "stable", "guided_api_key"),
       authMethod(
-        "consumer_web_login",
-        "登录 DeepSeek 消费者账号",
-        "unavailable",
-        "unavailable",
-        false,
-        "官方暂未开放消费者账号授权。TokHub 不读取 Cookie、Session、密码或验证码。"
+        "deepseek_web_token",
+        "登录 DeepSeek 网页账号",
+        "experimental",
+        "paste_token",
+        true,
+        undefined,
+        "依赖 DeepSeek 网页私有协议和独立桥接服务。"
       )
     ]),
     provider("openai", "ChatGPT", [
@@ -76,13 +77,15 @@ test("AI connection center renders Gemini OAuth, DeepSeek guided key, and ChatGP
     });
   });
   await page.route("**/api/me/ai-authorizations", async (route) => {
+    const request = route.request().postDataJSON() as { method?: string };
+    const deepSeekWeb = request.method === "deepseek_web_token";
     await route.fulfill({
       status: 201,
       contentType: "application/json",
       body: JSON.stringify({
         id: "authz_test",
         authorizationUrl: `${new URL(page.url()).origin}/healthz`,
-        completionMode: "guided_api_key",
+        completionMode: deepSeekWeb ? "paste_token" : "guided_api_key",
         expiresAt: new Date(Date.now() + 600_000).toISOString(),
         pollIntervalMs: 60_000
       })
@@ -105,6 +108,13 @@ test("AI connection center renders Gemini OAuth, DeepSeek guided key, and ChatGP
       })
     });
   });
+  await page.route("**/api/me/ai-authorizations/authz_test/complete", async (route) => {
+    await route.fulfill({
+      status: 502,
+      contentType: "application/json",
+      body: JSON.stringify({ error: { message: "DeepSeek 登录态验证失败，请重新登录 DeepSeek 后复制新的 userToken" } })
+    });
+  });
 
   await page.goto("/login?next=%2Fconsole%2Fconnections");
   await page.getByRole("button", { name: "注册新账号", exact: true }).click();
@@ -124,17 +134,29 @@ test("AI connection center renders Gemini OAuth, DeepSeek guided key, and ChatGP
   await expect(page.locator(".ai-experimental-confirm input")).toBeVisible();
 
   await page.getByRole("button", { name: /DeepSeek/ }).click();
-  const deepSeekConsumerLogin = page.getByRole("radio", { name: /登录 DeepSeek 消费者账号/ });
-  await expect(deepSeekConsumerLogin).toBeDisabled();
-  await expect(deepSeekConsumerLogin).toContainText("官方未开放");
-  await expect(deepSeekConsumerLogin).toContainText("TokHub 不读取 Cookie、Session、密码或验证码");
+  const deepSeekConsumerLogin = page.getByRole("radio", { name: /登录 DeepSeek 网页账号/ });
+  await expect(deepSeekConsumerLogin).toBeEnabled();
+  await expect(deepSeekConsumerLogin).toHaveAttribute("aria-checked", "true");
+  await expect(deepSeekConsumerLogin).toContainText("实验");
+  await expect(page.locator(".ai-risk-notice")).toContainText("DeepSeek 网页私有协议");
   await page.getByLabel(/TokHub 登录密码/).fill("local-password");
+  await page.locator(".ai-experimental-confirm input").check();
   const popupPromise = page.waitForEvent("popup");
-  await page.getByRole("button", { name: "前往开放平台", exact: true }).click();
+  await page.getByRole("button", { name: "打开 DeepSeek 并开始", exact: true }).click();
   const popup = await popupPromise;
   await popup.close();
-  await expect(page.getByText("请在 DeepSeek 开放平台创建 API Key")).toBeVisible();
-  await expect(page.getByPlaceholder("粘贴官方开发者 API Key")).toBeVisible();
+  await expect(page.getByText("登录 DeepSeek 并导入当前登录态")).toBeVisible();
+  await expect(page.getByText("复制当前账号的 userToken")).toBeVisible();
+  await expect(page.getByText('copy(JSON.parse(localStorage.getItem("userToken")).value)')).toBeVisible();
+  const tokenInput = page.getByPlaceholder("粘贴 userToken 的 value");
+  await expect(tokenInput).toHaveAttribute("type", "password");
+  const recognizeButton = page.getByRole("button", { name: "识别登录态并连接", exact: true });
+  await expect(recognizeButton).toBeDisabled();
+  await tokenInput.fill("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.signature");
+  await expect(recognizeButton).toBeEnabled();
+  await recognizeButton.click();
+  await expect(page.getByText(/本次识别已结束，请重新点击“打开 DeepSeek 并开始”/)).toBeVisible();
+  await expect(page.getByText("登录 DeepSeek 并导入当前登录态")).toHaveCount(0);
   await page.waitForTimeout(1_800);
   expect(deepSeekStatusPolls).toBe(0);
 
@@ -215,7 +237,8 @@ function authMethod(
   release: string,
   completionMode = "api_key",
   enabled = true,
-  unavailableReason?: string
+  unavailableReason?: string,
+  riskNotice?: string
 ) {
   return {
     code,
@@ -226,6 +249,7 @@ function authMethod(
     enabled,
     description: `${label} 测试说明`,
     ...(unavailableReason ? { unavailableReason } : {}),
+    ...(riskNotice ? { riskNotice } : {}),
     docsUrl: "https://example.test/docs"
   };
 }

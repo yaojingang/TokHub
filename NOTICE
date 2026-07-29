@@ -5,3 +5,11 @@ Project website: https://www.tokhub.me/
 
 This product includes software developed by Tokhub and is licensed under
 the Apache License, Version 2.0.
+
+The Docker Compose deployment can run DS2API v4.6.1 as a separate, unmodified
+DeepSeek web-protocol bridge container. DS2API is licensed under AGPL-3.0.
+Its source and license are available at:
+
+https://github.com/CJackHwang/ds2api/tree/v4.6.1
+
+TokHub communicates with this independently licensed service over HTTP.

@@ -17,6 +17,9 @@ func TestAuthRegistryPublishesAvailableAndUnavailableProviderMethods(t *testing.
 		WebAuthEnabled:           true,
 		GeminiOAuthEnabled:       true,
 		DeepSeekGuidedEnabled:    true,
+		DeepSeekWebExperimental:  true,
+		DeepSeekWebBridgeURL:     "http://deepseek-web-bridge:5001",
+		DeepSeekWebBridgeAck:     DeepSeekWebExperimentalAcknowledgement,
 		ChatGPTCodexExperimental: true,
 		ExperimentalBridgeAck:    ExperimentalBridgeAcknowledgement,
 		GoogleClientID:           "google-client",
@@ -32,18 +35,15 @@ func TestAuthRegistryPublishesAvailableAndUnavailableProviderMethods(t *testing.
 	if _, ok := registry.Adapter("openai", "codex_oauth"); !ok {
 		t.Fatal("ChatGPT Codex adapter is missing")
 	}
-	consumerLogin := authMethodByCode(registry.Methods("deepseek"), "consumer_web_login")
+	consumerLogin := authMethodByCode(registry.Methods("deepseek"), "deepseek_web_token")
 	if consumerLogin == nil {
 		t.Fatal("DeepSeek consumer login capability is missing from the catalog")
 	}
-	if consumerLogin.Enabled {
-		t.Fatal("DeepSeek consumer login must remain unavailable until an official authorization protocol exists")
+	if !consumerLogin.Enabled {
+		t.Fatalf("DeepSeek consumer login is disabled: %q", consumerLogin.UnavailableReason)
 	}
-	if !strings.Contains(consumerLogin.UnavailableReason, "官方") {
-		t.Fatalf("unexpected DeepSeek consumer login reason: %q", consumerLogin.UnavailableReason)
-	}
-	if _, ok := registry.Adapter("deepseek", "consumer_web_login"); ok {
-		t.Fatal("DeepSeek consumer login must not register an executable adapter")
+	if _, ok := registry.Adapter("deepseek", "deepseek_web_token"); !ok {
+		t.Fatal("DeepSeek consumer login adapter is missing")
 	}
 
 	disabled := NewAuthRegistry(AdapterConfig{
@@ -62,6 +62,7 @@ func TestAuthRegistryPublishesAvailableAndUnavailableProviderMethods(t *testing.
 		{provider: "openai", method: "codex_oauth", reason: "部署确认"},
 		{provider: "gemini", method: "oauth", reason: "Google OAuth"},
 		{provider: "deepseek", method: "api_key_guided", reason: "管理员"},
+		{provider: "deepseek", method: "deepseek_web_token", reason: "管理员"},
 	} {
 		method := authMethodByCode(disabled.Methods(test.provider), test.method)
 		if method == nil {
@@ -80,6 +81,85 @@ func TestAuthRegistryPublishesAvailableAndUnavailableProviderMethods(t *testing.
 	method := authMethodByCode(manual.Methods("deepseek"), "api_key_guided")
 	if method == nil || !method.Enabled {
 		t.Fatal("manually registered adapters must remain visible in the method catalog")
+	}
+}
+
+func TestDeepSeekWebAdapterGuidesLoginAndPinsDirectTokenBridge(t *testing.T) {
+	bridge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/healthz" {
+			http.NotFound(w, r)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	}))
+	defer bridge.Close()
+
+	adapter := NewDeepSeekWebAdapter(AdapterConfig{
+		WebAuthEnabled:          true,
+		DeepSeekWebExperimental: true,
+		DeepSeekWebBridgeURL:    bridge.URL,
+		DeepSeekWebBridgeAck:    DeepSeekWebExperimentalAcknowledgement,
+		HTTPClient:              bridge.Client(),
+	})
+	start, err := adapter.Start(context.Background(), AuthorizationTransaction{}, "")
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if start.AuthorizationURL != DeepSeekChatURL || start.CompletionMode != "paste_token" {
+		t.Fatalf("unexpected DeepSeek web authorization start: %#v", start)
+	}
+	token := fakeJWT(map[string]any{
+		"sub": "deepseek-user", "user_id": "deepseek-account",
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+	bundle, profile, err := adapter.Exchange(context.Background(), AuthorizationTransaction{}, "Bearer "+token)
+	if err != nil {
+		t.Fatalf("Exchange() error = %v", err)
+	}
+	if bundle.ProviderSubject != "deepseek-user" || bundle.AccountID != "deepseek-account" ||
+		profile.DisplayName != "DeepSeek 网页账号" {
+		t.Fatalf("unexpected bundle/profile: %#v %#v", bundle, profile)
+	}
+	material, err := adapter.ResolveAuthMaterial(context.Background(), bundle)
+	if err != nil {
+		t.Fatalf("ResolveAuthMaterial() error = %v", err)
+	}
+	if material.Mode != AuthModeDeepSeekWeb || material.Endpoint != bridge.URL ||
+		material.Headers.Get("Authorization") != "Bearer "+token {
+		t.Fatalf("unexpected DeepSeek web material: %#v", material)
+	}
+	for _, header := range []string{"Cookie", "X-CSRF-Token", "X-Requested-With"} {
+		if material.Headers.Get(header) != "" {
+			t.Fatalf("DeepSeek web material unexpectedly contains %s", header)
+		}
+	}
+}
+
+func TestDeepSeekWebTokenInputRejectsCookieAndUnsafeBridge(t *testing.T) {
+	if _, err := NormalizeDeepSeekWebToken("userToken=abc; cf_clearance=secret"); err == nil {
+		t.Fatal("cookie-shaped input was accepted as a DeepSeek userToken")
+	}
+	expired := fakeJWT(map[string]any{
+		"sub": "deepseek-user",
+		"exp": time.Now().Add(-time.Minute).Unix(),
+	})
+	adapter := NewDeepSeekWebAdapter(AdapterConfig{
+		WebAuthEnabled:          true,
+		DeepSeekWebExperimental: true,
+		DeepSeekWebBridgeURL:    "http://deepseek-web-bridge:5001",
+		DeepSeekWebBridgeAck:    DeepSeekWebExperimentalAcknowledgement,
+	})
+	if _, _, err := adapter.Exchange(context.Background(), AuthorizationTransaction{}, expired); err == nil {
+		t.Fatal("expired DeepSeek userToken was accepted")
+	}
+	if validDeepSeekWebBridgeURL("http://bridge.example.com:5001") {
+		t.Fatal("public plaintext bridge URL was accepted")
+	}
+	if validDeepSeekWebBridgeURL("https://bridge.example.com/custom/path") {
+		t.Fatal("bridge URL with a custom path was accepted")
+	}
+	if !validDeepSeekWebBridgeURL("https://bridge.example.com") {
+		t.Fatal("HTTPS bridge URL was rejected")
 	}
 }
 

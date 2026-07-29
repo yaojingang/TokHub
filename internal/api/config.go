@@ -38,6 +38,9 @@ type Config struct {
 	AIGeminiOAuthEnabled             bool
 	AIChatGPTCodexExperimental       bool
 	AIDeepSeekGuidedEnabled          bool
+	AIDeepSeekWebExperimental        bool
+	AIDeepSeekWebBridgeURL           string
+	AIDeepSeekWebBridgeAck           string
 	AIOAuthTTL                       time.Duration
 	AIOAuthRefreshSkew               time.Duration
 	AIOAuthRefreshWorkers            int
@@ -94,6 +97,9 @@ func LoadConfig() Config {
 		AIGeminiOAuthEnabled:             envBool("TOKHUB_AI_GEMINI_OAUTH_ENABLED", false),
 		AIChatGPTCodexExperimental:       envBool("TOKHUB_AI_CHATGPT_CODEX_EXPERIMENTAL", false),
 		AIDeepSeekGuidedEnabled:          envBool("TOKHUB_AI_DEEPSEEK_GUIDED_ENABLED", true),
+		AIDeepSeekWebExperimental:        envBool("TOKHUB_AI_DEEPSEEK_WEB_EXPERIMENTAL", false),
+		AIDeepSeekWebBridgeURL:           getEnv("TOKHUB_AI_DEEPSEEK_WEB_BRIDGE_URL", "http://deepseek-web-bridge:5001"),
+		AIDeepSeekWebBridgeAck:           getEnv("TOKHUB_AI_DEEPSEEK_WEB_ACK", ""),
 		AIOAuthTTL:                       envDuration("TOKHUB_AI_OAUTH_TTL", 10*time.Minute, time.Minute, 30*time.Minute),
 		AIOAuthRefreshSkew:               envDuration("TOKHUB_AI_OAUTH_REFRESH_SKEW", 5*time.Minute, time.Minute, 30*time.Minute),
 		AIOAuthRefreshWorkers:            envInt("TOKHUB_AI_OAUTH_REFRESH_WORKERS", 8, 1, 64),

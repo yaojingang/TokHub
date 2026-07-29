@@ -12859,6 +12859,106 @@ body:has(.admin-login-wrap) {
   font-size: 10.5px;
 }
 
+.ai-deepseek-token-guide {
+  display: grid;
+  gap: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #d7e3f6;
+}
+
+.ai-deepseek-token-guide ol {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai-deepseek-token-guide li {
+  display: grid;
+  grid-template-columns: 25px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px 11px;
+  border: 1px solid #dce7f8;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .76);
+}
+
+.ai-deepseek-token-guide li > span {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  border-radius: 8px;
+  background: #e4edff;
+  color: #2456b4;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 850;
+}
+
+.ai-deepseek-token-guide li b {
+  color: #243b63;
+  font-size: 11px;
+}
+
+.ai-deepseek-token-guide li p {
+  margin: 3px 0 0;
+  color: #61718a;
+  font-size: 10.5px;
+}
+
+.ai-deepseek-token-guide li small {
+  display: block;
+  margin-top: 6px;
+  color: #77869b;
+  font-size: 9.5px;
+  line-height: 1.5;
+}
+
+.ai-token-command {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.ai-token-command code {
+  overflow-x: auto;
+  padding: 8px 9px;
+  border: 1px solid #d8e2f1;
+  border-radius: 7px;
+  background: #f5f7fb;
+  color: #334a6d;
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+
+.ai-token-command button {
+  padding: 0 10px;
+  border: 1px solid #c8d8ef;
+  border-radius: 7px;
+  background: #fff;
+  color: #2757a7;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.ai-token-complete {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.ai-token-complete label {
+  display: grid;
+  gap: 6px;
+  color: #3f5576;
+  font-size: 10.5px;
+}
+
 .ai-setup-footer {
   display: flex;
   align-items: center;
@@ -13504,6 +13604,16 @@ body:has(.admin-login-wrap) {
 
   .ai-callback-complete .btn {
     justify-content: center;
+  }
+
+  .ai-token-command,
+  .ai-token-complete {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-token-complete .btn {
+    justify-content: center;
+    width: 100%;
   }
 
   .ai-form-wide {

@@ -644,7 +644,7 @@ func (r *Repository) CreateQuickRelay(ctx context.Context, input QuickRelayInput
 		return QuickRelayResult{}, err
 	}
 	connection.ProviderConfig = decodeMap(providerConfigRaw)
-	if connection.AuthMethod == "codex_oauth" {
+	if connection.AuthMethod == "codex_oauth" || connection.AuthMethod == "deepseek_web_token" {
 		var relayExists bool
 		if err := tx.QueryRow(ctx, `
 			select exists(

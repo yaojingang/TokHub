@@ -31,6 +31,7 @@ type ConnectionDraft = {
   models: string;
   password: string;
   callbackUrl: string;
+  deepSeekToken: string;
   confirmBillable: boolean;
   confirmExperimental: boolean;
 };
@@ -90,7 +91,7 @@ export function AIConnectionsPage() {
     () => selectedProvider?.authMethods.find((method) => method.code === draft.authMethod) ?? null,
     [selectedProvider, draft.authMethod]
   );
-  const usesInteractiveAuthorization = draft.authMethod === "oauth" || draft.authMethod === "codex_oauth";
+  const usesInteractiveAuthorization = ["oauth", "codex_oauth", "deepseek_web_token"].includes(draft.authMethod);
   const usesGuidedAPIKey = draft.authMethod === "api_key_guided";
 
   useEffect(() => {
@@ -118,7 +119,7 @@ export function AIConnectionsPage() {
 
   useEffect(() => {
     if (!selectedConnection) return;
-    const experimental = selectedConnection.authMethod === "codex_oauth";
+    const experimental = isExperimentalAuthorization(selectedConnection.authMethod);
     setRelayDraft({
       name: `${selectedConnection.displayName} 个人中转`,
       policy: "latency",
@@ -137,7 +138,7 @@ export function AIConnectionsPage() {
   }, [selectedConnectionId]);
 
   useEffect(() => {
-    if (!authorization || authorization.completionMode === "guided_api_key") return;
+    if (!authorization || ["guided_api_key", "paste_token"].includes(authorization.completionMode)) return;
     let active = true;
     let timer = 0;
     const poll = async () => {
@@ -242,7 +243,12 @@ export function AIConnectionsPage() {
 
   async function beginAuthorization() {
     if (!selectedProvider || !selectedAuthMethod) return;
-    const popup = window.open("", "tokhub-ai-authorization", "popup,width=760,height=820");
+    const deepSeekWeb = draft.authMethod === "deepseek_web_token";
+    const popup = window.open(
+      "",
+      deepSeekWeb ? "_blank" : "tokhub-ai-authorization",
+      deepSeekWeb ? undefined : "popup,width=760,height=820"
+    );
     setWorking("authorize");
     setError("");
     setNotice("");
@@ -255,7 +261,7 @@ export function AIConnectionsPage() {
         displayName: draft.displayName.trim(),
         projectId: draft.projectId.trim() || undefined,
         models: splitModels(draft.models),
-        termsAckVersion: draft.authMethod === "codex_oauth" ? "chatgpt-codex-experimental-v1" : undefined,
+        termsAckVersion: authorizationTermsVersion(draft.authMethod),
         existingConnectionId: reauthorizeConnectionId || undefined
       });
       setAuthorization(started);
@@ -279,7 +285,7 @@ export function AIConnectionsPage() {
     setWorking("complete");
     setError("");
     try {
-      const payload = await completeAIConnectionAuthorization(authorization.id, draft.callbackUrl);
+      const payload = await completeAIConnectionAuthorization(authorization.id, { callbackUrl: draft.callbackUrl });
       const connections = await aiConnections();
       setItems(connections.items);
       setSelectedConnectionId(payload.connection.id);
@@ -289,6 +295,33 @@ export function AIConnectionsPage() {
       setNotice("ChatGPT 授权、凭证加密保存和模型验证已完成。");
     } catch (err) {
       setError(errorMessage(err));
+    } finally {
+      setWorking("");
+    }
+  }
+
+  async function completeDeepSeekWebToken() {
+    if (!authorization) return;
+    setWorking("complete");
+    setError("");
+    setNotice("");
+    try {
+      const payload = await completeAIConnectionAuthorization(authorization.id, {
+        deepSeekToken: draft.deepSeekToken,
+        termsAckVersion: "deepseek-web-session-experimental-v1"
+      });
+      const connections = await aiConnections();
+      setItems(connections.items);
+      setSelectedConnectionId(payload.connection.id);
+      setAuthorization(null);
+      setSetupOpen(false);
+      setReauthorizeConnectionId("");
+      setDraft((current) => ({ ...current, deepSeekToken: "" }));
+      setNotice("DeepSeek 登录态验证通过，凭证已加密保存，个人连接已经可用。");
+    } catch (err) {
+      setDraft((current) => ({ ...current, deepSeekToken: "" }));
+      setAuthorization(null);
+      setError(`${errorMessage(err)} 本次识别已结束，请重新点击“打开 DeepSeek 并开始”。`);
     } finally {
       setWorking("");
     }
@@ -326,7 +359,10 @@ export function AIConnectionsPage() {
 
   async function runValidation() {
     if (!selectedConnection) return;
-    if (!globalThis.confirm("重新验证会为每个已配置模型发送最小生成请求，并可能产生少量官方费用。确认继续？")) return;
+    const validationMessage = selectedConnection.authMethod === "deepseek_web_token"
+      ? "重新验证会通过当前 DeepSeek 网页登录态发送最小生成请求，并占用消费者账号的使用额度。确认继续？"
+      : "重新验证会为每个已配置模型发送最小生成请求，并可能产生少量官方费用。确认继续？";
+    if (!globalThis.confirm(validationMessage)) return;
     setWorking("validate");
     setError("");
     setNotice("");
@@ -368,7 +404,7 @@ export function AIConnectionsPage() {
     setError("");
     setNotice("");
     try {
-      const safeDraft = selectedConnection.authMethod === "codex_oauth"
+      const safeDraft = isExperimentalAuthorization(selectedConnection.authMethod)
         ? { ...relayDraft, qpsLimit: 1 }
         : relayDraft;
       const signature = JSON.stringify(safeDraft);
@@ -461,9 +497,9 @@ export function AIConnectionsPage() {
           <span className="ai-safety-icon">⌁</span>
           <div>
             <b>凭证保护已开启</b>
-            <p>连接固定保存在个人空间。系统只接受官方 API Key、官方 OAuth 和显式开启的 Codex OAuth；服务商密码、验证码、浏览器 Cookie、Local Storage、cf_clearance 与 PoW 数据均不采集。</p>
+            <p>连接固定保存在个人空间。系统接受官方 API Key、官方 OAuth，以及管理员显式开启的 ChatGPT Codex 和 DeepSeek userToken 实验授权。服务商密码、验证码、完整 Cookie、cf_clearance 与其他浏览器数据均不采集。</p>
           </div>
-          <span className="ai-safety-meta">AES-256-GCM · 单次 state · 审计留痕</span>
+          <span className="ai-safety-meta">AES-256-GCM · 单次授权 · 个人隔离</span>
         </section>
 
         {error ? <div className="form-error ai-live-message" role="alert">{error}</div> : null}
@@ -480,7 +516,7 @@ export function AIConnectionsPage() {
           <div className="ai-provider-grid" aria-busy={loading}>
             {providers.map((provider) => {
               const enabledMethods = provider.authMethods.filter((method) => method.enabled);
-              const oauthEnabled = enabledMethods.some((method) => ["oauth", "codex_oauth"].includes(method.code));
+              const oauthEnabled = enabledMethods.some((method) => ["oauth", "codex_oauth", "deepseek_web_token"].includes(method.code));
               const guidedEnabled = enabledMethods.some((method) => method.code === "api_key_guided");
               const unavailableInteractive = unavailableInteractiveAuthMethods(provider);
               const methodLabels = enabledMethods.map((method) => method.label);
@@ -500,7 +536,7 @@ export function AIConnectionsPage() {
                     <b>{provider.name}</b>
                     <small>{methodLabels.join(" · ")}</small>
                   </span>
-                  <span className="ai-provider-action">{oauthEnabled ? "授权 / 密钥" : guidedEnabled ? "官网引导" : unavailableInteractive.length > 0 ? "授权待配置" : "密钥连接"}</span>
+                  <span className="ai-provider-action">{oauthEnabled ? "登录 / 密钥" : guidedEnabled ? "官网引导" : unavailableInteractive.length > 0 ? "授权待配置" : "密钥连接"}</span>
                 </button>
               );
             })}
@@ -595,11 +631,13 @@ export function AIConnectionsPage() {
                     <input className="input" type="password" autoComplete="current-password" required value={draft.password} onChange={(event) => setDraft({ ...draft, password: event.target.value })} />
                     <small>密码只提交给 TokHub，不会发送给 AI 服务商。</small>
                   </label>
-                  {draft.authMethod === "codex_oauth" ? (
+                  {isExperimentalAuthorization(draft.authMethod) ? (
                     <label className="ai-experimental-confirm ai-form-wide">
                       <input type="checkbox" required checked={draft.confirmExperimental} onChange={(event) => setDraft({ ...draft, confirmExperimental: event.target.checked })} />
                       <span>
-                        我了解该能力依赖 ChatGPT Codex 的消费者授权和私有接口，服务商变更可能造成中断。连接仅限本人使用，系统会执行严格限流和重新授权保护。
+                        {draft.authMethod === "deepseek_web_token"
+                          ? "我了解该能力依赖 DeepSeek 网页私有协议，服务商变更可能造成中断或登录态失效。连接仅限本人使用，系统会执行单中转、单并发和每秒 1 次请求限制。"
+                          : "我了解该能力依赖 ChatGPT Codex 的消费者授权和私有接口，服务商变更可能造成中断。连接仅限本人使用，系统会执行严格限流和重新授权保护。"}
                       </span>
                     </label>
                   ) : null}
@@ -630,6 +668,14 @@ export function AIConnectionsPage() {
                         {working === "complete" ? "正在验证…" : "完成授权"}
                       </button>
                     </div>
+                  ) : null}
+                  {draft.authMethod === "deepseek_web_token" ? (
+                    <DeepSeekTokenGuide
+                      token={draft.deepSeekToken}
+                      working={working === "complete"}
+                      onTokenChange={(deepSeekToken) => setDraft((current) => ({ ...current, deepSeekToken }))}
+                      onComplete={() => void completeDeepSeekWebToken()}
+                    />
                   ) : null}
                 </section>
               ) : null}
@@ -682,7 +728,7 @@ export function AIConnectionsPage() {
                   <div>
                     <span>{selectedConnection.productLine} · {authMethodLabel(selectedConnection.authMethod)}</span>
                     <h2>{selectedConnection.displayName}</h2>
-                    <p>{selectedConnection.endpoint}</p>
+                    <p>{connectionEndpointLabel(selectedConnection)}</p>
                   </div>
                   <ConnectionStatus status={selectedConnection.status} authStatus={selectedConnection.authStatus} />
                 </div>
@@ -731,7 +777,7 @@ export function AIConnectionsPage() {
                   <button className="btn btn-ghost" type="button" disabled={!!working} onClick={() => void runValidation()}>
                     {working === "validate" ? "正在验证…" : "重新验证"}
                   </button>
-                  {selectedConnection.authMethod === "oauth" || selectedConnection.authMethod === "codex_oauth" ? (
+                  {isManagedAuthorization(selectedConnection.authMethod) ? (
                     <button className="btn btn-ghost" type="button" disabled={!!working} onClick={() => openReauthorization(selectedConnection)}>重新授权</button>
                   ) : (
                     <button className="btn btn-ghost" type="button" disabled={!!working} onClick={() => setRotateOpen((open) => !open)}>轮换凭证</button>
@@ -769,7 +815,7 @@ export function AIConnectionsPage() {
                         <span>一键个人中转</span>
                         <small>创建网关、受管通道和一次性调用密钥</small>
                       </div>
-                      <span className="ai-step-badge">{selectedConnection.authMethod === "codex_oauth" ? "实验限流" : "约 10 秒"}</span>
+                      <span className="ai-step-badge">{isExperimentalAuthorization(selectedConnection.authMethod) ? "实验限流" : "约 10 秒"}</span>
                     </div>
                     <div className="ai-relay-fields">
                       <label>
@@ -786,7 +832,7 @@ export function AIConnectionsPage() {
                       </label>
                       <label>
                         <span>每秒请求上限</span>
-                        <input className="input" type="number" min={1} max={selectedConnection.authMethod === "codex_oauth" ? 1 : 1000} disabled={selectedConnection.authMethod === "codex_oauth"} value={relayDraft.qpsLimit} onChange={(event) => setRelayDraft({ ...relayDraft, qpsLimit: Number(event.target.value) })} />
+                        <input className="input" type="number" min={1} max={isExperimentalAuthorization(selectedConnection.authMethod) ? 1 : 1000} disabled={isExperimentalAuthorization(selectedConnection.authMethod)} value={relayDraft.qpsLimit} onChange={(event) => setRelayDraft({ ...relayDraft, qpsLimit: Number(event.target.value) })} />
                       </label>
                       <label>
                         <span>累计请求次数上限</span>
@@ -859,7 +905,80 @@ function ConnectionStatus({ status, authStatus, compact = false }: { status: str
 }
 
 function requiresDisconnectPassword(authMethod: string): boolean {
-  return authMethod === "oauth" || authMethod === "codex_oauth";
+  return isManagedAuthorization(authMethod);
+}
+
+function DeepSeekTokenGuide({
+  token,
+  working,
+  onTokenChange,
+  onComplete
+}: {
+  token: string;
+  working: boolean;
+  onTokenChange: (value: string) => void;
+  onComplete: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+  const command = 'copy(JSON.parse(localStorage.getItem("userToken")).value)';
+
+  async function copyCommand() {
+    await navigator.clipboard.writeText(command);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1800);
+  }
+
+  return (
+    <div className="ai-deepseek-token-guide">
+      <ol>
+        <li>
+          <span>1</span>
+          <div>
+            <b>登录 DeepSeek 网页版</b>
+            <p>在刚打开的 DeepSeek 页面完成登录，并确认可以正常发起对话。</p>
+          </div>
+        </li>
+        <li>
+          <span>2</span>
+          <div>
+            <b>复制当前账号的 userToken</b>
+            <p>打开开发者工具，进入 Application → Local Storage → https://chat.deepseek.com，找到 userToken，复制其中的 value。</p>
+            <div className="ai-token-command">
+              <code>{command}</code>
+              <button type="button" onClick={() => void copyCommand()}>{copied ? "已复制" : "复制快捷命令"}</button>
+            </div>
+            <small>也可以在 DeepSeek 页面的 Console 中运行上面的快捷命令。它只读取 userToken 的 value。</small>
+          </div>
+        </li>
+        <li>
+          <span>3</span>
+          <div>
+            <b>粘贴并验证登录态</b>
+            <p>TokHub 会通过受管桥发送最小生成请求。验证成功后加密保存，页面不会再次显示完整 Token。</p>
+          </div>
+        </li>
+      </ol>
+      <div className="ai-token-complete">
+        <label>
+          <span>DeepSeek userToken value</span>
+          <input
+            className="input ai-secret-input"
+            type="password"
+            autoComplete="new-password"
+            spellCheck={false}
+            required
+            value={token}
+            onChange={(event) => onTokenChange(event.target.value)}
+            placeholder="粘贴 userToken 的 value"
+          />
+          <small>请勿粘贴账号密码、验证码、Cookie 字符串或 cf_clearance。</small>
+        </label>
+        <button className="btn btn-primary btn-sm" type="button" disabled={working || token.trim().length < 32} onClick={onComplete}>
+          {working ? "正在识别并验证…" : "识别登录态并连接"}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
@@ -899,8 +1018,11 @@ function RelayResult({ result }: { result: AIQuickRelayResult }) {
 }
 
 function preferredAuthMethod(provider: AIConnectionProvider) {
-  return provider.authMethods.find((method) => method.enabled && ["oauth", "codex_oauth", "api_key_guided"].includes(method.code))
-    || provider.authMethods.find((method) => method.enabled)
+  for (const code of ["oauth", "codex_oauth", "deepseek_web_token", "api_key_guided"]) {
+    const method = provider.authMethods.find((item) => item.enabled && item.code === code);
+    if (method) return method;
+  }
+  return provider.authMethods.find((method) => method.enabled)
     || {
       code: "api_key",
       label: "官方 API Key",
@@ -939,6 +1061,7 @@ function authMethodLabel(method: string) {
   switch (method) {
     case "oauth": return "官方 OAuth";
     case "codex_oauth": return "Codex OAuth";
+    case "deepseek_web_token": return "DeepSeek 网页账号";
     case "api_key_guided": return "开放平台密钥";
     default: return "官方 API Key";
   }
@@ -956,12 +1079,14 @@ function releaseLabel(release: string) {
 function authorizationTitle(method: string) {
   if (method === "api_key_guided") return "请在 DeepSeek 开放平台创建 API Key";
   if (method === "codex_oauth") return "请在新窗口完成 ChatGPT 登录";
+  if (method === "deepseek_web_token") return "登录 DeepSeek 并导入当前登录态";
   return "正在等待 Google 授权结果";
 }
 
 function authorizationInstructions(method: string) {
   if (method === "api_key_guided") return "创建密钥后返回此页粘贴。TokHub 不接触 DeepSeek 网页登录态。";
   if (method === "codex_oauth") return "登录完成后复制浏览器最终停留的 localhost 地址，再粘贴到下方。";
+  if (method === "deepseek_web_token") return "按下方三步完成登录态识别，随后即可创建个人 API 中转。";
   return "授权窗口完成后会自动关闭，本页将继续验证账号和模型。";
 }
 
@@ -969,8 +1094,29 @@ function submitLabel(method: string, hasAuthorization: boolean, working: string)
   if (working === "authorize") return "正在发起授权…";
   if (working === "create") return "正在连接并验证…";
   if (method === "api_key_guided" && !hasAuthorization) return "前往开放平台";
+  if (method === "deepseek_web_token") return "打开 DeepSeek 并开始";
   if (method === "oauth" || method === "codex_oauth") return "打开登录授权";
   return "连接并验证";
+}
+
+function authorizationTermsVersion(method: string): string | undefined {
+  if (method === "codex_oauth") return "chatgpt-codex-experimental-v1";
+  if (method === "deepseek_web_token") return "deepseek-web-session-experimental-v1";
+  return undefined;
+}
+
+function isManagedAuthorization(method: string): boolean {
+  return ["oauth", "codex_oauth", "deepseek_web_token"].includes(method);
+}
+
+function isExperimentalAuthorization(method: string): boolean {
+  return method === "codex_oauth" || method === "deepseek_web_token";
+}
+
+function connectionEndpointLabel(connection: AIConnection): string {
+  return connection.authMethod === "deepseek_web_token"
+    ? "DeepSeek 网页版 · TokHub 受管协议桥"
+    : connection.endpoint;
 }
 
 function splitModels(value: string) {
@@ -1010,6 +1156,7 @@ const emptyConnectionDraft: ConnectionDraft = {
   models: "",
   password: "",
   callbackUrl: "",
+  deepSeekToken: "",
   confirmBillable: false,
   confirmExperimental: false
 };

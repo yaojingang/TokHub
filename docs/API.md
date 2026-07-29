@@ -121,10 +121,11 @@ AI 连接中心支持 OpenAI、Gemini、Kimi、DeepSeek、豆包、Claude 和千
 |---|---|---|---|
 | Gemini | Google 官方 OAuth | stable，默认关闭 | 需要 Google OAuth 客户端与 Cloud Project ID |
 | DeepSeek | 官方开放平台引导 + API Key | stable，随全局开关生效 | TokHub 打开官方密钥页面，用户返回后粘贴开发者 API Key |
+| DeepSeek | 网页账号 userToken | experimental，默认关闭 | 用户登录 DeepSeek 网页版后导入 `userToken.value`，通过独立 DS2API 桥接为个人中转提供 OpenAI 兼容接口 |
 | ChatGPT | Codex OAuth | experimental，默认关闭 | 自托管实验功能，固定消费者接口、个人范围、每秒 1 次、最多 2 并发、单连接 1 个中转 |
 | 其余平台 | 官方开发者 API Key | stable | 沿用已有连接和安全轮换流程 |
 
-系统不会采集服务商密码、短信验证码、浏览器 Cookie、Local Storage、`cf_clearance` 或 PoW 数据。二次验证字段只校验当前 TokHub 登录密码。
+系统不会采集服务商密码、短信验证码、完整浏览器 Cookie、`cf_clearance` 或其他 Local Storage 数据。DeepSeek 实验适配器只接受 `userToken` 中的 `value`，二次验证字段只校验当前 TokHub 登录密码。
 
 AI 服务连接固定归属当前用户的个人工作区。`X-TokHub-Workspace` 和工作区查询参数不会改变连接归属。团队共享需要独立的授权、接受和撤销流程，当前版本没有开放。
 
@@ -176,9 +177,33 @@ DeepSeek 的 `api_key_guided` 流程先创建授权事务并打开 `https://plat
 }
 ```
 
-OAuth 凭证以 `oauth_bundle_v1` 保存，包含 Access Token、Refresh Token、到期时间和最小账号标识。后台刷新任务在到期前续期，并按服务商执行独立的并发、QPS 和单次超时保护；`invalid_grant` 会把连接标记为 `reauth_required` 并暂停新的实验中转操作。网关遇到首个 401 时允许刷新并重试一次，响应开始后不重放。
+DeepSeek 网页账号流程使用 `method: "deepseek_web_token"` 开始授权。请求必须确认实验条款：
 
-OAuth 连接通过 `POST /api/me/ai-connections/{connectionID}/disconnect` 断开，请求体提交当前 TokHub 登录密码。服务端先停用受管路由、吊销 Gateway Key 并擦除本地密文，再尝试调用服务商撤销接口；撤销结果会返回并写入审计。
+```json
+{
+  "provider": "deepseek",
+  "method": "deepseek_web_token",
+  "stepUpGrant": "<single-use-grant>",
+  "displayName": "我的 DeepSeek 网页账号",
+  "models": ["deepseek-v4-flash"],
+  "termsAckVersion": "deepseek-web-session-experimental-v1"
+}
+```
+
+响应的 `completionMode` 为 `paste_token`，`authorizationUrl` 指向 `https://chat.deepseek.com`。用户完成网页登录后，从该站点的 Local Storage `userToken` 对象复制 `value`，再提交：
+
+```json
+{
+  "deepSeekToken": "<userToken.value>",
+  "termsAckVersion": "deepseek-web-session-experimental-v1"
+}
+```
+
+服务端拒绝 Cookie 形态、空白字符和超长输入，通过固定桥地址发送最小生成请求。只有真实验证成功的 Token 才会使用 AES-256-GCM 密钥环保存。桥接服务不会暴露宿主机端口，TokHub 也不会把 Token 写入日志、审计或响应。
+
+受管授权凭证以 `oauth_bundle_v1` 保存，包含 Token、到期时间和最小账号标识。可续期的 OAuth 凭证由后台任务在到期前刷新，并按服务商执行独立的并发、QPS 和单次超时保护。DeepSeek `userToken` 没有公开续期协议，网关收到 401 后会把连接标记为 `reauth_required`，用户重新登录并导入新 Token 即可恢复。
+
+受管授权连接通过 `POST /api/me/ai-connections/{connectionID}/disconnect` 断开，请求体提交当前 TokHub 登录密码。服务端先停用受管路由、吊销 Gateway Key 并擦除本地密文，再尝试调用服务商撤销接口；不支持远程撤销的 DeepSeek 网页登录态会返回 `unsupported` 并完成本地擦除。
 
 安全轮换遵循“验证新凭证、事务替换旧凭证”的顺序。新凭证验证失败时，当前可用凭证保持不变，并写入拒绝轮换审计事件。
 
@@ -240,7 +265,7 @@ curl -b cookies.txt -X POST \
 
 - 私有通道 Key 永不通过 API 明文返回。
 - Gateway Key 列表只展示 mask；完整 Key 只在创建响应展示一次，后续只能轮换或重新签发。
-- AI 连接只接受官方开发者 API Key、已启用的官方 OAuth，以及显式开启的 ChatGPT Codex OAuth。密码、验证码、浏览器 Cookie、Local Storage、`cf_clearance` 和 PoW 数据会被产品策略拒绝。
+- AI 连接接受官方开发者 API Key、已启用的官方 OAuth、显式开启的 ChatGPT Codex OAuth，以及显式开启的 DeepSeek `userToken.value`。密码、验证码、浏览器 Cookie、完整 Local Storage、`cf_clearance` 和 PoW 数据会被产品策略拒绝。
 - 受管通道只引用 `ai_connection_id`，凭证密文在连接密钥表集中保存，不复制到通道凭证表。
 - `/api/console/*` 必须按当前用户工作区过滤。
 - 普通用户不应依赖 `/api/admin/*`。

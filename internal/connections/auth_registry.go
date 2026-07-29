@@ -9,7 +9,11 @@ import (
 	"time"
 )
 
-const ExperimentalBridgeAcknowledgement = "I_ACCEPT_CHATGPT_CODEX_EXPERIMENTAL_RISK"
+const (
+	ExperimentalBridgeAcknowledgement      = "I_ACCEPT_CHATGPT_CODEX_EXPERIMENTAL_RISK"
+	DeepSeekWebExperimentalAcknowledgement = "I_ACCEPT_DEEPSEEK_WEB_SESSION_EXPERIMENTAL_RISK"
+	DefaultDeepSeekWebBridgeURL            = "http://deepseek-web-bridge:5001"
+)
 
 type AuthMethodManifest struct {
 	Code              string `json:"code"`
@@ -43,6 +47,9 @@ type AdapterConfig struct {
 	WebAuthEnabled           bool
 	GeminiOAuthEnabled       bool
 	DeepSeekGuidedEnabled    bool
+	DeepSeekWebExperimental  bool
+	DeepSeekWebBridgeURL     string
+	DeepSeekWebBridgeAck     string
 	ChatGPTCodexExperimental bool
 	ExperimentalBridgeAck    string
 	PublicURL                string
@@ -89,7 +96,8 @@ func NewAuthRegistry(cfg AdapterConfig) *AuthRegistry {
 
 	deepSeek := NewDeepSeekGuidedAdapter()
 	registry.publish(deepSeek, deepSeekUnavailableReason(cfg))
-	registry.catalog("deepseek", deepSeekConsumerLoginManifest())
+	deepSeekWeb := NewDeepSeekWebAdapter(cfg)
+	registry.publish(deepSeekWeb, deepSeekWebUnavailableReason(cfg))
 
 	chatGPT := NewChatGPTCodexAdapter(cfg)
 	registry.publish(chatGPT, chatGPTUnavailableReason(cfg))
@@ -188,6 +196,21 @@ func deepSeekUnavailableReason(cfg AdapterConfig) string {
 		return "管理员尚未开启网页登录授权。"
 	case !cfg.DeepSeekGuidedEnabled:
 		return "管理员尚未开启 DeepSeek 开放平台引导。"
+	default:
+		return ""
+	}
+}
+
+func deepSeekWebUnavailableReason(cfg AdapterConfig) string {
+	switch {
+	case !cfg.WebAuthEnabled:
+		return "管理员尚未开启网页登录授权。"
+	case !cfg.DeepSeekWebExperimental:
+		return "管理员尚未开启 DeepSeek 网页账号实验能力。"
+	case strings.TrimSpace(cfg.DeepSeekWebBridgeAck) != DeepSeekWebExperimentalAcknowledgement:
+		return "部署端尚未完成 DeepSeek 网页账号实验风险确认。"
+	case !validDeepSeekWebBridgeURL(cfg.DeepSeekWebBridgeURL):
+		return "部署端需要配置安全的 DeepSeek 网页协议桥地址。"
 	default:
 		return ""
 	}

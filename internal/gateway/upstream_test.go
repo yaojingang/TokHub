@@ -690,6 +690,43 @@ func TestStreamWithAuthRunsGeminiOAuthThroughMappedSSEPath(t *testing.T) {
 	}
 }
 
+func TestStreamWithAuthRunsDeepSeekWebSessionThroughPinnedBridge(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Fatalf("DeepSeek bridge target = %s", r.URL.String())
+		}
+		if r.Header.Get("Authorization") != "Bearer deepseek-web-token" {
+			t.Fatalf("DeepSeek bridge auth headers = %v", r.Header)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w,
+			"data: {\"id\":\"chat_1\",\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n"+
+				"data: [DONE]\n\n",
+		)
+	}))
+	t.Cleanup(server.Close)
+
+	recorder := httptest.NewRecorder()
+	result, err := NewUpstreamClient().StreamWithAuth(context.Background(), Upstream{
+		Provider: "deepseek",
+		Type:     "openai",
+		Endpoint: "https://user-controlled.example.test",
+		Model:    "deepseek-chat",
+	}, connections.AuthMaterial{
+		Mode:     connections.AuthModeDeepSeekWeb,
+		Endpoint: server.URL,
+		Headers:  http.Header{"Authorization": {"Bearer deepseek-web-token"}},
+	}, "chat", []byte(`{"messages":[{"role":"user","content":"ping"}]}`), UpstreamUsage{}, recorder)
+	if err != nil {
+		t.Fatalf("StreamWithAuth() error = %v", err)
+	}
+	if result.StatusCode != http.StatusOK || !result.Wrote ||
+		!strings.Contains(recorder.Body.String(), `"content":"ok"`) ||
+		!strings.Contains(recorder.Body.String(), "data: [DONE]") {
+		t.Fatalf("StreamWithAuth() body=%s result=%#v", recorder.Body.String(), result)
+	}
+}
+
 func TestCodexChatRequestMapsToolResultsAndChoice(t *testing.T) {
 	_, body, err := adaptRequestBody(Upstream{
 		Provider: "openai",

@@ -180,8 +180,9 @@ func TestLoadConfigKeepsWebAuthorizationOffByDefaultAndReadsExplicitProviderFlag
 	t.Setenv("TOKHUB_AI_WEB_AUTH_ENABLED", "")
 	t.Setenv("TOKHUB_AI_GEMINI_OAUTH_ENABLED", "")
 	t.Setenv("TOKHUB_AI_CHATGPT_CODEX_EXPERIMENTAL", "")
+	t.Setenv("TOKHUB_AI_DEEPSEEK_WEB_EXPERIMENTAL", "")
 	cfg := LoadConfig()
-	if cfg.AIWebAuthEnabled || cfg.AIGeminiOAuthEnabled || cfg.AIChatGPTCodexExperimental {
+	if cfg.AIWebAuthEnabled || cfg.AIGeminiOAuthEnabled || cfg.AIChatGPTCodexExperimental || cfg.AIDeepSeekWebExperimental {
 		t.Fatalf("web authorization was enabled by default: %#v", cfg)
 	}
 	if !cfg.AIDeepSeekGuidedEnabled {
@@ -191,6 +192,9 @@ func TestLoadConfigKeepsWebAuthorizationOffByDefaultAndReadsExplicitProviderFlag
 	t.Setenv("TOKHUB_AI_WEB_AUTH_ENABLED", "true")
 	t.Setenv("TOKHUB_AI_GEMINI_OAUTH_ENABLED", "true")
 	t.Setenv("TOKHUB_AI_CHATGPT_CODEX_EXPERIMENTAL", "true")
+	t.Setenv("TOKHUB_AI_DEEPSEEK_WEB_EXPERIMENTAL", "true")
+	t.Setenv("TOKHUB_AI_DEEPSEEK_WEB_BRIDGE_URL", "https://bridge.example.test")
+	t.Setenv("TOKHUB_AI_DEEPSEEK_WEB_ACK", "ack")
 	t.Setenv("TOKHUB_AI_OAUTH_TTL", "12m")
 	t.Setenv("TOKHUB_AI_OAUTH_REFRESH_SKEW", "7m")
 	t.Setenv("TOKHUB_AI_OAUTH_REFRESH_WORKERS", "5")
@@ -198,8 +202,11 @@ func TestLoadConfigKeepsWebAuthorizationOffByDefaultAndReadsExplicitProviderFlag
 	t.Setenv("TOKHUB_AI_OAUTH_PROVIDER_QPS", "4")
 	t.Setenv("TOKHUB_AI_OAUTH_REFRESH_ATTEMPT_TIMEOUT", "18s")
 	cfg = LoadConfig()
-	if !cfg.AIWebAuthEnabled || !cfg.AIGeminiOAuthEnabled || !cfg.AIChatGPTCodexExperimental {
+	if !cfg.AIWebAuthEnabled || !cfg.AIGeminiOAuthEnabled || !cfg.AIChatGPTCodexExperimental || !cfg.AIDeepSeekWebExperimental {
 		t.Fatalf("explicit provider flags were not loaded: %#v", cfg)
+	}
+	if cfg.AIDeepSeekWebBridgeURL != "https://bridge.example.test" || cfg.AIDeepSeekWebBridgeAck != "ack" {
+		t.Fatalf("DeepSeek web bridge config was not loaded: %#v", cfg)
 	}
 	if cfg.AIOAuthTTL != 12*time.Minute || cfg.AIOAuthRefreshSkew != 7*time.Minute || cfg.AIOAuthRefreshWorkers != 5 ||
 		cfg.AIOAuthProviderConcurrency != 3 || cfg.AIOAuthProviderQPS != 4 || cfg.AIOAuthRefreshAttemptTimeout != 18*time.Second {

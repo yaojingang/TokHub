@@ -1119,7 +1119,7 @@ func (s *Server) handleRealGatewayGeneration(w http.ResponseWriter, r *http.Requ
 			} else {
 				result, err = s.upstreamClient.Stream(r.Context(), clientUpstream, credential.APIKey, kind, raw, estimated, w)
 			}
-			if err != nil && result.StatusCode == http.StatusUnauthorized && !result.Wrote && credential.Material != nil {
+			if err != nil && managedAuthorizationRejected(result, credential.Material) && !result.Wrote {
 				if refreshed, refreshErr := s.refreshGatewayUpstreamAuthorization(r.Context(), authn, upstream, true); refreshErr == nil && refreshed.Material != nil {
 					result, err = s.upstreamClient.StreamWithAuth(r.Context(), clientUpstream, *refreshed.Material, kind, raw, estimated, w)
 				}
@@ -1145,7 +1145,7 @@ func (s *Server) handleRealGatewayGeneration(w http.ResponseWriter, r *http.Requ
 		} else {
 			result, err = s.upstreamClient.JSON(r.Context(), clientUpstream, credential.APIKey, kind, raw, estimated)
 		}
-		if err != nil && result.StatusCode == http.StatusUnauthorized && credential.Material != nil {
+		if err != nil && managedAuthorizationRejected(result, credential.Material) {
 			if refreshed, refreshErr := s.refreshGatewayUpstreamAuthorization(r.Context(), authn, upstream, true); refreshErr == nil && refreshed.Material != nil {
 				result, err = s.upstreamClient.JSONWithAuth(r.Context(), clientUpstream, *refreshed.Material, kind, raw, estimated)
 			}
@@ -1190,7 +1190,7 @@ func (s *Server) handleRealGatewayAnthropicMessages(w http.ResponseWriter, r *ht
 		} else {
 			result, err = s.upstreamClient.JSON(r.Context(), clientUpstream, credential.APIKey, "chat", raw, estimated)
 		}
-		if err != nil && result.StatusCode == http.StatusUnauthorized && credential.Material != nil {
+		if err != nil && managedAuthorizationRejected(result, credential.Material) {
 			if refreshed, refreshErr := s.refreshGatewayUpstreamAuthorization(r.Context(), authn, upstream, true); refreshErr == nil && refreshed.Material != nil {
 				result, err = s.upstreamClient.JSONWithAuth(r.Context(), clientUpstream, *refreshed.Material, "chat", raw, estimated)
 			}
@@ -1216,6 +1216,11 @@ func (s *Server) handleRealGatewayAnthropicMessages(w http.ResponseWriter, r *ht
 	writeAnthropicError(w, http.StatusBadGateway, "api_error", "All upstreams failed before first byte")
 }
 
+func managedAuthorizationRejected(result gatewaycache.UpstreamResult, material *connections.AuthMaterial) bool {
+	return material != nil &&
+		(result.StatusCode == http.StatusUnauthorized || result.StatusCode == http.StatusForbidden)
+}
+
 func (s *Server) authenticateGatewayRequest(w http.ResponseWriter, r *http.Request) (store.AuthenticatedGatewayKey, bool) {
 	header := strings.TrimSpace(r.Header.Get("Authorization"))
 	plainKey := ""
@@ -1234,23 +1239,20 @@ func (s *Server) authenticateGatewayRequest(w http.ResponseWriter, r *http.Reque
 		writeError(w, r, http.StatusUnauthorized, "gateway_unauthorized", "Gateway API key is invalid or revoked")
 		return store.AuthenticatedGatewayKey{}, false
 	}
-	qps := authn.Key.QPSLimit
-	if qps <= 0 {
-		qps = authn.Gateway.QPSLimit
-	}
-	if allowed, err := s.gatewayCache.AllowQPS(r.Context(), authn.Key.ID, qps); err == nil {
+	rateLimitKey, qps := gatewayRateLimitPolicy(authn)
+	if allowed, err := s.gatewayCache.AllowQPS(r.Context(), rateLimitKey, qps); err == nil {
 		if !allowed {
 			writeError(w, r, http.StatusTooManyRequests, "gateway_rate_limited", "Gateway key QPS limit exceeded")
 			return store.AuthenticatedGatewayKey{}, false
 		}
 	} else if !errors.Is(err, gatewaycache.ErrUnavailable) {
 		s.logger.Warn("redis qps limiter failed; falling back to memory", "error", err)
-		if !s.allowRate(s.gatewayLimiter, authn.Key.ID, qps, time.Second) {
+		if !s.allowRate(s.gatewayLimiter, rateLimitKey, qps, time.Second) {
 			writeError(w, r, http.StatusTooManyRequests, "gateway_rate_limited", "Gateway key QPS limit exceeded")
 			return store.AuthenticatedGatewayKey{}, false
 		}
 	} else if errors.Is(err, gatewaycache.ErrUnavailable) {
-		if !s.allowRate(s.gatewayLimiter, authn.Key.ID, qps, time.Second) {
+		if !s.allowRate(s.gatewayLimiter, rateLimitKey, qps, time.Second) {
 			writeError(w, r, http.StatusTooManyRequests, "gateway_rate_limited", "Gateway key QPS limit exceeded")
 			return store.AuthenticatedGatewayKey{}, false
 		}
@@ -1267,18 +1269,49 @@ func (s *Server) authenticateGatewayRequest(w http.ResponseWriter, r *http.Reque
 	return authn, true
 }
 
-func (s *Server) acquireExperimentalGatewaySlot(ctx context.Context, gateway store.Gateway) (func(), error) {
+type experimentalGatewayPolicy struct {
+	QPS         int
+	Concurrency int
+}
+
+func gatewayRateLimitPolicy(authn store.AuthenticatedGatewayKey) (string, int) {
+	key := authn.Key.ID
+	qps := authn.Key.QPSLimit
+	if qps <= 0 {
+		qps = authn.Gateway.QPSLimit
+	}
+	if limits, ok := experimentalGatewayLimits(authn.Gateway); ok {
+		key = "experimental:" + authn.Gateway.ID
+		qps = limits.QPS
+	}
+	return key, qps
+}
+
+func experimentalGatewayLimits(gateway store.Gateway) (experimentalGatewayPolicy, bool) {
+	policy := experimentalGatewayPolicy{QPS: 1, Concurrency: 2}
 	experimental := false
 	for _, upstream := range gateway.Upstreams {
-		if strings.EqualFold(strings.TrimSpace(stringFromAny(upstream.ProviderConfig["authMethod"])), "codex_oauth") {
+		method := strings.ToLower(strings.TrimSpace(stringFromAny(upstream.ProviderConfig["authMethod"])))
+		switch method {
+		case "codex_oauth":
 			experimental = true
-			break
+		case "deepseek_web_token":
+			experimental = true
+			policy.Concurrency = 1
 		}
 	}
 	if !experimental {
+		return experimentalGatewayPolicy{}, false
+	}
+	return policy, experimental
+}
+
+func (s *Server) acquireExperimentalGatewaySlot(ctx context.Context, gateway store.Gateway) (func(), error) {
+	policy, ok := experimentalGatewayLimits(gateway)
+	if !ok {
 		return func() {}, nil
 	}
-	token, acquired, err := s.gatewayCache.AcquireConcurrency(ctx, gateway.ID, 2, time.Hour)
+	token, acquired, err := s.gatewayCache.AcquireConcurrency(ctx, gateway.ID, policy.Concurrency, time.Hour)
 	if err != nil {
 		return nil, err
 	}

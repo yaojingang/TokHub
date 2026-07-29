@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -23,6 +24,7 @@ const (
 	AuthModeAPIKey      = "api_key"
 	AuthModeOAuthBearer = "oauth_bearer"
 	AuthModeCodexOAuth  = "codex_oauth"
+	AuthModeDeepSeekWeb = "deepseek_web_token"
 )
 
 var (
@@ -31,7 +33,10 @@ var (
 	ErrAuthorizationBinding  = errors.New("authorization transaction binding mismatch")
 )
 
-var authorizationIDPattern = regexp.MustCompile(`^authz_[A-Za-z0-9-]{16,80}$`)
+var (
+	authorizationIDPattern = regexp.MustCompile(`^authz_[A-Za-z0-9-]{16,80}$`)
+	internalDNSNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+)
 
 type OAuthProof struct {
 	State         string
@@ -125,13 +130,14 @@ var trustedAuthHeaders = map[string]bool{
 
 func (m AuthMaterial) Validate() error {
 	switch m.Mode {
-	case AuthModeAPIKey, AuthModeOAuthBearer, AuthModeCodexOAuth:
+	case AuthModeAPIKey, AuthModeOAuthBearer, AuthModeCodexOAuth, AuthModeDeepSeekWeb:
 	default:
 		return fmt.Errorf("unsupported auth material mode %q", m.Mode)
 	}
 	if strings.TrimSpace(m.Endpoint) != "" {
 		parsed, err := url.Parse(m.Endpoint)
-		if err != nil || parsed.Scheme != "https" || parsed.Hostname() == "" || parsed.User != nil {
+		if err != nil || parsed.Hostname() == "" || parsed.User != nil ||
+			(parsed.Scheme != "https" && (m.Mode != AuthModeDeepSeekWeb || !safeInternalHTTPEndpoint(parsed))) {
 			return fmt.Errorf("auth material endpoint is invalid")
 		}
 	}
@@ -142,6 +148,22 @@ func (m AuthMaterial) Validate() error {
 		}
 	}
 	return nil
+}
+
+func safeInternalHTTPEndpoint(parsed *url.URL) bool {
+	if parsed == nil || parsed.Scheme != "http" || parsed.Hostname() == "" ||
+		parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" ||
+		(parsed.Path != "" && parsed.Path != "/") {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback() || ip.IsPrivate()
+	}
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
+		return true
+	}
+	return !strings.Contains(host, ".") && internalDNSNamePattern.MatchString(host)
 }
 
 type AuthorizationTransaction struct {
