@@ -844,13 +844,25 @@ export type AIConnectionProviderRegion = {
   workspaceId: boolean;
 };
 
+export type AIConnectionAuthMethod = {
+  code: "api_key" | "api_key_guided" | "oauth" | "codex_oauth" | string;
+  label: string;
+  release: "stable" | "preview" | "experimental" | string;
+  sharingScope: "personal" | string;
+  completionMode: string;
+  enabled: boolean;
+  description: string;
+  riskNotice?: string;
+  docsUrl?: string;
+};
+
 export type AIConnectionProvider = {
   code: string;
   name: string;
   productLine: string;
   protocol: string;
   type: string;
-  authMethod: "api_key";
+  authMethod: "api_key" | string;
   credentialLabel: string;
   defaultRegion: string;
   regions: AIConnectionProviderRegion[];
@@ -858,6 +870,7 @@ export type AIConnectionProvider = {
   generationKind: string;
   recommendedModels: string[];
   docsUrl: string;
+  authMethods: AIConnectionAuthMethod[];
 };
 
 export type AIConnectionModel = {
@@ -884,13 +897,19 @@ export type AIConnection = {
   productLine: string;
   region: string;
   workspaceId?: string;
-  authMethod: "api_key";
+  authMethod: "api_key" | "api_key_guided" | "oauth" | "codex_oauth" | string;
   protocol: string;
   adapterType: string;
   endpoint: string;
   providerConfig: Record<string, unknown>;
   displayName: string;
   status: "active" | "attention" | "deleted" | string;
+  authStatus: "active" | "refreshing" | "attention" | "reauth_required" | "revoked" | string;
+  sharingScope: "personal" | string;
+  riskLevel: "standard" | "experimental" | string;
+  providerAdapterVersion: string;
+  termsAckVersion?: string;
+  accountMask?: string;
   validationStage: string;
   validationLatencyMs: number;
   modelCount: number;
@@ -911,6 +930,29 @@ export type AIConnectionProviderCatalog = {
     accepted: string[];
     rejected: string[];
   };
+};
+
+export type AIAuthorizationAttempt = {
+  id: string;
+  orgId: string;
+  provider: string;
+  authMethod: string;
+  status: "authorization_pending" | "validating" | "completed" | "failed" | "cancelled" | "expired" | string;
+  completionMode: string;
+  connectionId?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  startedAt: string;
+  completedAt?: string;
+  expiresAt: string;
+};
+
+export type AIAuthorizationStart = {
+  id: string;
+  authorizationUrl: string;
+  completionMode: string;
+  expiresAt: string;
+  pollIntervalMs: number;
 };
 
 export type AIQuickRelayResult = {
@@ -1523,6 +1565,8 @@ export async function aiConnections(): Promise<{ items: AIConnection[] }> {
 
 export async function createAIConnection(input: {
   provider: string;
+  authMethod?: string;
+  authorizationId?: string;
   region: string;
   workspaceId?: string;
   displayName: string;
@@ -1531,6 +1575,58 @@ export async function createAIConnection(input: {
   confirmBillable: boolean;
 }): Promise<{ connection: AIConnection; validation: ConnectionValidationResult }> {
   return writeJSONRequest<{ connection: AIConnection; validation: ConnectionValidationResult }>("/api/me/ai-connections", input);
+}
+
+export async function stepUpAIConnectionAuthorization(password: string): Promise<{ grant: string; expiresAt: string }> {
+  return writeJSONRequest<{ grant: string; expiresAt: string }>("/api/me/ai-auth/step-up", { password });
+}
+
+export async function startAIConnectionAuthorization(input: {
+  provider: string;
+  method: string;
+  stepUpGrant: string;
+  displayName: string;
+  projectId?: string;
+  models: string[];
+  termsAckVersion?: string;
+  existingConnectionId?: string;
+}): Promise<AIAuthorizationStart> {
+  return writeJSONRequest<AIAuthorizationStart>("/api/me/ai-authorizations", input);
+}
+
+export async function aiConnectionAuthorization(id: string): Promise<{ authorization: AIAuthorizationAttempt }> {
+  return readJSON<{ authorization: AIAuthorizationAttempt }>(`/api/me/ai-authorizations/${id}`, {
+    credentials: "include"
+  });
+}
+
+export async function completeAIConnectionAuthorization(
+  id: string,
+  callbackUrl: string
+): Promise<{ connection: AIConnection; authorizationId: string }> {
+  return writeJSONRequest<{ connection: AIConnection; authorizationId: string }>(
+    `/api/me/ai-authorizations/${id}/complete`,
+    { callbackUrl }
+  );
+}
+
+export async function cancelAIConnectionAuthorization(id: string): Promise<void> {
+  await writeJSONRequest(`/api/me/ai-authorizations/${id}`, {}, { method: "DELETE" });
+}
+
+export async function reauthorizeAIConnection(
+  connectionID: string,
+  input: {
+    provider: string;
+    method: string;
+    stepUpGrant: string;
+    displayName: string;
+    projectId?: string;
+    models: string[];
+    termsAckVersion?: string;
+  }
+): Promise<AIAuthorizationStart> {
+  return writeJSONRequest<AIAuthorizationStart>(`/api/me/ai-connections/${connectionID}/reauthorize`, input);
 }
 
 export async function validateAIConnection(connectionID: string): Promise<{ connection: AIConnection; validation: ConnectionValidationResult }> {
@@ -1548,6 +1644,10 @@ export async function rotateAIConnectionCredential(connectionID: string, apiKey:
 
 export async function deleteAIConnection(connectionID: string): Promise<void> {
   await writeJSONRequest(`/api/me/ai-connections/${connectionID}`, {}, { method: "DELETE" });
+}
+
+export async function disconnectAIConnection(connectionID: string, password: string): Promise<{ providerRevocation: string }> {
+  return writeJSONRequest<{ providerRevocation: string }>(`/api/me/ai-connections/${connectionID}/disconnect`, { password });
 }
 
 export async function quickCreateAIConnectionRelay(

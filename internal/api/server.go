@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -16,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"tokhub/internal/auth"
+	"tokhub/internal/connections"
 	secretcrypto "tokhub/internal/crypto"
 	gatewaycache "tokhub/internal/gateway"
 	"tokhub/internal/prober"
@@ -30,6 +32,8 @@ type Server struct {
 	credentialKeys *secretcrypto.CredentialKeyring
 	gatewayCache   *gatewaycache.Cache
 	upstreamClient *gatewaycache.UpstreamClient
+	authRegistry   *connections.AuthRegistry
+	authzStore     connections.AuthorizationStore
 	probeRunner    *prober.Runner
 	logger         *slog.Logger
 	publicLimiter  *rateLimiter
@@ -63,6 +67,24 @@ func NewServer(cfg Config, repo *store.Repository, authSvc *auth.Service, probeR
 	if err != nil {
 		logger.Error("credential keyring unavailable", "error", err)
 	}
+	authRegistry := connections.NewAuthRegistry(connections.AdapterConfig{
+		WebAuthEnabled:           cfg.AIWebAuthEnabled,
+		GeminiOAuthEnabled:       cfg.AIGeminiOAuthEnabled,
+		DeepSeekGuidedEnabled:    cfg.AIDeepSeekGuidedEnabled,
+		ChatGPTCodexExperimental: cfg.AIChatGPTCodexExperimental,
+		ExperimentalBridgeAck:    cfg.AIExperimentalBridgeAck,
+		PublicURL:                cfg.PublicURL,
+		GoogleClientID:           cfg.GoogleOAuthClientID,
+		GoogleClientSecret:       cfg.GoogleOAuthClientSecret,
+		GoogleProjectID:          cfg.GoogleOAuthProjectID,
+	})
+	var authzStore connections.AuthorizationStore
+	if cfg.AIWebAuthEnabled {
+		authzStore, err = connections.NewRedisAuthorizationStore(context.Background(), cfg.RedisURL)
+		if err != nil {
+			logger.Warn("AI authorization transaction store unavailable", "error", err)
+		}
+	}
 	s := &Server{
 		cfg:            cfg,
 		repo:           repo,
@@ -71,6 +93,8 @@ func NewServer(cfg Config, repo *store.Repository, authSvc *auth.Service, probeR
 		credentialKeys: credentialKeys,
 		gatewayCache:   gatewayCache,
 		upstreamClient: gatewaycache.NewUpstreamClient(),
+		authRegistry:   authRegistry,
+		authzStore:     authzStore,
 		probeRunner:    probeRunner,
 		logger:         logger,
 		publicLimiter:  &rateLimiter{buckets: map[string]rateBucket{}},
@@ -127,12 +151,20 @@ func NewServer(cfg Config, repo *store.Repository, authSvc *auth.Service, probeR
 			mr.Post("/private-channels/{channelID}/probe-now", s.probePrivateChannelNow)
 			mr.Post("/private-channels/{channelID}/validate", s.validatePrivateChannel)
 			mr.Get("/ai-connection-providers", s.meAIConnectionProviders)
+			mr.Post("/ai-auth/step-up", s.stepUpAIConnectionAuth)
+			mr.Post("/ai-authorizations", s.startAIConnectionAuthorization)
+			mr.Get("/ai-authorizations/google/callback", s.googleAIAuthorizationCallback)
+			mr.Get("/ai-authorizations/{authorizationID}", s.aiConnectionAuthorizationStatus)
+			mr.Post("/ai-authorizations/{authorizationID}/complete", s.completeChatGPTAuthorization)
+			mr.Delete("/ai-authorizations/{authorizationID}", s.cancelAIConnectionAuthorization)
 			mr.Get("/ai-connections", s.meAIConnections)
 			mr.Post("/ai-connections", s.createAIConnection)
 			mr.Get("/ai-connections/{connectionID}", s.meAIConnection)
 			mr.Post("/ai-connections/{connectionID}/validate", s.validateAIConnection)
 			mr.Post("/ai-connections/{connectionID}/rotate", s.rotateAIConnectionCredential)
 			mr.Post("/ai-connections/{connectionID}/quick-relay", s.quickCreateAIConnectionRelay)
+			mr.Post("/ai-connections/{connectionID}/reauthorize", s.startAIConnectionAuthorization)
+			mr.Post("/ai-connections/{connectionID}/disconnect", s.disconnectAIConnection)
 			mr.Delete("/ai-connections/{connectionID}", s.deleteAIConnection)
 		})
 		api.Route("/public", func(pr chi.Router) {
@@ -502,6 +534,10 @@ func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusServiceUnavailable, "database_unavailable", "Database is not ready")
 		return
 	}
+	if s.cfg.AIWebAuthEnabled && s.authzStore == nil {
+		writeError(w, r, http.StatusServiceUnavailable, "authorization_store_unavailable", "AI authorization store is not ready")
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
@@ -510,6 +546,10 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	snapshot, err := s.repo.MetricsSnapshot(r.Context())
 	if err != nil {
 		s.logger.Warn("metrics snapshot unavailable", "error", err)
+	}
+	authSnapshot, authErr := s.repo.AIAuthorizationMetrics(r.Context())
+	if authErr != nil {
+		s.logger.Warn("AI authorization metrics unavailable", "error", authErr)
 	}
 	var out strings.Builder
 	fmt.Fprintf(&out, "# HELP tokhub_build_info TokHub build info\n# TYPE tokhub_build_info gauge\ntokhub_build_info{role=%q} 1\n", s.cfg.Role)
@@ -525,6 +565,18 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(&out, "# HELP tokhub_ai_connection_validations_total AI connection validation attempts\n# TYPE tokhub_ai_connection_validations_total counter\ntokhub_ai_connection_validations_total %d\n", snapshot.AIConnectionValidations)
 	fmt.Fprintf(&out, "# HELP tokhub_ai_connection_validation_failures_total Failed AI connection validation attempts\n# TYPE tokhub_ai_connection_validation_failures_total counter\ntokhub_ai_connection_validation_failures_total %d\n", snapshot.AIConnectionValidationFailure)
 	fmt.Fprintf(&out, "# HELP tokhub_ai_quick_relays_total Completed personal relays created from AI connections\n# TYPE tokhub_ai_quick_relays_total counter\ntokhub_ai_quick_relays_total %d\n", snapshot.AIQuickRelays)
+	out.WriteString("# HELP tokhub_ai_authorization_attempts AI account authorization attempts by current state\n# TYPE tokhub_ai_authorization_attempts gauge\n")
+	for _, item := range authSnapshot.Attempts {
+		fmt.Fprintf(&out, "tokhub_ai_authorization_attempts{provider=%q,method=%q,status=%q} %d\n", item.Provider, item.Method, item.Status, item.Count)
+	}
+	out.WriteString("# HELP tokhub_ai_oauth_connections OAuth-backed AI connections by authorization state\n# TYPE tokhub_ai_oauth_connections gauge\n")
+	for _, item := range authSnapshot.Connections {
+		fmt.Fprintf(&out, "tokhub_ai_oauth_connections{provider=%q,method=%q,auth_status=%q} %d\n", item.Provider, item.Method, item.AuthStatus, item.Count)
+	}
+	out.WriteString("# HELP tokhub_ai_oauth_refresh_failures_current Consecutive OAuth refresh failures on current credentials\n# TYPE tokhub_ai_oauth_refresh_failures_current gauge\n")
+	for _, item := range authSnapshot.RefreshFailures {
+		fmt.Fprintf(&out, "tokhub_ai_oauth_refresh_failures_current{provider=%q} %d\n", item.Provider, item.Count)
+	}
 	_, _ = w.Write([]byte(out.String()))
 }
 

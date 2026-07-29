@@ -150,6 +150,17 @@ if [[ "${TOKHUB_UPSTREAM_MODE:-real}" == "mock" ]]; then
   fail "TOKHUB_UPSTREAM_MODE must not be mock in production"
 fi
 
+if [[ "${TOKHUB_AI_WEB_AUTH_ENABLED:-false}" == "true" ]]; then
+  if [[ "${TOKHUB_AI_GEMINI_OAUTH_ENABLED:-false}" == "true" ]]; then
+    require_env TOKHUB_GOOGLE_OAUTH_CLIENT_ID
+    require_env TOKHUB_GOOGLE_OAUTH_CLIENT_SECRET
+  fi
+  if [[ "${TOKHUB_AI_CHATGPT_CODEX_EXPERIMENTAL:-false}" == "true" &&
+    "${TOKHUB_AI_EXPERIMENTAL_BRIDGE_ACK:-}" != "I_ACCEPT_CHATGPT_CODEX_EXPERIMENTAL_RISK" ]]; then
+    fail "ChatGPT Codex experimental mode requires the exact risk acknowledgement"
+  fi
+fi
+
 if [[ "${REQUIRE_SMTP:-0}" == "1" && -z "${SMTP_URL:-}" ]]; then
   fail "SMTP_URL is required when REQUIRE_SMTP=1"
 fi

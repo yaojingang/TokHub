@@ -2,6 +2,8 @@ package gateway
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -56,6 +58,50 @@ func (c *Cache) AllowQPS(ctx context.Context, key string, limit int) (bool, erro
 		_ = c.client.Expire(ctx, bucket, 2*time.Second).Err()
 	}
 	return count <= int64(limit), nil
+}
+
+func (c *Cache) AcquireConcurrency(ctx context.Context, key string, limit int, ttl time.Duration) (string, bool, error) {
+	if c == nil || c.client == nil {
+		return "", false, ErrUnavailable
+	}
+	if limit <= 0 {
+		return "", true, nil
+	}
+	if ttl <= 0 {
+		ttl = time.Hour
+	}
+	var tokenBytes [16]byte
+	if _, err := rand.Read(tokenBytes[:]); err != nil {
+		return "", false, err
+	}
+	token := hex.EncodeToString(tokenBytes[:])
+	now := time.Now()
+	expiresAt := now.Add(ttl)
+	script := redis.NewScript(`
+		redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', ARGV[1])
+		if redis.call('ZCARD', KEYS[1]) >= tonumber(ARGV[2]) then
+			return 0
+		end
+		redis.call('ZADD', KEYS[1], ARGV[3], ARGV[4])
+		redis.call('PEXPIRE', KEYS[1], ARGV[5])
+		return 1
+	`)
+	acquired, err := script.Run(ctx, c.client, []string{"gateway:concurrency:" + key},
+		now.UnixMilli(), limit, expiresAt.UnixMilli(), token, ttl.Milliseconds()).Int()
+	if err != nil {
+		return "", false, err
+	}
+	return token, acquired == 1, nil
+}
+
+func (c *Cache) ReleaseConcurrency(ctx context.Context, key string, token string) error {
+	if c == nil || c.client == nil {
+		return ErrUnavailable
+	}
+	if token == "" {
+		return nil
+	}
+	return c.client.ZRem(ctx, "gateway:concurrency:"+key, token).Err()
 }
 
 func (c *Cache) OpenCircuit(ctx context.Context, channelID string, ttl time.Duration) error {

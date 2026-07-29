@@ -21,6 +21,33 @@ func TestNormalizeConnectionModelsRejectsURLShapedModelIDs(t *testing.T) {
 	}
 }
 
+func TestOAuthConnectionDisconnectRequiresPasswordStepUp(t *testing.T) {
+	for _, method := range []string{"oauth", "codex_oauth"} {
+		if !requiresAIConnectionDisconnectStepUp(method) {
+			t.Fatalf("%s disconnect did not require password step-up", method)
+		}
+	}
+	for _, method := range []string{"", "api_key", "api_key_guided"} {
+		if requiresAIConnectionDisconnectStepUp(method) {
+			t.Fatalf("%s disconnect unexpectedly required password step-up", method)
+		}
+	}
+}
+
+func TestStoredOAuthValidationRejectsMalformedBundleBeforeUpstream(t *testing.T) {
+	server := &Server{authRegistry: connections.NewAuthRegistry(connections.AdapterConfig{})}
+	_, err := server.validateStoredOAuthCredentialSet(
+		context.Background(),
+		store.AIConnection{Provider: "gemini", AuthMethod: "oauth"},
+		connections.ResolvedProvider{},
+		[]string{"gemini-test"},
+		`{"accessToken":"plaintext-key-shape"}`,
+	)
+	if err == nil {
+		t.Fatal("malformed OAuth bundle reached the upstream validation path")
+	}
+}
+
 func TestOfficialValidationPayloadUsesProviderGenerationContract(t *testing.T) {
 	responsesRaw := officialValidationPayload("responses", "gpt-test")
 	var responses map[string]any

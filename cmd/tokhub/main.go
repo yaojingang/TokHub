@@ -12,6 +12,8 @@ import (
 
 	"tokhub/internal/api"
 	"tokhub/internal/auth"
+	"tokhub/internal/connections"
+	secretcrypto "tokhub/internal/crypto"
 	"tokhub/internal/events"
 	"tokhub/internal/gateway"
 	"tokhub/internal/observability"
@@ -88,6 +90,42 @@ func main() {
 		}()
 	}
 	authSvc := auth.NewService(repo, cfg.SecretKey, cfg.SessionSecure, logger)
+	var credentialRefreshRuntime *events.CredentialRefreshRuntime
+	if cfg.AIWebAuthEnabled && shouldRunCredentialRefresh(cfg.Role) {
+		keyring, keyringErr := secretcrypto.NewCredentialKeyring(secretcrypto.CredentialKeyringConfig{
+			ActiveEncryptionKeyID:  cfg.CredentialActiveKeyID,
+			EncryptionKeys:         cfg.CredentialEncryptionKeys,
+			ActiveFingerprintKeyID: cfg.CredentialActiveFingerprintKeyID,
+			FingerprintKeys:        cfg.CredentialFingerprintKeys,
+		})
+		if keyringErr != nil {
+			logger.Error("OAuth refresh credential keyring unavailable", "error", keyringErr)
+		} else {
+			registry := connections.NewAuthRegistry(connections.AdapterConfig{
+				WebAuthEnabled:           cfg.AIWebAuthEnabled,
+				GeminiOAuthEnabled:       cfg.AIGeminiOAuthEnabled,
+				DeepSeekGuidedEnabled:    cfg.AIDeepSeekGuidedEnabled,
+				ChatGPTCodexExperimental: cfg.AIChatGPTCodexExperimental,
+				ExperimentalBridgeAck:    cfg.AIExperimentalBridgeAck,
+				PublicURL:                cfg.PublicURL,
+				GoogleClientID:           cfg.GoogleOAuthClientID,
+				GoogleClientSecret:       cfg.GoogleOAuthClientSecret,
+				GoogleProjectID:          cfg.GoogleOAuthProjectID,
+			})
+			credentialRefreshRuntime, err = events.StartCredentialRefreshRuntime(ctx, repo, keyring, registry, events.CredentialRefreshConfig{
+				RedisURL: cfg.RedisURL, Workers: cfg.AIOAuthRefreshWorkers,
+				ProviderConcurrency: cfg.AIOAuthProviderConcurrency, ProviderQPS: cfg.AIOAuthProviderQPS,
+				AttemptTimeout: cfg.AIOAuthRefreshAttemptTimeout,
+				RefreshSkew:    cfg.AIOAuthRefreshSkew, Interval: time.Minute,
+			}, logger)
+			if err != nil {
+				logger.Warn("OAuth credential refresh runtime unavailable", "error", err)
+			} else {
+				defer credentialRefreshRuntime.Close()
+				logger.Info("OAuth credential refresh runtime started", "workers", cfg.AIOAuthRefreshWorkers)
+			}
+		}
+	}
 	probeRunner, err := prober.NewRunnerWithSecretKey(repo, logger, cfg.SeedMode != "prod", cfg.SecretKey)
 	if err != nil {
 		logger.Error("create probe runner", "error", err)
@@ -141,6 +179,10 @@ func main() {
 }
 
 func shouldExpireAIQuickRelayReveals(role string) bool {
+	return role == "all" || role == "worker"
+}
+
+func shouldRunCredentialRefresh(role string) bool {
 	return role == "all" || role == "worker"
 }
 

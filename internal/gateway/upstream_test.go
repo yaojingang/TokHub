@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"tokhub/internal/connections"
 )
 
 func TestJoinEndpointPathAddsV1ForRootProviderEndpoints(t *testing.T) {
@@ -343,5 +345,102 @@ func TestJSONAppliesProviderTimeout(t *testing.T) {
 	}
 	if elapsed := time.Since(started); elapsed > 500*time.Millisecond {
 		t.Fatalf("provider timeout was not applied quickly enough: %s", elapsed)
+	}
+}
+
+func TestOAuthAuthMaterialPinsEndpointAndTrustedHeaders(t *testing.T) {
+	client := NewUpstreamClient()
+	request, err := client.newRequestWithAuth(context.Background(), Upstream{
+		Provider: "gemini",
+		Type:     "gemini",
+		Endpoint: "https://user-controlled.example.test/v1beta",
+	}, connections.AuthMaterial{
+		Mode:     connections.AuthModeOAuthBearer,
+		Endpoint: "https://generativelanguage.googleapis.com/v1beta",
+		Headers: http.Header{
+			"Authorization":       []string{"Bearer access-token"},
+			"X-Goog-User-Project": []string{"project-1"},
+		},
+	}, http.MethodGet, "/models", nil)
+	if err != nil {
+		t.Fatalf("newRequestWithAuth() error = %v", err)
+	}
+	if request.URL.String() != "https://generativelanguage.googleapis.com/v1beta/models" {
+		t.Fatalf("request URL = %q", request.URL.String())
+	}
+	if request.Header.Get("Authorization") != "Bearer access-token" ||
+		request.Header.Get("X-Goog-User-Project") != "project-1" ||
+		request.Header.Get("X-Goog-Api-Key") != "" {
+		t.Fatalf("request headers = %v", request.Header)
+	}
+}
+
+func TestCodexOAuthAdaptsChatRequestToStreamingResponsesProtocol(t *testing.T) {
+	path, body, err := adaptRequestBody(Upstream{
+		Provider: "openai",
+		Type:     "openai",
+		Model:    "gpt-5.1-codex",
+		ProviderConfig: map[string]any{
+			"authMethod": "codex_oauth",
+		},
+	}, "chat", []byte(`{
+		"messages":[
+			{"role":"system","content":"Follow the project rules."},
+			{"role":"user","content":"ping"}
+		],
+		"stream":false,
+		"max_tokens":12,
+		"temperature":0.8,
+		"tools":[{"type":"function","function":{"name":"lookup","description":"Find data","parameters":{"type":"object"}}}]
+	}`), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != "/responses" {
+		t.Fatalf("path = %q, want /responses", path)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["stream"] != true || payload["store"] != false ||
+		payload["instructions"] != "Follow the project rules." ||
+		payload["max_output_tokens"] != float64(12) {
+		t.Fatalf("Codex payload = %#v", payload)
+	}
+	if _, exists := payload["temperature"]; exists {
+		t.Fatalf("Codex payload retained unsupported temperature: %#v", payload)
+	}
+	tools, ok := payload["tools"].([]any)
+	if !ok || len(tools) != 1 {
+		t.Fatalf("Codex tools = %#v", payload["tools"])
+	}
+	tool, _ := tools[0].(map[string]any)
+	if tool["name"] != "lookup" {
+		t.Fatalf("Codex tool = %#v", tool)
+	}
+}
+
+func TestCodexOAuthMapsCompletedSSEForResponsesAndChatClients(t *testing.T) {
+	sse := []byte("event: response.output_text.delta\n" +
+		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"hello\"}\n\n" +
+		"event: response.completed\n" +
+		"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"object\":\"response\",\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"hello\"}]}],\"usage\":{\"input_tokens\":2,\"output_tokens\":1,\"total_tokens\":3}}}\n\n")
+	upstream := Upstream{Model: "gpt-5.1-codex"}
+
+	responseBody, usage, err := mapCodexEventResponse(upstream, "responses", sse)
+	if err != nil {
+		t.Fatalf("responses mapping error = %v", err)
+	}
+	if !strings.Contains(string(responseBody), `"id":"resp_1"`) || usage.TotalTokens != 3 {
+		t.Fatalf("responses body=%s usage=%#v", responseBody, usage)
+	}
+
+	chatBody, usage, err := mapCodexEventResponse(upstream, "chat", sse)
+	if err != nil {
+		t.Fatalf("chat mapping error = %v", err)
+	}
+	if !strings.Contains(string(chatBody), `"content":"hello"`) || usage.TotalTokens != 3 {
+		t.Fatalf("chat body=%s usage=%#v", chatBody, usage)
 	}
 }

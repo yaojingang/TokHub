@@ -14,19 +14,20 @@ type ProviderRegion struct {
 }
 
 type ProviderManifest struct {
-	Code              string           `json:"code"`
-	Name              string           `json:"name"`
-	ProductLine       string           `json:"productLine"`
-	Protocol          string           `json:"protocol"`
-	Type              string           `json:"type"`
-	AuthMethod        string           `json:"authMethod"`
-	CredentialLabel   string           `json:"credentialLabel"`
-	DefaultRegion     string           `json:"defaultRegion"`
-	Regions           []ProviderRegion `json:"regions"`
-	ValidationMode    string           `json:"validationMode"`
-	GenerationKind    string           `json:"generationKind"`
-	RecommendedModels []string         `json:"recommendedModels"`
-	DocsURL           string           `json:"docsUrl"`
+	Code              string               `json:"code"`
+	Name              string               `json:"name"`
+	ProductLine       string               `json:"productLine"`
+	Protocol          string               `json:"protocol"`
+	Type              string               `json:"type"`
+	AuthMethod        string               `json:"authMethod"`
+	CredentialLabel   string               `json:"credentialLabel"`
+	DefaultRegion     string               `json:"defaultRegion"`
+	Regions           []ProviderRegion     `json:"regions"`
+	ValidationMode    string               `json:"validationMode"`
+	GenerationKind    string               `json:"generationKind"`
+	RecommendedModels []string             `json:"recommendedModels"`
+	DocsURL           string               `json:"docsUrl"`
+	AuthMethods       []AuthMethodManifest `json:"authMethods"`
 }
 
 type ResolveProviderInput struct {

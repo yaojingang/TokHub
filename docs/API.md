@@ -102,10 +102,29 @@ curl -b cookies.txt -c cookies.txt -X POST http://localhost:8080/api/auth/login 
 - `POST /api/me/ai-connections/{connectionID}/validate`
 - `POST /api/me/ai-connections/{connectionID}/rotate`
 - `POST /api/me/ai-connections/{connectionID}/quick-relay`
+- `POST /api/me/ai-auth/step-up`
+- `POST /api/me/ai-authorizations`
+- `GET /api/me/ai-authorizations/google/callback`
+- `GET /api/me/ai-authorizations/{authorizationID}`
+- `POST /api/me/ai-authorizations/{authorizationID}/complete`
+- `DELETE /api/me/ai-authorizations/{authorizationID}`
+- `POST /api/me/ai-connections/{connectionID}/reauthorize`
+- `POST /api/me/ai-connections/{connectionID}/disconnect`
 
 ### AI 开发者服务连接
 
 AI 连接中心支持 OpenAI、Gemini、Kimi、DeepSeek、豆包、Claude 和千问的官方开发者 API 产品线。服务端 Provider Registry 固定地域和官方 API Endpoint，客户端不能提交任意上游地址。
+
+认证方式按平台发布：
+
+| 平台 | 认证方式 | 发布级别 | 说明 |
+|---|---|---|---|
+| Gemini | Google 官方 OAuth | stable，默认关闭 | 需要 Google OAuth 客户端与 Cloud Project ID |
+| DeepSeek | 官方开放平台引导 + API Key | stable，随全局开关生效 | TokHub 打开官方密钥页面，用户返回后粘贴开发者 API Key |
+| ChatGPT | Codex OAuth | experimental，默认关闭 | 自托管实验功能，固定消费者接口、个人范围、每秒 1 次、最多 2 并发、单连接 1 个中转 |
+| 其余平台 | 官方开发者 API Key | stable | 沿用已有连接和安全轮换流程 |
+
+系统不会采集服务商密码、短信验证码、浏览器 Cookie、Local Storage、`cf_clearance` 或 PoW 数据。二次验证字段只校验当前 TokHub 登录密码。
 
 AI 服务连接固定归属当前用户的个人工作区。`X-TokHub-Workspace` 和工作区查询参数不会改变连接归属。团队共享需要独立的授权、接受和撤销流程，当前版本没有开放。
 
@@ -126,6 +145,40 @@ curl -b cookies.txt -X POST http://localhost:8080/api/me/ai-connections \
 ```
 
 服务端会按产品能力验证模型列表，并为每个已配置模型发送一次最小生成请求，再使用版本化 AES-256-GCM 密钥环保存凭证。创建、复验和轮换请求都要显式提交 `confirmBillable:true`。响应只包含凭证 mask 和 HMAC 指纹关联信息。验证结果按模型保存；连接处于 `attention` 时，已经验证通过的模型仍可创建个人中转，失败模型继续隔离。同一用户、个人工作区、服务商 Endpoint 和凭证指纹不能重复创建连接。每位用户最多保存 32 个有效连接。
+
+### OAuth 与开放平台引导
+
+敏感授权操作先调用 `POST /api/me/ai-auth/step-up`，提交当前 TokHub 密码。返回的 grant 与当前用户、登录 Session 绑定，10 分钟内只能使用一次。
+
+随后调用 `POST /api/me/ai-authorizations`：
+
+```json
+{
+  "provider": "gemini",
+  "method": "oauth",
+  "stepUpGrant": "<single-use-grant>",
+  "displayName": "我的 Gemini",
+  "projectId": "my-google-cloud-project",
+  "models": ["gemini-2.5-pro"]
+}
+```
+
+响应包含授权事务 ID、官方授权地址、完成模式、过期时间和建议轮询间隔。事务使用 PKCE S256、单次 state、Session 绑定和 Redis TTL。Google 回调会完成 Token Exchange、OIDC 签名与 claims 校验、模型验证和凭证加密。前端通过 `GET /api/me/ai-authorizations/{authorizationID}` 轮询结果。
+
+ChatGPT Codex 的官方 CLI 回调固定为 `http://localhost:1455/auth/callback`。用户完成登录后，把浏览器最终地址提交到 `POST /api/me/ai-authorizations/{authorizationID}/complete`。服务端只接受固定 scheme、host、port 与 path，并核对单次 state。
+
+DeepSeek 的 `api_key_guided` 流程先创建授权事务并打开 `https://platform.deepseek.com/api_keys`。用户创建 API Key 后，调用现有 `POST /api/me/ai-connections`，额外传入：
+
+```json
+{
+  "authMethod": "api_key_guided",
+  "authorizationId": "<authorization-id>"
+}
+```
+
+OAuth 凭证以 `oauth_bundle_v1` 保存，包含 Access Token、Refresh Token、到期时间和最小账号标识。后台刷新任务在到期前续期，并按服务商执行独立的并发、QPS 和单次超时保护；`invalid_grant` 会把连接标记为 `reauth_required` 并暂停新的实验中转操作。网关遇到首个 401 时允许刷新并重试一次，响应开始后不重放。
+
+OAuth 连接通过 `POST /api/me/ai-connections/{connectionID}/disconnect` 断开，请求体提交当前 TokHub 登录密码。服务端先停用受管路由、吊销 Gateway Key 并擦除本地密文，再尝试调用服务商撤销接口；撤销结果会返回并写入审计。
 
 安全轮换遵循“验证新凭证、事务替换旧凭证”的顺序。新凭证验证失败时，当前可用凭证保持不变，并写入拒绝轮换审计事件。
 
@@ -161,7 +214,7 @@ curl -b cookies.txt -X POST \
 
 生产预检要求同时配置独立的加密密钥环和指纹密钥环。生产运行时不会回落到 `TOKHUB_SECRET_KEY`，两个密钥环也不能使用相同的密钥材料。轮换时先加入新 Key ID 并切换 active ID，历史 Key 保留到全部旧凭证完成重加密。
 
-生产环境应使用独立的加密密钥和指纹密钥，并保留旧 Key ID 直到关联凭证完成轮换。`/metrics` 暴露 active、attention、验证总量、验证失败量和一键中转总量。
+生产环境应使用独立的加密密钥和指纹密钥，并保留旧 Key ID 直到关联凭证完成轮换。`/metrics` 额外暴露授权事务状态、OAuth 连接状态和当前连续刷新失败数，标签只包含 provider、method 和状态。
 
 用户/企业工作区能力：
 
@@ -187,7 +240,7 @@ curl -b cookies.txt -X POST \
 
 - 私有通道 Key 永不通过 API 明文返回。
 - Gateway Key 列表只展示 mask；完整 Key 只在创建响应展示一次，后续只能轮换或重新签发。
-- AI 连接只接受官方开发者 API Key。密码、验证码、浏览器 Cookie、消费者会话 Token 和 CLI OAuth 会话会被产品策略拒绝。
+- AI 连接只接受官方开发者 API Key、已启用的官方 OAuth，以及显式开启的 ChatGPT Codex OAuth。密码、验证码、浏览器 Cookie、Local Storage、`cf_clearance` 和 PoW 数据会被产品策略拒绝。
 - 受管通道只引用 `ai_connection_id`，凭证密文在连接密钥表集中保存，不复制到通道凭证表。
 - `/api/console/*` 必须按当前用户工作区过滤。
 - 普通用户不应依赖 `/api/admin/*`。

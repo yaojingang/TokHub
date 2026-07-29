@@ -33,31 +33,55 @@ type AdminAgentToken struct {
 	CreatedAt   time.Time
 }
 
+type AiAuthorizationAttempt struct {
+	ID             string
+	OwnerUserID    string
+	OrgID          string
+	Provider       string
+	AuthMethod     string
+	Status         string
+	CompletionMode string
+	ConnectionID   sql.NullString
+	ErrorCode      string
+	ErrorMessage   string
+	StartedAt      time.Time
+	CompletedAt    sql.NullTime
+	ExpiresAt      time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
 type AiConnection struct {
-	ID                  string
-	OwnerUserID         string
-	OrgID               string
-	Provider            string
-	ProductLine         string
-	Region              string
-	WorkspaceID         string
-	AuthMethod          string
-	Protocol            string
-	AdapterType         string
-	Endpoint            string
-	ProviderConfig      json.RawMessage
-	DisplayName         string
-	Status              string
-	ValidationStage     string
-	ValidationLatencyMs int32
-	ModelCount          int32
-	LastErrorCode       string
-	LastErrorMessage    string
-	LastValidatedAt     sql.NullTime
-	PolicyVersion       string
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
-	DeletedAt           sql.NullTime
+	ID                     string
+	OwnerUserID            string
+	OrgID                  string
+	Provider               string
+	ProductLine            string
+	Region                 string
+	WorkspaceID            string
+	AuthMethod             string
+	Protocol               string
+	AdapterType            string
+	Endpoint               string
+	ProviderConfig         json.RawMessage
+	DisplayName            string
+	Status                 string
+	ValidationStage        string
+	ValidationLatencyMs    int32
+	ModelCount             int32
+	LastErrorCode          string
+	LastErrorMessage       string
+	LastValidatedAt        sql.NullTime
+	PolicyVersion          string
+	CreatedAt              time.Time
+	UpdatedAt              time.Time
+	DeletedAt              sql.NullTime
+	AuthStatus             string
+	SharingScope           string
+	RiskLevel              string
+	ProviderAdapterVersion string
+	TermsAckVersion        string
+	AccountMask            string
 }
 
 type AiConnectionModel struct {
@@ -78,18 +102,26 @@ type AiConnectionModel struct {
 }
 
 type AiConnectionSecret struct {
-	ConnectionID     string
-	Ciphertext       string
-	Nonce            string
-	Mask             string
-	Fingerprint      string
-	EncryptionKeyID  string
-	FingerprintKeyID string
-	Algorithm        string
-	Version          int32
-	RotatedAt        time.Time
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	ConnectionID         string
+	Ciphertext           string
+	Nonce                string
+	Mask                 string
+	Fingerprint          string
+	EncryptionKeyID      string
+	FingerprintKeyID     string
+	Algorithm            string
+	Version              int32
+	RotatedAt            time.Time
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
+	SecretType           string
+	PayloadFormat        string
+	SubjectFingerprint   string
+	ExpiresAt            sql.NullTime
+	NextRefreshAt        sql.NullTime
+	LastRefreshedAt      sql.NullTime
+	RefreshFailures      int32
+	LastRefreshErrorCode string
 }
 
 type AiQuickRelayRequest struct {

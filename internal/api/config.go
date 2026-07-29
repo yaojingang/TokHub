@@ -3,7 +3,9 @@ package api
 import (
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -32,6 +34,20 @@ type Config struct {
 	CredentialEncryptionKeys         map[string]string
 	CredentialActiveFingerprintKeyID string
 	CredentialFingerprintKeys        map[string]string
+	AIWebAuthEnabled                 bool
+	AIGeminiOAuthEnabled             bool
+	AIChatGPTCodexExperimental       bool
+	AIDeepSeekGuidedEnabled          bool
+	AIOAuthTTL                       time.Duration
+	AIOAuthRefreshSkew               time.Duration
+	AIOAuthRefreshWorkers            int
+	AIOAuthProviderConcurrency       int
+	AIOAuthProviderQPS               int
+	AIOAuthRefreshAttemptTimeout     time.Duration
+	GoogleOAuthClientID              string
+	GoogleOAuthClientSecret          string
+	GoogleOAuthProjectID             string
+	AIExperimentalBridgeAck          string
 }
 
 func LoadConfig() Config {
@@ -74,6 +90,20 @@ func LoadConfig() Config {
 		CredentialEncryptionKeys:         credentialEncryptionKeys,
 		CredentialActiveFingerprintKeyID: credentialActiveFingerprintKeyID,
 		CredentialFingerprintKeys:        credentialFingerprintKeys,
+		AIWebAuthEnabled:                 envBool("TOKHUB_AI_WEB_AUTH_ENABLED", false),
+		AIGeminiOAuthEnabled:             envBool("TOKHUB_AI_GEMINI_OAUTH_ENABLED", false),
+		AIChatGPTCodexExperimental:       envBool("TOKHUB_AI_CHATGPT_CODEX_EXPERIMENTAL", false),
+		AIDeepSeekGuidedEnabled:          envBool("TOKHUB_AI_DEEPSEEK_GUIDED_ENABLED", true),
+		AIOAuthTTL:                       envDuration("TOKHUB_AI_OAUTH_TTL", 10*time.Minute, time.Minute, 30*time.Minute),
+		AIOAuthRefreshSkew:               envDuration("TOKHUB_AI_OAUTH_REFRESH_SKEW", 5*time.Minute, time.Minute, 30*time.Minute),
+		AIOAuthRefreshWorkers:            envInt("TOKHUB_AI_OAUTH_REFRESH_WORKERS", 8, 1, 64),
+		AIOAuthProviderConcurrency:       envInt("TOKHUB_AI_OAUTH_PROVIDER_CONCURRENCY", 4, 1, 32),
+		AIOAuthProviderQPS:               envInt("TOKHUB_AI_OAUTH_PROVIDER_QPS", 2, 1, 100),
+		AIOAuthRefreshAttemptTimeout:     envDuration("TOKHUB_AI_OAUTH_REFRESH_ATTEMPT_TIMEOUT", 20*time.Second, 5*time.Second, 2*time.Minute),
+		GoogleOAuthClientID:              getEnv("TOKHUB_GOOGLE_OAUTH_CLIENT_ID", ""),
+		GoogleOAuthClientSecret:          getEnv("TOKHUB_GOOGLE_OAUTH_CLIENT_SECRET", ""),
+		GoogleOAuthProjectID:             getEnv("TOKHUB_GOOGLE_OAUTH_PROJECT_ID", ""),
+		AIExperimentalBridgeAck:          getEnv("TOKHUB_AI_EXPERIMENTAL_BRIDGE_ACK", ""),
 	}
 }
 
@@ -150,6 +180,42 @@ func getEnv(key string, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func envBool(key string, fallback bool) bool {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return fallback
+	}
+	return value
+}
+
+func envDuration(key string, fallback time.Duration, min time.Duration, max time.Duration) time.Duration {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := time.ParseDuration(raw)
+	if err != nil || value < min || value > max {
+		return fallback
+	}
+	return value
+}
+
+func envInt(key string, fallback int, min int, max int) int {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < min || value > max {
+		return fallback
+	}
+	return value
 }
 
 func normalizeLoginUsername(value string) string {

@@ -25,6 +25,8 @@ import (
 
 type createAIConnectionRequest struct {
 	Provider        string   `json:"provider"`
+	AuthMethod      string   `json:"authMethod"`
+	AuthorizationID string   `json:"authorizationId"`
 	Region          string   `json:"region"`
 	WorkspaceID     string   `json:"workspaceId"`
 	DisplayName     string   `json:"displayName"`
@@ -58,12 +60,22 @@ var (
 const aiConnectionRequestBodyLimit = 64 << 10
 
 func (s *Server) meAIConnectionProviders(w http.ResponseWriter, r *http.Request) {
+	items := connections.ProviderRegistry()
+	for index := range items {
+		items[index].AuthMethods = []connections.AuthMethodManifest{{
+			Code: "api_key", Label: "官方 API Key", Release: "stable",
+			SharingScope: "personal", CompletionMode: "api_key", Enabled: true,
+			Description: "粘贴官方开发者平台创建的 API Key。",
+			DocsURL:     items[index].DocsURL,
+		}}
+		items[index].AuthMethods = append(items[index].AuthMethods, s.authRegistry.Methods(items[index].Code)...)
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"items":         connections.ProviderRegistry(),
-		"policyVersion": "official-developer-credentials-v1",
+		"items":         items,
+		"policyVersion": "ai-authorization-v2",
 		"credentialPolicy": map[string]any{
-			"accepted": []string{"official developer API keys"},
-			"rejected": []string{"passwords", "one-time codes", "browser cookies", "consumer session tokens", "CLI OAuth sessions"},
+			"accepted": []string{"official developer API keys", "official OAuth grants", "explicitly enabled Codex OAuth grants"},
+			"rejected": []string{"provider passwords", "one-time codes", "browser cookies", "local storage", "cf_clearance", "proof-of-work bypass"},
 		},
 	})
 }
@@ -126,6 +138,33 @@ func (s *Server) createAIConnection(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, "invalid_provider_profile", err.Error())
 		return
 	}
+	authMethod := strings.ToLower(strings.TrimSpace(req.AuthMethod))
+	if authMethod == "" {
+		authMethod = "api_key"
+	}
+	var guidedTransaction connections.AuthorizationTransaction
+	if authMethod == "api_key_guided" {
+		if resolved.Manifest.Code != "deepseek" || strings.TrimSpace(req.AuthorizationID) == "" {
+			writeError(w, r, http.StatusBadRequest, "invalid_guided_authorization", "DeepSeek guided authorization is invalid")
+			return
+		}
+		if s.authzStore == nil {
+			writeError(w, r, http.StatusServiceUnavailable, "authorization_store_unavailable", "Authorization service is temporarily unavailable")
+			return
+		}
+		guidedTransaction, err = s.authzStore.Get(r.Context(), req.AuthorizationID)
+		sessionHash, sessionOK := s.authorizationSessionHash(r)
+		if err != nil || !sessionOK ||
+			!connections.SecureStateEqual(guidedTransaction.UserID, user.ID) ||
+			!connections.SecureStateEqual(guidedTransaction.SessionHash, sessionHash) ||
+			guidedTransaction.Provider != "deepseek" || guidedTransaction.Method != "api_key_guided" {
+			writeError(w, r, http.StatusConflict, "guided_authorization_expired", "DeepSeek guided authorization expired; start again")
+			return
+		}
+	} else if authMethod != "api_key" {
+		writeError(w, r, http.StatusBadRequest, "invalid_auth_method", "Use the authorization endpoint for this authentication method")
+		return
+	}
 	if strings.TrimSpace(req.APIKey) == "" || len(req.APIKey) > 8192 {
 		writeError(w, r, http.StatusBadRequest, "credential_required", "Official developer API key is required")
 		return
@@ -165,6 +204,13 @@ func (s *Server) createAIConnection(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusConflict, "ai_connection_duplicate", "This official credential is already connected to the same provider endpoint")
 		return
 	}
+	if authMethod == "api_key_guided" {
+		sessionHash, _ := s.authorizationSessionHash(r)
+		if _, consumeErr := s.authzStore.Consume(r.Context(), guidedTransaction.ID, user.ID, sessionHash); consumeErr != nil {
+			writeError(w, r, http.StatusConflict, "guided_authorization_expired", "DeepSeek guided authorization expired; start again")
+			return
+		}
+	}
 	validation := s.validateOfficialCredentialSet(r.Context(), resolved, models, req.APIKey)
 	item, err := s.repo.CreateAIConnection(r.Context(), store.AIConnectionCreateInput{
 		OwnerUserID: user.ID, OrgID: orgID, Provider: resolved.Manifest.Code,
@@ -172,10 +218,17 @@ func (s *Server) createAIConnection(w http.ResponseWriter, r *http.Request) {
 		WorkspaceID: resolved.WorkspaceID, Protocol: resolved.Manifest.Protocol,
 		AdapterType: resolved.Manifest.Type, Endpoint: resolved.Endpoint,
 		ProviderConfig: resolved.ProviderConfig, DisplayName: cleanConnectionDisplayName(req.DisplayName, resolved.Manifest.Name),
-		Models:     models,
-		Credential: credential,
-		Validation: validationStoreValue(validation),
+		Models:                 models,
+		Credential:             credential,
+		Validation:             validationStoreValue(validation),
+		AuthMethod:             authMethod,
+		ProviderAdapterVersion: map[bool]string{true: "deepseek-guided-v1", false: "api-key-v1"}[authMethod == "api_key_guided"],
+		TermsAckVersion:        map[bool]string{true: "deepseek-open-platform-v1", false: ""}[authMethod == "api_key_guided"],
+		AuthorizationID:        guidedTransaction.ID,
 	})
+	if err != nil && authMethod == "api_key_guided" {
+		_ = s.repo.FailAIAuthorizationAttempt(r.Context(), user.ID, guidedTransaction.ID, "connection_create_failed", "Guided connection could not be saved")
+	}
 	if errors.Is(err, store.ErrAIConnectionLimit) {
 		writeError(w, r, http.StatusConflict, "ai_connection_limit_reached", "This workspace has reached the limit of 32 AI service connections")
 		return
@@ -219,7 +272,17 @@ func (s *Server) validateAIConnection(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, "connection_models_missing", "Connection has no configured models")
 		return
 	}
-	validation := s.validateOfficialCredentialSet(r.Context(), resolved, connectionModelIDs(item.Models), apiKey)
+	var validation connectionValidationResult
+	if secret.SecretType == "oauth_bundle" {
+		var validationErr error
+		validation, validationErr = s.validateStoredOAuthCredentialSet(r.Context(), item, resolved, connectionModelIDs(item.Models), apiKey)
+		if validationErr != nil {
+			writeError(w, r, http.StatusConflict, "oauth_credential_unavailable", "OAuth credential requires reauthorization")
+			return
+		}
+	} else {
+		validation = s.validateOfficialCredentialSet(r.Context(), resolved, connectionModelIDs(item.Models), apiKey)
+	}
 	updated, err := s.repo.UpdateAIConnectionValidation(r.Context(), user.ID, orgID, connectionID, secret.Version, validationStoreValue(validation))
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, r, http.StatusConflict, "credential_changed", "The credential changed during validation; retry with the current connection")
@@ -323,12 +386,53 @@ func (s *Server) rotateAIConnectionCredential(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) deleteAIConnection(w http.ResponseWriter, r *http.Request) {
+	s.deleteAIConnectionRecord(w, r, false)
+}
+
+func (s *Server) deleteAIConnectionRecord(w http.ResponseWriter, r *http.Request, passwordVerified bool) {
 	user, _ := s.userFromRequest(r)
 	orgID, ok := s.personalAIConnectionWorkspace(w, r, user)
 	if !ok {
 		return
 	}
-	err := s.repo.DeleteAIConnection(r.Context(), user.ID, orgID, chi.URLParam(r, "connectionID"))
+	connectionID := chi.URLParam(r, "connectionID")
+	item, itemErr := s.repo.AIConnectionForOwnerOrg(r.Context(), user.ID, orgID, connectionID)
+	if errors.Is(itemErr, pgx.ErrNoRows) {
+		writeError(w, r, http.StatusNotFound, "ai_connection_not_found", "AI service connection was not found")
+		return
+	}
+	if itemErr != nil {
+		writeError(w, r, http.StatusInternalServerError, "ai_connection_delete_failed", "Could not load AI service connection")
+		return
+	}
+	if requiresAIConnectionDisconnectStepUp(item.AuthMethod) && !passwordVerified {
+		writeError(w, r, http.StatusUnprocessableEntity, "disconnect_step_up_required", "请通过断开连接操作并输入当前 TokHub 登录密码")
+		return
+	}
+	var revokeAdapter connections.AuthAdapter
+	var revokeBundle connections.CredentialBundle
+	if (item.AuthMethod == "oauth" || item.AuthMethod == "codex_oauth") && s.credentialKeys != nil {
+		adapter, exists := s.authRegistry.Adapter(item.Provider, item.AuthMethod)
+		if !exists && item.Provider == "gemini" && item.AuthMethod == "oauth" {
+			adapter = connections.NewGeminiOAuthAdapter(connections.AdapterConfig{})
+			exists = true
+		}
+		if exists {
+			if secret, secretErr := s.repo.AIConnectionSecretForOwnerOrg(r.Context(), user.ID, orgID, connectionID); secretErr == nil {
+				if raw, decryptErr := s.credentialKeys.Decrypt(user.ID, item.Provider, secretcrypto.CredentialEnvelope{
+					Ciphertext: secret.Ciphertext, Nonce: secret.Nonce, EncryptionKeyID: secret.EncryptionKeyID,
+					Fingerprint: secret.Fingerprint, FingerprintKeyID: secret.FingerprintKeyID,
+					Mask: secret.Mask, Algorithm: secret.Algorithm,
+				}); decryptErr == nil {
+					if bundle, parseErr := connections.ParseCredentialBundle(raw); parseErr == nil {
+						revokeAdapter = adapter
+						revokeBundle = bundle
+					}
+				}
+			}
+		}
+	}
+	err := s.repo.DeleteAIConnection(r.Context(), user.ID, orgID, connectionID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, r, http.StatusNotFound, "ai_connection_not_found", "AI service connection was not found")
 		return
@@ -337,7 +441,37 @@ func (s *Server) deleteAIConnection(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusInternalServerError, "ai_connection_delete_failed", "Could not delete AI service connection")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	providerRevocation := "not_applicable"
+	if revokeAdapter != nil {
+		revokeCtx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		revokeErr := revokeAdapter.Revoke(revokeCtx, revokeBundle)
+		cancel()
+		switch {
+		case revokeErr == nil:
+			providerRevocation = "completed"
+		case errors.Is(revokeErr, connections.ErrCredentialUnsupported):
+			providerRevocation = "unsupported"
+		default:
+			providerRevocation = "failed"
+			s.logger.Warn("AI provider credential revocation failed after local disconnect",
+				"connection_id", connectionID, "provider", item.Provider, "error", revokeErr)
+		}
+		_ = s.repo.WriteAudit(r.Context(), store.AuditEvent{
+			ActorType: "user", ActorID: user.ID, Action: "ai_connection.provider_revocation",
+			ObjectType: "ai_connection", ObjectID: connectionID,
+			Result: map[bool]string{true: "success", false: "failed"}[providerRevocation == "completed" || providerRevocation == "unsupported"],
+			Metadata: map[string]any{
+				"provider": item.Provider, "auth_method": item.AuthMethod,
+				"provider_revocation": providerRevocation,
+			},
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "providerRevocation": providerRevocation})
+}
+
+func requiresAIConnectionDisconnectStepUp(authMethod string) bool {
+	authMethod = strings.ToLower(strings.TrimSpace(authMethod))
+	return authMethod == "oauth" || authMethod == "codex_oauth"
 }
 
 func (s *Server) quickCreateAIConnectionRelay(w http.ResponseWriter, r *http.Request) {
@@ -377,6 +511,13 @@ func (s *Server) quickCreateAIConnectionRelay(w http.ResponseWriter, r *http.Req
 	if item.Status != "active" && item.Status != "attention" {
 		writeError(w, r, http.StatusConflict, "ai_connection_not_active", "Validate the AI service connection before creating a relay")
 		return
+	}
+	if item.AuthStatus != "active" && item.AuthStatus != "refreshing" {
+		writeError(w, r, http.StatusConflict, "ai_connection_reauthorization_required", "Reauthorize this AI service connection before creating a relay")
+		return
+	}
+	if item.AuthMethod == "codex_oauth" {
+		req.QPSLimit = 1
 	}
 	if len(req.ModelIDs) == 0 {
 		for _, model := range item.Models {
@@ -429,6 +570,10 @@ func (s *Server) quickCreateAIConnectionRelay(w http.ResponseWriter, r *http.Req
 	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, r, http.StatusConflict, "ai_connection_not_active", "Validate the AI service connection and selected models before creating a relay")
+		return
+	}
+	if errors.Is(err, store.ErrExperimentalRelayExists) {
+		writeError(w, r, http.StatusConflict, "experimental_relay_limit_reached", "This experimental connection already has a personal relay")
 		return
 	}
 	if err != nil {
@@ -491,6 +636,36 @@ func (s *Server) loadAIConnectionCredential(w http.ResponseWriter, r *http.Reque
 
 func (s *Server) validateOfficialCredential(ctx context.Context, resolved connections.ResolvedProvider, model string, apiKey string) connectionValidationResult {
 	return s.validateOfficialCredentialSet(ctx, resolved, []string{model}, apiKey)
+}
+
+func (s *Server) validateStoredOAuthCredentialSet(
+	ctx context.Context,
+	item store.AIConnection,
+	resolved connections.ResolvedProvider,
+	models []string,
+	rawBundle string,
+) (connectionValidationResult, error) {
+	bundle, err := connections.ParseCredentialBundle(rawBundle)
+	if err != nil {
+		return connectionValidationResult{}, err
+	}
+	adapter, ok := s.authRegistry.Adapter(item.Provider, item.AuthMethod)
+	if !ok {
+		return connectionValidationResult{}, connections.ErrAdapterDisabled
+	}
+	material, err := adapter.ResolveAuthMaterial(ctx, bundle)
+	if err != nil {
+		return connectionValidationResult{}, err
+	}
+	resolved.Endpoint = item.Endpoint
+	resolved.ProviderConfig = item.ProviderConfig
+	resolved.Manifest.ProductLine = item.ProductLine
+	resolved.Manifest.Type = item.AdapterType
+	if item.AuthMethod == "codex_oauth" {
+		resolved.Manifest.ValidationMode = "generation"
+		resolved.Manifest.GenerationKind = "responses"
+	}
+	return s.validateAuthorizedCredentialSet(ctx, resolved, models, material), nil
 }
 
 func (s *Server) validateOfficialCredentialSet(ctx context.Context, resolved connections.ResolvedProvider, models []string, apiKey string) connectionValidationResult {

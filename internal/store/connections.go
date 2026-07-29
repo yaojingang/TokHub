@@ -13,37 +13,44 @@ import (
 )
 
 var (
-	ErrIdempotencyConflict   = errors.New("idempotency key was already used for a different request")
-	ErrAIConnectionLimit     = errors.New("AI connection limit reached")
-	ErrAIConnectionDuplicate = errors.New("AI connection credential is already connected")
+	ErrIdempotencyConflict     = errors.New("idempotency key was already used for a different request")
+	ErrAIConnectionLimit       = errors.New("AI connection limit reached")
+	ErrAIConnectionDuplicate   = errors.New("AI connection credential is already connected")
+	ErrExperimentalRelayExists = errors.New("experimental AI connection already has a personal relay")
 )
 
 type AIConnection struct {
-	ID                  string              `json:"id"`
-	OwnerUserID         string              `json:"-"`
-	OrgID               string              `json:"orgId"`
-	Provider            string              `json:"provider"`
-	ProductLine         string              `json:"productLine"`
-	Region              string              `json:"region"`
-	WorkspaceID         string              `json:"workspaceId,omitempty"`
-	AuthMethod          string              `json:"authMethod"`
-	Protocol            string              `json:"protocol"`
-	AdapterType         string              `json:"adapterType"`
-	Endpoint            string              `json:"endpoint"`
-	ProviderConfig      map[string]any      `json:"providerConfig"`
-	DisplayName         string              `json:"displayName"`
-	Status              string              `json:"status"`
-	ValidationStage     string              `json:"validationStage"`
-	ValidationLatencyMs int                 `json:"validationLatencyMs"`
-	ModelCount          int                 `json:"modelCount"`
-	LastErrorCode       string              `json:"lastErrorCode,omitempty"`
-	LastErrorMessage    string              `json:"lastErrorMessage,omitempty"`
-	LastValidatedAt     *time.Time          `json:"lastValidatedAt,omitempty"`
-	PolicyVersion       string              `json:"policyVersion"`
-	SecretMask          string              `json:"secretMask"`
-	Models              []AIConnectionModel `json:"models"`
-	CreatedAt           time.Time           `json:"createdAt"`
-	UpdatedAt           time.Time           `json:"updatedAt"`
+	ID                     string              `json:"id"`
+	OwnerUserID            string              `json:"-"`
+	OrgID                  string              `json:"orgId"`
+	Provider               string              `json:"provider"`
+	ProductLine            string              `json:"productLine"`
+	Region                 string              `json:"region"`
+	WorkspaceID            string              `json:"workspaceId,omitempty"`
+	AuthMethod             string              `json:"authMethod"`
+	Protocol               string              `json:"protocol"`
+	AdapterType            string              `json:"adapterType"`
+	Endpoint               string              `json:"endpoint"`
+	ProviderConfig         map[string]any      `json:"providerConfig"`
+	DisplayName            string              `json:"displayName"`
+	Status                 string              `json:"status"`
+	AuthStatus             string              `json:"authStatus"`
+	SharingScope           string              `json:"sharingScope"`
+	RiskLevel              string              `json:"riskLevel"`
+	ProviderAdapterVersion string              `json:"providerAdapterVersion"`
+	TermsAckVersion        string              `json:"termsAckVersion,omitempty"`
+	AccountMask            string              `json:"accountMask,omitempty"`
+	ValidationStage        string              `json:"validationStage"`
+	ValidationLatencyMs    int                 `json:"validationLatencyMs"`
+	ModelCount             int                 `json:"modelCount"`
+	LastErrorCode          string              `json:"lastErrorCode,omitempty"`
+	LastErrorMessage       string              `json:"lastErrorMessage,omitempty"`
+	LastValidatedAt        *time.Time          `json:"lastValidatedAt,omitempty"`
+	PolicyVersion          string              `json:"policyVersion"`
+	SecretMask             string              `json:"secretMask"`
+	Models                 []AIConnectionModel `json:"models"`
+	CreatedAt              time.Time           `json:"createdAt"`
+	UpdatedAt              time.Time           `json:"updatedAt"`
 }
 
 type AIConnectionModel struct {
@@ -64,34 +71,50 @@ type AIConnectionModel struct {
 }
 
 type AIConnectionSecret struct {
-	ConnectionID     string
-	OwnerUserID      string
-	Provider         string
-	Ciphertext       string
-	Nonce            string
-	Mask             string
-	Fingerprint      string
-	EncryptionKeyID  string
-	FingerprintKeyID string
-	Algorithm        string
-	Version          int
+	ConnectionID         string
+	OwnerUserID          string
+	Provider             string
+	Ciphertext           string
+	Nonce                string
+	Mask                 string
+	Fingerprint          string
+	EncryptionKeyID      string
+	FingerprintKeyID     string
+	Algorithm            string
+	Version              int
+	SecretType           string
+	PayloadFormat        string
+	SubjectFingerprint   string
+	ExpiresAt            *time.Time
+	NextRefreshAt        *time.Time
+	LastRefreshedAt      *time.Time
+	RefreshFailures      int
+	LastRefreshErrorCode string
 }
 
 type AIConnectionCreateInput struct {
-	OwnerUserID    string
-	OrgID          string
-	Provider       string
-	ProductLine    string
-	Region         string
-	WorkspaceID    string
-	Protocol       string
-	AdapterType    string
-	Endpoint       string
-	ProviderConfig map[string]any
-	DisplayName    string
-	Models         []string
-	Credential     AIConnectionSecret
-	Validation     AIConnectionValidation
+	OwnerUserID            string
+	OrgID                  string
+	Provider               string
+	ProductLine            string
+	Region                 string
+	WorkspaceID            string
+	Protocol               string
+	AdapterType            string
+	Endpoint               string
+	ProviderConfig         map[string]any
+	DisplayName            string
+	Models                 []string
+	Credential             AIConnectionSecret
+	Validation             AIConnectionValidation
+	AuthMethod             string
+	AuthStatus             string
+	SharingScope           string
+	RiskLevel              string
+	ProviderAdapterVersion string
+	TermsAckVersion        string
+	AccountMask            string
+	AuthorizationID        string
 }
 
 type AIConnectionValidation struct {
@@ -188,28 +211,63 @@ func (r *Repository) CreateAIConnection(ctx context.Context, input AIConnectionC
 	if !input.Validation.OK {
 		status = "attention"
 	}
+	authMethod := strings.TrimSpace(input.AuthMethod)
+	if authMethod == "" {
+		authMethod = "api_key"
+	}
+	authStatus := strings.TrimSpace(input.AuthStatus)
+	if authStatus == "" {
+		authStatus = "active"
+	}
+	sharingScope := strings.TrimSpace(input.SharingScope)
+	if sharingScope == "" {
+		sharingScope = "personal"
+	}
+	riskLevel := strings.TrimSpace(input.RiskLevel)
+	if riskLevel == "" {
+		riskLevel = "standard"
+	}
+	adapterVersion := strings.TrimSpace(input.ProviderAdapterVersion)
+	if adapterVersion == "" {
+		adapterVersion = "api-key-v1"
+	}
 	if _, err := tx.Exec(ctx, `
 		insert into ai_connections(
 			id,owner_user_id,org_id,provider,product_line,region,workspace_id,auth_method,
 			protocol,adapter_type,endpoint,provider_config,display_name,status,validation_stage,
-			validation_latency_ms,model_count,last_error_code,last_error_message,last_validated_at
+			validation_latency_ms,model_count,last_error_code,last_error_message,last_validated_at,
+			auth_status,sharing_scope,risk_level,provider_adapter_version,terms_ack_version,account_mask
 		)
-		values($1,$2,$3,$4,$5,$6,$7,'api_key',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,now())
+		values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,now(),
+			$20,$21,$22,$23,$24,$25)
 	`, connectionID, input.OwnerUserID, input.OrgID, input.Provider, input.ProductLine, input.Region,
-		input.WorkspaceID, input.Protocol, input.AdapterType, input.Endpoint, providerConfig, displayName,
+		input.WorkspaceID, authMethod, input.Protocol, input.AdapterType, input.Endpoint, providerConfig, displayName,
 		status, input.Validation.Stage, input.Validation.LatencyMs, input.Validation.ModelCount,
-		input.Validation.ErrorCode, input.Validation.ErrorMessage); err != nil {
+		input.Validation.ErrorCode, input.Validation.ErrorMessage, authStatus, sharingScope, riskLevel,
+		adapterVersion, strings.TrimSpace(input.TermsAckVersion), strings.TrimSpace(input.AccountMask)); err != nil {
 		return AIConnection{}, err
 	}
 	secret := input.Credential
+	secretType := strings.TrimSpace(secret.SecretType)
+	if secretType == "" {
+		secretType = "api_key"
+	}
+	payloadFormat := strings.TrimSpace(secret.PayloadFormat)
+	if payloadFormat == "" {
+		payloadFormat = "opaque"
+	}
 	if _, err := tx.Exec(ctx, `
 		insert into ai_connection_secrets(
 			connection_id,ciphertext,nonce,mask,fingerprint,encryption_key_id,
-			fingerprint_key_id,algorithm,version,rotated_at,created_at,updated_at
+			fingerprint_key_id,algorithm,version,secret_type,payload_format,subject_fingerprint,
+			expires_at,next_refresh_at,last_refreshed_at,refresh_failures,last_refresh_error_code,
+			rotated_at,created_at,updated_at
 		)
-		values($1,$2,$3,$4,$5,$6,$7,$8,1,now(),now(),now())
+		values($1,$2,$3,$4,$5,$6,$7,$8,1,$9,$10,$11,$12,$13,$14,$15,$16,now(),now(),now())
 	`, connectionID, secret.Ciphertext, secret.Nonce, secret.Mask, secret.Fingerprint,
-		secret.EncryptionKeyID, secret.FingerprintKeyID, secret.Algorithm); err != nil {
+		secret.EncryptionKeyID, secret.FingerprintKeyID, secret.Algorithm, secretType, payloadFormat,
+		secret.SubjectFingerprint, secret.ExpiresAt, secret.NextRefreshAt, secret.LastRefreshedAt,
+		secret.RefreshFailures, secret.LastRefreshErrorCode); err != nil {
 		return AIConnection{}, err
 	}
 	for _, model := range models {
@@ -229,12 +287,17 @@ func (r *Repository) CreateAIConnection(ctx context.Context, input AIConnectionC
 			return AIConnection{}, err
 		}
 	}
+	if err := completeAIAuthorizationAttemptTx(ctx, tx, input.AuthorizationID, input.OwnerUserID, connectionID); err != nil {
+		return AIConnection{}, err
+	}
 	if err := writeAuditTx(ctx, tx, AuditEvent{
 		ActorType: "user", ActorID: input.OwnerUserID, Action: "ai_connection.created",
 		ObjectType: "ai_connection", ObjectID: connectionID, Result: map[bool]string{true: "success", false: "failed"}[input.Validation.OK],
 		Metadata: map[string]any{
 			"provider": input.Provider, "region": input.Region, "models": len(models),
-			"policy_version":                "official-developer-credentials-v1",
+			"policy_version":                "ai-authorization-v2",
+			"auth_method":                   authMethod,
+			"sharing_scope":                 sharingScope,
 			"billable_validation_confirmed": input.Validation.BillableConfirmed,
 		},
 	}); err != nil {
@@ -290,7 +353,9 @@ func (r *Repository) AIConnectionSecretForOwnerOrg(ctx context.Context, ownerUse
 	var item AIConnectionSecret
 	err := r.db.QueryRow(ctx, `
 		select s.connection_id,c.owner_user_id,c.provider,s.ciphertext,s.nonce,s.mask,s.fingerprint,
-			s.encryption_key_id,s.fingerprint_key_id,s.algorithm,s.version
+			s.encryption_key_id,s.fingerprint_key_id,s.algorithm,s.version,s.secret_type,s.payload_format,
+			s.subject_fingerprint,s.expires_at,s.next_refresh_at,s.last_refreshed_at,
+			s.refresh_failures,s.last_refresh_error_code
 		from ai_connection_secrets s
 		join ai_connections c on c.id=s.connection_id
 		where c.id=$1 and c.owner_user_id=$2 and c.org_id=$3
@@ -298,7 +363,9 @@ func (r *Repository) AIConnectionSecretForOwnerOrg(ctx context.Context, ownerUse
 	`, connectionID, ownerUserID, orgID).Scan(
 		&item.ConnectionID, &item.OwnerUserID, &item.Provider, &item.Ciphertext, &item.Nonce,
 		&item.Mask, &item.Fingerprint, &item.EncryptionKeyID, &item.FingerprintKeyID,
-		&item.Algorithm, &item.Version,
+		&item.Algorithm, &item.Version, &item.SecretType, &item.PayloadFormat,
+		&item.SubjectFingerprint, nullableTimePtr(&item.ExpiresAt), nullableTimePtr(&item.NextRefreshAt),
+		nullableTimePtr(&item.LastRefreshedAt), &item.RefreshFailures, &item.LastRefreshErrorCode,
 	)
 	return item, err
 }
@@ -562,20 +629,39 @@ func (r *Repository) CreateQuickRelay(ctx context.Context, input QuickRelayInput
 	var providerConfigRaw []byte
 	err = tx.QueryRow(ctx, `
 		select id,owner_user_id,org_id,provider,product_line,region,workspace_id,protocol,adapter_type,
-			endpoint,provider_config,display_name,status
+			endpoint,provider_config,display_name,status,auth_method,auth_status,risk_level
 		from ai_connections
-		where id=$1 and owner_user_id=$2 and org_id=$3 and status in ('active','attention') and deleted_at is null
+		where id=$1 and owner_user_id=$2 and org_id=$3 and status in ('active','attention')
+			and auth_status in ('active','refreshing') and deleted_at is null
 		for update
 	`, input.ConnectionID, input.OwnerUserID, input.OrgID).Scan(
 		&connection.ID, &connection.OwnerUserID, &connection.OrgID, &connection.Provider,
 		&connection.ProductLine, &connection.Region, &connection.WorkspaceID, &connection.Protocol,
 		&connection.AdapterType, &connection.Endpoint, &providerConfigRaw, &connection.DisplayName,
-		&connection.Status,
+		&connection.Status, &connection.AuthMethod, &connection.AuthStatus, &connection.RiskLevel,
 	)
 	if err != nil {
 		return QuickRelayResult{}, err
 	}
 	connection.ProviderConfig = decodeMap(providerConfigRaw)
+	if connection.AuthMethod == "codex_oauth" {
+		var relayExists bool
+		if err := tx.QueryRow(ctx, `
+			select exists(
+				select 1
+				from gateways g
+				join gateway_upstreams gu on gu.gateway_id=g.id
+				join channels c on c.id=gu.channel_id
+				where c.ai_connection_id=$1 and g.status in ('active','paused')
+			)
+		`, connection.ID).Scan(&relayExists); err != nil {
+			return QuickRelayResult{}, err
+		}
+		if relayExists {
+			return QuickRelayResult{}, ErrExperimentalRelayExists
+		}
+		input.QPSLimit = 1
+	}
 	rows, err := tx.Query(ctx, `
 		select id,provider_model_id,coalesce(route_channel_id,'')
 		from ai_connection_models
@@ -801,6 +887,7 @@ func gatewayByIDForOrgTx(ctx context.Context, tx pgx.Tx, gatewayID string, orgID
 const aiConnectionSelect = `
 	select c.id,c.owner_user_id,c.org_id,c.provider,c.product_line,c.region,c.workspace_id,
 		c.auth_method,c.protocol,c.adapter_type,c.endpoint,c.provider_config,c.display_name,c.status,
+		c.auth_status,c.sharing_scope,c.risk_level,c.provider_adapter_version,c.terms_ack_version,c.account_mask,
 		c.validation_stage,c.validation_latency_ms,c.model_count,c.last_error_code,c.last_error_message,
 		c.last_validated_at,c.policy_version,c.created_at,c.updated_at,s.mask
 	from ai_connections c
@@ -818,6 +905,8 @@ func scanAIConnection(row aiConnectionRowScanner) (AIConnection, error) {
 		&item.ID, &item.OwnerUserID, &item.OrgID, &item.Provider, &item.ProductLine,
 		&item.Region, &item.WorkspaceID, &item.AuthMethod, &item.Protocol, &item.AdapterType,
 		&item.Endpoint, &providerConfigRaw, &item.DisplayName, &item.Status,
+		&item.AuthStatus, &item.SharingScope, &item.RiskLevel, &item.ProviderAdapterVersion,
+		&item.TermsAckVersion, &item.AccountMask,
 		&item.ValidationStage, &item.ValidationLatencyMs, &item.ModelCount,
 		&item.LastErrorCode, &item.LastErrorMessage, nullableTimePtr(&item.LastValidatedAt),
 		&item.PolicyVersion, &item.CreatedAt, &item.UpdatedAt, &item.SecretMask,

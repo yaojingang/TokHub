@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -299,6 +300,61 @@ func TestAIConnectionCanCreateIdempotentManagedRelay(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("verified model on an attention connection could not create a relay: %v", err)
+	}
+	experimentalInput := connectionInput
+	experimentalInput.DisplayName = "ChatGPT Codex 实验连接"
+	experimentalInput.Models = []string{"gpt-codex-integration"}
+	experimentalInput.AuthMethod = "codex_oauth"
+	experimentalInput.AuthStatus = "active"
+	experimentalInput.RiskLevel = "experimental"
+	experimentalInput.Credential.Fingerprint = "fingerprint-codex-" + suffix
+	experimentalInput.Credential.SubjectFingerprint = "subject-codex-" + suffix
+	experimentalInput.Credential.SecretType = "oauth_bundle"
+	experimentalInput.Credential.PayloadFormat = "oauth_bundle_v1"
+	experimentalInput.Validation = AIConnectionValidation{OK: true, Stage: "generation", ModelCount: 1}
+	authorizationID := "authz_" + uuid.NewString()
+	if _, err := repo.CreateAIAuthorizationAttempt(ctx, AIAuthorizationAttemptInput{
+		ID: authorizationID, OwnerUserID: userID, OrgID: orgID, Provider: "openai",
+		AuthMethod: "codex_oauth", CompletionMode: "paste_callback", ExpiresAt: time.Now().Add(10 * time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.SetAIAuthorizationValidating(ctx, userID, authorizationID); err != nil {
+		t.Fatal(err)
+	}
+	experimentalInput.AuthorizationID = authorizationID
+	experimentalConnection, err := repo.CreateAIConnection(ctx, experimentalInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	completedAuthorization, err := repo.AIAuthorizationAttemptForOwner(ctx, userID, authorizationID)
+	if err != nil || completedAuthorization.Status != "completed" || completedAuthorization.ConnectionID != experimentalConnection.ID {
+		t.Fatalf("authorization and connection were not committed together: attempt=%#v err=%v", completedAuthorization, err)
+	}
+	experimentalRelayInput := QuickRelayInput{
+		OwnerUserID: userID, OrgID: orgID, ConnectionID: experimentalConnection.ID,
+		ModelIDs: []string{experimentalConnection.Models[0].ID}, Name: "Codex 实验中转", Policy: "latency",
+		QPSLimit: 99, QuotaMonth: 1000, BaseURL: "https://tokhub.example.test/gateway/v1",
+		IdempotencyKey: "integration-codex-0001", RequestHash: "request-hash-codex-1",
+		PlainKey: "sk-th-codex-" + suffix,
+		Reveal: QuickRelayReveal{
+			Ciphertext: "codex-relay-ciphertext", Nonce: "codex-relay-nonce", EncryptionKeyID: "enc-v1",
+			Fingerprint: "codex-relay-fingerprint", FingerprintKeyID: "fp-v1", Mask: "sk-th-••••odex",
+		},
+	}
+	experimentalRelay, err := repo.CreateQuickRelay(ctx, experimentalRelayInput)
+	if err != nil {
+		t.Fatalf("experimental relay creation failed: %v", err)
+	}
+	if experimentalRelay.Gateway.QPSLimit != 1 || experimentalRelay.Key.QPSLimit != 1 {
+		t.Fatalf("experimental relay QPS was not clamped: gateway=%d key=%d", experimentalRelay.Gateway.QPSLimit, experimentalRelay.Key.QPSLimit)
+	}
+	secondExperimentalRelay := experimentalRelayInput
+	secondExperimentalRelay.IdempotencyKey = "integration-codex-0002"
+	secondExperimentalRelay.RequestHash = "request-hash-codex-2"
+	secondExperimentalRelay.PlainKey += "-second"
+	if _, err := repo.CreateQuickRelay(ctx, secondExperimentalRelay); !errors.Is(err, ErrExperimentalRelayExists) {
+		t.Fatalf("second experimental relay error = %v, want ErrExperimentalRelayExists", err)
 	}
 	tx, err := db.Begin(ctx)
 	if err != nil {

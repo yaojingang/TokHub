@@ -74,3 +74,29 @@ func TestCredentialKeyringRejectsSharedEncryptionAndFingerprintMaterial(t *testi
 		t.Fatal("NewCredentialKeyring() accepted shared encryption and fingerprint key material")
 	}
 }
+
+func TestCredentialKeyringCanKeepStableSubjectFingerprintAcrossOAuthRefresh(t *testing.T) {
+	ring, err := NewCredentialKeyring(CredentialKeyringConfig{
+		ActiveEncryptionKeyID:  "enc-v1",
+		EncryptionKeys:         map[string]string{"enc-v1": strings.Repeat("e", 32)},
+		ActiveFingerprintKeyID: "fp-v1",
+		FingerprintKeys:        map[string]string{"fp-v1": strings.Repeat("f", 32)},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := ring.EncryptWithFingerprint("usr_1", "gemini", `{"accessToken":"first"}`, "oauth\x00google-subject")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := ring.EncryptWithFingerprint("usr_1", "gemini", `{"accessToken":"second"}`, "oauth\x00google-subject")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Fingerprint != second.Fingerprint {
+		t.Fatalf("OAuth subject fingerprint changed across refresh: %q != %q", first.Fingerprint, second.Fingerprint)
+	}
+	if first.Ciphertext == second.Ciphertext {
+		t.Fatal("OAuth refresh reused ciphertext")
+	}
+}

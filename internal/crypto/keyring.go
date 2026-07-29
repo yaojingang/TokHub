@@ -89,9 +89,17 @@ func NewCredentialKeyring(cfg CredentialKeyringConfig) (*CredentialKeyring, erro
 }
 
 func (r *CredentialKeyring) Encrypt(ownerID string, provider string, plain string) (CredentialEnvelope, error) {
+	return r.EncryptWithFingerprint(ownerID, provider, plain, plain)
+}
+
+func (r *CredentialKeyring) EncryptWithFingerprint(ownerID string, provider string, plain string, fingerprintSource string) (CredentialEnvelope, error) {
 	plain = strings.TrimSpace(plain)
 	if plain == "" {
 		return CredentialEnvelope{}, fmt.Errorf("credential is required")
+	}
+	fingerprintSource = strings.TrimSpace(fingerprintSource)
+	if fingerprintSource == "" {
+		return CredentialEnvelope{}, fmt.Errorf("credential fingerprint source is required")
 	}
 	gcm := r.encryptionKeys[r.activeEncryptionKeyID]
 	nonce := make([]byte, gcm.NonceSize())
@@ -103,7 +111,7 @@ func (r *CredentialKeyring) Encrypt(ownerID string, provider string, plain strin
 	mac := hmac.New(sha256.New, r.fingerprintKeys[r.activeFingerprintKeyID])
 	_, _ = mac.Write([]byte(context))
 	_, _ = mac.Write([]byte{0})
-	_, _ = mac.Write([]byte(plain))
+	_, _ = mac.Write([]byte(fingerprintSource))
 	return CredentialEnvelope{
 		Ciphertext:       base64.StdEncoding.EncodeToString(ciphertext),
 		Nonce:            base64.StdEncoding.EncodeToString(nonce),

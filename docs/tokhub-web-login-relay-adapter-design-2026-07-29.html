@@ -1,0 +1,1332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TokHub 网页授权与个人中转适配方案</title>
+<meta name="author" content="TokHub 方案评审">
+<meta name="description" content="面向 ChatGPT、Gemini 与 DeepSeek 的网页授权、凭证续期、个人中转、风控监控和分阶段实施方案。">
+<meta name="keywords" content="TokHub, OAuth, ChatGPT, Gemini, DeepSeek">
+<meta name="generator" content="Kami">
+<style>
+  @font-face {
+    font-family: "TsangerJinKai02";
+    src: url("../fonts/TsangerJinKai02-W04.ttf") format("truetype"),
+       url("https://cdn.jsdelivr.net/gh/tw93/Kami@main/assets/fonts/TsangerJinKai02-W04.ttf") format("truetype");
+    font-weight: 400;
+    font-style: normal;
+  }
+
+  @font-face {
+    font-family: "TsangerJinKai02";
+    src: url("../fonts/TsangerJinKai02-W05.ttf") format("truetype"),
+       url("https://cdn.jsdelivr.net/gh/tw93/Kami@main/assets/fonts/TsangerJinKai02-W05.ttf") format("truetype");
+    font-weight: 500;
+    font-style: normal;
+  }
+
+  @page {
+    size: A4;
+    margin: 20mm 22mm 22mm 22mm;
+    background: #f5f4ed;
+
+    @top-right {
+      content: string(section-title);
+      font-family: "TsangerJinKai02", "Source Han Serif SC",
+                   "Noto Serif CJK SC", "Songti SC", Georgia, serif;
+      font-size: 8pt;
+      color: #6b6a64;
+    }
+
+    @bottom-center {
+      content: counter(page) "  ·  TokHub 网页授权与个人中转适配方案";
+      font-family: "TsangerJinKai02", "Source Han Serif SC",
+                   "Noto Serif CJK SC", "Songti SC", Georgia, serif;
+      font-size: 9pt;
+      color: #6b6a64;
+    }
+  }
+
+  @page:first {
+    @top-right { content: ""; }
+    @bottom-center { content: ""; }
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --parchment: #f5f4ed;
+    --ivory:     #faf9f5;
+    --near-black:#141413;
+    --dark-warm: #3d3d3a;
+    --olive:     #504e49;
+    --stone:     #6b6a64;
+    --brand:     #1B365D;
+    --border:    #e8e6dc;
+    --border-soft:#e5e3d8;
+    --tag-bg:    #E4ECF5;
+    --serif: "TsangerJinKai02", "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", "STSong", Georgia, serif;
+    --sans: var(--serif);
+
+    --rhythm-module:  14pt;
+    --rhythm-section: 18pt;
+  }
+
+  html, body { background: var(--parchment); }
+
+  @media screen {
+    body { max-width: 210mm; margin: 0 auto; padding: 20mm 22mm 22mm 22mm; }
+  }
+
+  @media screen and (max-width: 600px) {
+    body {
+      width: 100%;
+      padding: 24px 18px 48px;
+      font-size: 12px;
+    }
+    .cover {
+      min-height: calc(100svh - 72px);
+      padding-top: 72px;
+    }
+    .cover-title { font-size: 34px; }
+    .cover-sub {
+      max-width: 100%;
+      font-size: 18px;
+    }
+    .toc-item { font-size: 13px; }
+    .toc-page { display: none; }
+    .chapter {
+      break-before: auto;
+      padding-top: 64px;
+    }
+    h1 { font-size: 26px; }
+    h2 { font-size: 21px; }
+    h3 { font-size: 17px; }
+    table,
+    .kami-table {
+      display: block;
+      max-width: 100%;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    table thead,
+    table tbody,
+    .kami-table thead,
+    .kami-table tbody {
+      display: table;
+      width: 640px;
+      table-layout: fixed;
+    }
+    figure svg { max-width: 100%; }
+    pre { overflow-x: auto; }
+  }
+
+  body {
+    color: var(--near-black);
+    font-family: var(--serif);
+    font-size: 10.5pt;
+    line-height: 1.55;
+    letter-spacing: 0.3pt;
+    widows: 3;
+    orphans: 3;
+  }
+
+  .sans {
+    font-family: var(--sans);
+  }
+
+  .cover {
+    min-height: 240mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 40mm 0 0 0;
+    break-after: page;
+  }
+  .cover-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 8pt;
+    font-family: var(--sans);
+    font-size: 10pt;
+    color: var(--brand);
+    letter-spacing: 1.5pt;
+    text-transform: uppercase;
+    font-weight: 500;
+    margin-bottom: 18pt;
+  }
+  .cover-eyebrow::before {
+    content: "";
+    width: 9pt;
+    height: 1.5pt;
+    border-radius: 0.75pt;
+    background: var(--brand);
+    flex-shrink: 0;
+  }
+  .cover-title {
+    font-size: 36pt;
+    font-weight: 500;
+    color: var(--near-black);
+    line-height: 1.15;
+    letter-spacing: 0.3pt;
+    margin-bottom: 16pt;
+  }
+  .cover-sub {
+    font-family: var(--sans);
+    font-size: 14pt;
+    color: var(--olive);
+    line-height: 1.5;
+    max-width: 85%;
+    margin-bottom: 30pt;
+  }
+  .cover-meta {
+    font-family: var(--sans);
+    font-size: 10pt;
+    color: var(--stone);
+    line-height: 1.5;
+  }
+  .cover-meta strong {
+    color: var(--dark-warm);
+    font-weight: 500;
+  }
+
+  .toc { break-after: page; }
+  .toc h2 {
+    font-size: 22pt;
+    font-weight: 500;
+    margin-bottom: var(--rhythm-module);
+    border-left: 2.5pt solid var(--brand);
+    border-radius: 1.5pt;
+    padding-left: 8pt;
+  }
+  .toc-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 6pt 0;
+    border-bottom: 0.3pt dotted var(--border);
+    font-size: 11pt;
+  }
+  .toc-item:last-of-type { border-bottom: none; }
+  .toc-num {
+    color: var(--brand);
+    font-weight: 500;
+    min-width: 30pt;
+  }
+  .toc-title {
+    flex: 1;
+    color: var(--near-black);
+    padding-left: 6pt;
+  }
+  .toc-page {
+    color: var(--stone);
+    font-variant-numeric: tabular-nums;
+  }
+
+  h1 {
+    font-size: 22pt;
+    font-weight: 500;
+    line-height: 1.2;
+    margin: 0 0 10pt 0;
+    border-left: 2.5pt solid var(--brand);
+    border-radius: 1.5pt;
+    padding-left: 8pt;
+    color: var(--near-black);
+    break-after: avoid;
+  }
+
+  h2 {
+    font-size: 16pt;
+    font-weight: 500;
+    line-height: 1.25;
+    margin: 24pt 0 8pt 0;
+    color: var(--near-black);
+    break-after: avoid;
+    string-set: section-title content();
+  }
+
+  h3 {
+    font-size: 13pt;
+    font-weight: 500;
+    line-height: 1.3;
+    margin: 18pt 0 6pt 0;
+    color: var(--dark-warm);
+    break-after: avoid;
+  }
+
+  .chapter-num {
+    font-family: var(--sans);
+    font-size: 10pt;
+    color: var(--brand);
+    letter-spacing: 1pt;
+    text-transform: uppercase;
+    margin-bottom: 6pt;
+  }
+
+  p {
+    margin: 0 0 10pt 0;
+    line-height: 1.55;
+    color: var(--near-black);
+    widows: 2;
+    orphans: 2;
+  }
+
+  .lead {
+    font-size: 12pt;
+    line-height: 1.55;
+    color: var(--dark-warm);
+    margin-bottom: var(--rhythm-module);
+  }
+
+  .hl { color: var(--brand); font-weight: 500; }
+  strong { font-weight: 500; }
+
+  ul, ol {
+    margin: 6pt 0 10pt 0;
+    padding-left: 20pt;
+    line-height: 1.55;
+  }
+  ul li::marker { color: var(--brand); }
+  ol li::marker { color: var(--brand); font-weight: 500; }
+
+  blockquote, .quote {
+    border-left: 2pt solid var(--brand);
+    margin: 12pt 0;
+    padding: 4pt 0 4pt 16pt;
+    color: var(--olive);
+    line-height: 1.55;
+    break-inside: avoid;
+  }
+  blockquote .cite, .quote .cite {
+    display: block;
+    font-size: 9pt;
+    color: var(--stone);
+    margin-top: 4pt;
+  }
+
+  code {
+    font-family: "JetBrains Mono", "SF Mono", Consolas,
+                 "TsangerJinKai02", "Source Han Serif SC",
+                 "Noto Serif CJK SC", "Songti SC", monospace;
+    font-size: 9pt;
+    background: var(--ivory);
+    padding: 1pt 4pt;
+    border-radius: 2pt;
+    color: var(--dark-warm);
+  }
+  pre {
+    font-family: "JetBrains Mono", "SF Mono", Consolas,
+                 "TsangerJinKai02", "Source Han Serif SC",
+                 "Noto Serif CJK SC", "Songti SC", monospace;
+    font-size: 9pt;
+    line-height: 1.5;
+    background: var(--ivory);
+    border-radius: 4pt;
+    padding: 10pt 14pt;
+    margin: 10pt 0;
+    white-space: pre-wrap;
+    color: var(--near-black);
+    break-inside: avoid;
+  }
+  pre code { background: transparent; padding: 0; font-size: inherit; }
+
+  table, .kami-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 9.5pt;
+    margin: 12pt 0;
+    break-inside: avoid;
+  }
+  table th, .kami-table th {
+    text-align: left;
+    font-weight: 500;
+    color: var(--dark-warm);
+    padding: 6pt 8pt;
+    border-bottom: 1pt solid var(--border);
+    background: transparent;
+  }
+  table td, .kami-table td {
+    padding: 5pt 8pt;
+    border-bottom: 0.3pt solid var(--border-soft);
+    vertical-align: top;
+  }
+  table.compact th, .kami-table.compact th { padding: 3pt 6pt; font-size: 8pt; }
+  table.compact td, .kami-table.compact td { padding: 2pt 6pt; font-size: 8pt; line-height: 1.4; }
+  table.financial td:not(:first-child), .kami-table.financial td:not(:first-child) {
+    text-align: right; font-variant-numeric: tabular-nums;
+  }
+  table.financial th:not(:first-child), .kami-table.financial th:not(:first-child) { text-align: right; }
+  table.striped tbody tr:nth-child(even) td, .kami-table.striped tbody tr:nth-child(even) td {
+    background: var(--ivory);
+  }
+  table .total td, .kami-table .total td {
+    font-weight: 500; border-top: 1pt solid var(--brand); border-bottom: none; color: var(--near-black);
+  }
+
+  .callout {
+    background: var(--ivory);
+    border-left: 2pt solid var(--brand);
+    padding: 10pt 14pt;
+    border-radius: 3pt;
+    margin: 12pt 0;
+    line-height: 1.55;
+    break-inside: avoid;
+  }
+  .callout blockquote,
+  .callout .quote {
+    border-left: none;
+    padding-left: 0;
+    margin: 6pt 0;
+    color: var(--olive);
+  }
+  .callout blockquote:first-child,
+  .callout .quote:first-child { margin-top: 0; }
+  .callout blockquote:last-child,
+  .callout .quote:last-child  { margin-bottom: 0; }
+
+  .takeaway {
+    background: var(--ivory);
+    border-radius: 4pt;
+    padding: 10pt 14pt;
+    margin: 14pt 0;
+    break-inside: avoid;
+  }
+  .takeaway-label {
+    font-family: var(--sans);
+    font-size: 9pt;
+    color: var(--brand);
+    letter-spacing: 0.5pt;
+    text-transform: uppercase;
+    margin-bottom: 4pt;
+  }
+
+  .tag {
+    display: inline-block;
+    background: var(--tag-bg);
+    color: var(--brand);
+    font-family: var(--sans);
+    font-size: 9pt;
+    font-weight: 500;
+    padding: 1pt 6pt;
+    border-radius: 3pt;
+    margin-right: 4pt;
+  }
+
+  figure {
+    margin: 14pt 0;
+    break-inside: avoid;
+  }
+  figure img {
+    max-width: 100%;
+    border-radius: 4pt;
+  }
+  figure svg {
+    display: block;
+    margin: 0 auto;
+    max-width: 78%;
+    height: auto;
+  }
+  figcaption {
+    font-family: var(--sans);
+    font-size: 9pt;
+    color: var(--stone);
+    margin-top: 6pt;
+    text-align: center;
+  }
+
+  .exec-summary {
+    background: var(--ivory);
+    border-left: 1.4pt solid var(--brand);
+    border-radius: 6pt;
+    padding: 16pt 20pt;
+    margin: 14pt 0;
+    break-inside: avoid;
+  }
+  .exec-summary h2 {
+    margin-top: 0;
+    font-size: 13pt;
+  }
+
+  .chapter { break-before: page; }
+</style>
+</head>
+<body>
+
+<section class="cover">
+  <div>
+    <div class="cover-eyebrow">DESIGN REVIEW · V2.0</div>
+    <div class="cover-title">TokHub 网页授权<br>与个人中转适配方案</div>
+    <div class="cover-sub">围绕 ChatGPT、Gemini、DeepSeek 的登录入口、授权生命周期、请求适配、风控监控与可回滚实施计划</div>
+  </div>
+  <div class="cover-meta">
+    <strong>TokHub 产品与研发评审稿</strong><br>
+    V2.0  ·  2026.07.29<br>
+    结论状态：等待产品边界确认，确认后进入实施
+  </div>
+</section>
+
+<section class="toc">
+  <h2>目录</h2>
+  <div class="toc-item"><span class="toc-num">01</span><span class="toc-title">执行摘要与实施状态</span><span class="toc-page">03</span></div>
+  <div class="toc-item"><span class="toc-num">02</span><span class="toc-title">现状、目标与范围边界</span><span class="toc-page">04</span></div>
+  <div class="toc-item"><span class="toc-num">03</span><span class="toc-title">开源实现对比与可复用经验</span><span class="toc-page">06</span></div>
+  <div class="toc-item"><span class="toc-num">04</span><span class="toc-title">总体架构与关键接口</span><span class="toc-page">08</span></div>
+  <div class="toc-item"><span class="toc-num">05</span><span class="toc-title">三家平台适配方案</span><span class="toc-page">10</span></div>
+  <div class="toc-item"><span class="toc-num">06</span><span class="toc-title">用户入口与授权流程</span><span class="toc-page">13</span></div>
+  <div class="toc-item"><span class="toc-num">07</span><span class="toc-title">登录态续期与失效处理</span><span class="toc-page">15</span></div>
+  <div class="toc-item"><span class="toc-num">08</span><span class="toc-title">安全、风控与隐私</span><span class="toc-page">17</span></div>
+  <div class="toc-item"><span class="toc-num">09</span><span class="toc-title">数据结构、API 与配置</span><span class="toc-page">19</span></div>
+  <div class="toc-item"><span class="toc-num">10</span><span class="toc-title">监控、告警与运营看板</span><span class="toc-page">22</span></div>
+  <div class="toc-item"><span class="toc-num">11</span><span class="toc-title">实施阶段、测试与回滚</span><span class="toc-page">24</span></div>
+  <div class="toc-item"><span class="toc-num">12</span><span class="toc-title">参考资料与许可边界</span><span class="toc-page">28</span></div>
+</section>
+
+<section class="chapter">
+  <div class="chapter-num">01 · Executive Summary</div>
+  <h1>执行摘要与实施状态</h1>
+
+  <p class="lead">
+    TokHub 可以增加统一的「网页登录授权」入口，并复用现有个人中转链路。三家平台目前没有同一种可长期依赖的消费者登录接口，因此首版需要采用<span class="hl">一套框架、三种落地等级</span>：Gemini 正式 OAuth，ChatGPT Codex 自托管实验适配，DeepSeek 官方 API Key 引导。
+  </p>
+
+  <table class="striped">
+    <thead>
+      <tr>
+        <th>平台</th>
+        <th>首版登录方式</th>
+        <th>调用链路</th>
+        <th>发布等级</th>
+        <th>能否复用消费者订阅</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Gemini</td>
+        <td>Google OAuth 2.0，外部浏览器</td>
+        <td>官方 Gemini API</td>
+        <td>可生产</td>
+        <td>不能等同于 Gemini Advanced 网页订阅</td>
+      </tr>
+      <tr>
+        <td>ChatGPT</td>
+        <td>Codex OAuth + PKCE，复制回调地址完成</td>
+        <td>ChatGPT Codex Responses 私有接口</td>
+        <td>自托管实验，默认关闭</td>
+        <td>仅限 Codex 权益范围，受平台策略约束</td>
+      </tr>
+      <tr>
+        <td>DeepSeek</td>
+        <td>跳转开放平台创建 API Key</td>
+        <td>官方 DeepSeek API</td>
+        <td>可生产</td>
+        <td>不能复用网页消费者登录态</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="exec-summary">
+    <h2>推荐结论</h2>
+    <ol>
+      <li>新增认证适配层，把现有网关从「读取一个 API Key」升级为「解析一份受信任的 Auth Material」。</li>
+      <li>授权页只打开服务商官方页面，TokHub 不嵌入登录页，不采集密码、验证码、Cookie、<code>cf_clearance</code> 或网页本地存储。</li>
+      <li>OAuth 连接首版固定为个人范围；ChatGPT Codex 连接固定 QPS 1、并发 2，并限制单连接的活动中转数量。</li>
+      <li>ChatGPT 私有接口适配拥有全局与提供商双层熔断开关，一旦出现条款、协议或稳定性变化，可在不回滚数据库的情况下立即停用。</li>
+    </ol>
+  </div>
+
+  <h2>本轮已确认并实施的 4 项决策</h2>
+  <div class="takeaway">
+    <div class="takeaway-label">DECISION GATE</div>
+    <ol>
+      <li>接受「网页登录授权」采用 OAuth 或官方开放平台凭证，不采集浏览器 Cookie。</li>
+      <li>接受 ChatGPT Codex 适配仅用于自托管实验环境，默认关闭，界面明确显示稳定性与条款风险。</li>
+      <li>接受 DeepSeek 首版采用官方 API Key 引导，暂不实现消费者网页接口、Cloudflare 绕过或 PoW 逆向。</li>
+      <li>接受 OAuth 与消费者权益连接首版为个人范围，不开放工作区共享和成员分发。</li>
+    </ol>
+  </div>
+
+  <p><strong>最脆弱假设：</strong>OpenAI Codex OAuth 令牌与私有 Responses 接口继续允许第三方桥接使用。该假设没有公开稳定性承诺，所以 ChatGPT 阶段必须单独验收，并保留随时关闭的产品路径。</p>
+</section>
+
+<section class="chapter">
+  <div class="chapter-num">02 · Scope</div>
+  <h1>现状、目标与范围边界</h1>
+
+  <p class="lead">
+    TokHub 已经具备连接目录、凭证加密、模型验证、一键个人中转和网关统计。新增功能的主要工作是把单一 API Key 凭证升级为可续期的授权凭证，并把平台差异限制在适配器内部。
+  </p>
+
+  <h2>当前实现的可复用部分</h2>
+  <table>
+    <thead><tr><th>现有能力</th><th>代码位置</th><th>本轮处理</th></tr></thead>
+    <tbody>
+      <tr><td>个人 AI 连接中心</td><td><code>web/src/pages/AIConnectionsPage.tsx</code></td><td>增加认证方式选择与授权状态</td></tr>
+      <tr><td>AES-256-GCM 版本化密钥</td><td><code>internal/crypto/keyring.go</code></td><td>复用加密，扩展稳定指纹与 JSON 凭证包</td></tr>
+      <tr><td>连接、模型与中转数据</td><td><code>db/migrations/0046_ai_service_connections.sql</code></td><td>向后兼容扩表</td></tr>
+      <tr><td>请求协议转换与流式转发</td><td><code>internal/gateway/upstream.go</code></td><td>把 API Key 参数替换为 Auth Material</td></tr>
+      <tr><td>个人中转一键创建</td><td><code>internal/store/connections.go</code></td><td>复用，增加分享范围与认证状态检查</td></tr>
+      <tr><td>Redis、工作进程与 Prometheus</td><td><code>internal/gateway/cache.go</code>、<code>cmd/tokhub/main.go</code></td><td>增加授权事务、刷新锁、续期任务与指标</td></tr>
+    </tbody>
+  </table>
+
+  <h2>范围内</h2>
+  <ul>
+    <li>新增「网页登录授权」入口，支持外部浏览器、复制回调地址、状态轮询和取消。</li>
+    <li>建立提供商认证适配器、凭证加密包、续期调度、失效检测、重新授权和撤销。</li>
+    <li>首批适配 Gemini、ChatGPT Codex、DeepSeek 官方开放平台引导。</li>
+    <li>让现有 OpenAI 兼容网关继续提供 <code>/chat/completions</code>、<code>/responses</code> 和流式输出。</li>
+    <li>增加平台级开关、个人范围限制、审计、监控、告警和回滚手段。</li>
+  </ul>
+
+  <h2>范围外</h2>
+  <ul>
+    <li>采集或代填服务商账号密码、短信验证码、MFA 秘钥。</li>
+    <li>读取浏览器 Cookie、本地存储、系统浏览器配置文件或第三方密码管理器。</li>
+    <li>绕过 Cloudflare、逆向 PoW、防机器人校验或服务商保护措施。</li>
+    <li>把消费者订阅连接分发给工作区成员、公开用户或多租户池。</li>
+    <li>承诺私有网页接口与官方 API 一样稳定，或承诺消费者订阅可以替代开发者计费。</li>
+  </ul>
+
+  <div class="callout">
+    <strong>术语说明：</strong>本文把「网页登录授权」定义为用户在服务商官方页面完成 OAuth 或官方凭证创建，TokHub 接收授权结果。它不等同于抓取浏览器 Cookie，也不等同于复制完整网页会话。
+  </div>
+</section>
+
+<section class="chapter">
+  <div class="chapter-num">03 · Open Source Review</div>
+  <h1>开源实现对比与可复用经验</h1>
+
+  <p class="lead">
+    调研覆盖 sub2api、CLIProxyAPI、OpenAI Codex、Gemini 非官方网页适配器和 DeepSeek 非官方网页适配器。可复用的是接口拆分、刷新并发控制、状态管理和请求转换；带有强许可证或平台绕过特征的源码不进入 TokHub。
+  </p>
+
+  <table class="compact striped">
+    <thead>
+      <tr>
+        <th>项目</th>
+        <th>登录与凭证</th>
+        <th>续期与运行时</th>
+        <th>TokHub 可学习内容</th>
+        <th>许可与边界</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Wei-Shaw/sub2api</td>
+        <td>OpenAI Codex OAuth，Gemini CLI OAuth，内存授权会话</td>
+        <td>刷新令牌、私有 Codex Responses、Code Assist 接口</td>
+        <td>平台适配器、请求翻译、账号头、错误分类</td>
+        <td>LGPL-3.0，仅学习机制，TokHub 独立重写</td>
+      </tr>
+      <tr>
+        <td>router-for-me/CLIProxyAPI</td>
+        <td>认证器注册表、可插拔存储、OAuth 状态</td>
+        <td>singleflight、最小堆调度、失败退避、401 单次刷新</td>
+        <td>刷新协调、状态轮询、执行器与翻译器分离</td>
+        <td>MIT，可参考接口思想并保留归属说明</td>
+      </tr>
+      <tr>
+        <td>openai/codex</td>
+        <td>浏览器登录、设备码、Codex 管理刷新令牌</td>
+        <td><code>account/read</code>、限额读取、线程与轮次事件</td>
+        <td>官方认证状态、设备码交互、日志脱敏要求</td>
+        <td>Apache-2.0，官方实现；通用网关语义与 Codex Agent 语义不同</td>
+      </tr>
+      <tr>
+        <td>HanaokaYuzu/Gemini-API</td>
+        <td><code>__Secure-1PSID</code> Cookie 与网页令牌</td>
+        <td>私有 batchexecute、Cookie 轮换</td>
+        <td>仅用于识别脆弱点与监控信号</td>
+        <td>AGPL-3.0，且依赖网页私有协议，不复制、不集成</td>
+      </tr>
+      <tr>
+        <td>xtekky/deepseek4free</td>
+        <td><code>userToken</code>、<code>cf_clearance</code></td>
+        <td>私有网页 API、Cloudflare 与 PoW 处理</td>
+        <td>用于确认不可接受的风控边界</td>
+        <td>MIT 代码许可不改变平台条款与绕过风险</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>相对 sub2api 的升级点</h2>
+  <ol>
+    <li><strong>多实例授权事务：</strong>sub2api 的 OAuth 会话主要保存在进程内存，TokHub 改用 Redis，支持多副本、TTL、一次性消费与跨实例回调。</li>
+    <li><strong>用户与浏览器会话绑定：</strong>授权事务绑定 TokHub 用户、个人组织、当前会话哈希、服务商与回调类型，任何一项不匹配都失败。</li>
+    <li><strong>稳定指纹：</strong>以服务商 subject、账号 ID 与认证方式生成 HMAC 指纹，刷新令牌变化不会制造重复连接。</li>
+    <li><strong>刷新并发控制：</strong>进程内 singleflight 加 Redis 分布式锁，100 个并发请求只允许一个刷新请求访问服务商。</li>
+    <li><strong>平台级风险等级：</strong>官方、实验、不可用三档同时进入注册表、界面、审计和开关，避免用同一种「已支持」标签混淆稳定性。</li>
+    <li><strong>许可隔离：</strong>LGPL 与 AGPL 项目只作为行为参考，具体接口和算法根据公开协议、官方文档与 TokHub 现有代码独立实现。</li>
+  </ol>
+
+  <div class="takeaway">
+    <div class="takeaway-label">核心判断</div>
+    sub2api 证明了消费者权益转接在工程上可运行。TokHub 需要补齐普通用户场景下的多租户隔离、授权回放防护、续期竞争、条款分级和紧急关闭能力，才能进入可控试用。
+  </div>
+</section>
+
+<section class="chapter">
+  <div class="chapter-num">04 · Architecture</div>
+  <h1>总体架构与关键接口</h1>
+
+  <p class="lead">
+    选定方案采用「认证适配器 + Auth Material 解析器 + 现有协议转换器」。连接中心负责授权与状态，网关只拿到一次请求所需的短生命周期认证材料，服务商差异不会散落到各个 Handler。
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 1000 700" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="0.9" fill="#E3E2DC"/>
+        </pattern>
+      </defs>
+      <rect width="100%" height="100%" fill="#f5f4ed"/>
+      <rect width="100%" height="100%" fill="url(#dots)" opacity="0.55"/>
+      <text x="80" y="38" fill="#1B365D" font-size="13" font-weight="600" font-family="monospace" letter-spacing="3">FIGURE  1</text>
+      <text x="240" y="38" fill="#504e49" font-size="13" font-family="monospace" letter-spacing="3">TOKHUB AUTHORIZATION ARCHITECTURE</text>
+      <line x1="80" y1="52" x2="920" y2="52" stroke="#1B365D" stroke-width="0.8"/>
+
+      <rect x="80" y="100" width="200" height="88" rx="8" fill="#faf9f5" stroke="#504e49"/>
+      <text x="180" y="135" text-anchor="middle" fill="#141413" font-size="24" font-family="serif">用户连接中心</text>
+      <text x="180" y="164" text-anchor="middle" fill="#6b6a64" font-size="15" font-family="monospace">选择方式 · 打开网页 · 查看状态</text>
+
+      <rect x="400" y="100" width="200" height="88" rx="8" fill="#EEF2F7" stroke="#1B365D" stroke-width="2"/>
+      <text x="500" y="135" text-anchor="middle" fill="#1B365D" font-size="24" font-family="serif">授权事务服务</text>
+      <text x="500" y="164" text-anchor="middle" fill="#504e49" font-size="15" font-family="monospace">STATE · PKCE · STEP-UP</text>
+
+      <rect x="720" y="100" width="200" height="88" rx="8" fill="#faf9f5" stroke="#504e49"/>
+      <text x="820" y="135" text-anchor="middle" fill="#141413" font-size="24" font-family="serif">提供商官方页面</text>
+      <text x="820" y="164" text-anchor="middle" fill="#6b6a64" font-size="15" font-family="monospace">OAUTH / OPEN PLATFORM</text>
+
+      <line x1="280" y1="144" x2="400" y2="144" stroke="#1B365D" stroke-width="2"/>
+      <path d="M392 139 L400 144 L392 149" fill="none" stroke="#1B365D" stroke-width="2"/>
+      <line x1="600" y1="144" x2="720" y2="144" stroke="#1B365D" stroke-width="2"/>
+      <path d="M712 139 L720 144 L712 149" fill="none" stroke="#1B365D" stroke-width="2"/>
+
+      <rect x="80" y="260" width="200" height="96" rx="8" fill="#faf9f5" stroke="#504e49"/>
+      <text x="180" y="298" text-anchor="middle" fill="#141413" font-size="24" font-family="serif">适配器注册表</text>
+      <text x="180" y="328" text-anchor="middle" fill="#6b6a64" font-size="15" font-family="monospace">START · COMPLETE · REFRESH</text>
+
+      <rect x="400" y="260" width="200" height="96" rx="8" fill="#faf9f5" stroke="#504e49"/>
+      <text x="500" y="298" text-anchor="middle" fill="#141413" font-size="24" font-family="serif">加密凭证库</text>
+      <text x="500" y="328" text-anchor="middle" fill="#6b6a64" font-size="15" font-family="monospace">AES-GCM · VERSION · HMAC</text>
+
+      <rect x="720" y="260" width="200" height="96" rx="8" fill="#faf9f5" stroke="#504e49"/>
+      <text x="820" y="298" text-anchor="middle" fill="#141413" font-size="24" font-family="serif">续期工作进程</text>
+      <text x="820" y="328" text-anchor="middle" fill="#6b6a64" font-size="15" font-family="monospace">LOCK · JITTER · BACKOFF</text>
+
+      <line x1="500" y1="188" x2="500" y2="260" stroke="#504e49" stroke-width="1.5"/>
+      <path d="M495 252 L500 260 L505 252" fill="none" stroke="#504e49" stroke-width="1.5"/>
+      <line x1="280" y1="308" x2="400" y2="308" stroke="#504e49" stroke-width="1.5"/>
+      <path d="M392 303 L400 308 L392 313" fill="none" stroke="#504e49" stroke-width="1.5"/>
+      <line x1="600" y1="308" x2="720" y2="308" stroke="#504e49" stroke-width="1.5"/>
+      <path d="M712 303 L720 308 L712 313" fill="none" stroke="#504e49" stroke-width="1.5"/>
+
+      <rect x="80" y="436" width="200" height="96" rx="8" fill="#faf9f5" stroke="#504e49"/>
+      <text x="180" y="474" text-anchor="middle" fill="#141413" font-size="24" font-family="serif">个人中转网关</text>
+      <text x="180" y="504" text-anchor="middle" fill="#6b6a64" font-size="15" font-family="monospace">OPENAI COMPATIBLE API</text>
+
+      <rect x="400" y="436" width="200" height="96" rx="8" fill="#EEF2F7" stroke="#1B365D" stroke-width="2"/>
+      <text x="500" y="474" text-anchor="middle" fill="#1B365D" font-size="24" font-family="serif">Auth Material 解析器</text>
+      <text x="500" y="504" text-anchor="middle" fill="#504e49" font-size="15" font-family="monospace">HEADERS · ENDPOINT · EXPIRY</text>
+
+      <rect x="720" y="436" width="200" height="96" rx="8" fill="#faf9f5" stroke="#504e49"/>
+      <text x="820" y="474" text-anchor="middle" fill="#141413" font-size="24" font-family="serif">请求与响应转换</text>
+      <text x="820" y="504" text-anchor="middle" fill="#6b6a64" font-size="15" font-family="monospace">JSON · SSE · USAGE</text>
+
+      <line x1="280" y1="484" x2="400" y2="484" stroke="#1B365D" stroke-width="2"/>
+      <path d="M392 479 L400 484 L392 489" fill="none" stroke="#1B365D" stroke-width="2"/>
+      <line x1="600" y1="484" x2="720" y2="484" stroke="#1B365D" stroke-width="2"/>
+      <path d="M712 479 L720 484 L712 489" fill="none" stroke="#1B365D" stroke-width="2"/>
+      <line x1="500" y1="356" x2="500" y2="436" stroke="#504e49" stroke-width="1.5"/>
+      <path d="M495 428 L500 436 L505 428" fill="none" stroke="#504e49" stroke-width="1.5"/>
+
+      <rect x="240" y="608" width="520" height="52" rx="8" fill="#EAE9E2" stroke="#504e49"/>
+      <text x="500" y="642" text-anchor="middle" fill="#141413" font-size="22" font-family="serif">ChatGPT Codex · Gemini API · DeepSeek API</text>
+      <line x1="820" y1="532" x2="760" y2="608" stroke="#504e49" stroke-width="1.5"/>
+      <path d="M760 600 L760 608 L768 606" fill="none" stroke="#504e49" stroke-width="1.5"/>
+    </svg>
+    <figcaption>图 1：授权与运行时共用一套可信凭证解析层，平台私有差异停留在适配器和请求转换器内部。</figcaption>
+  </figure>
+
+  <h2>核心接口</h2>
+  <pre><code>type AuthAdapter interface {
+    Capabilities() CapabilityProfile
+    StartAuthorization(ctx, StartInput) (AuthorizationStart, error)
+    CompleteAuthorization(ctx, CompleteInput) (CredentialBundle, AccountProfile, error)
+    Refresh(ctx, CredentialBundle) (CredentialBundle, error)
+    Revoke(ctx, CredentialBundle) error
+    ResolveAuthMaterial(ctx, Connection, CredentialBundle) (AuthMaterial, error)
+}
+
+type AuthMaterial struct {
+    Endpoint  string
+    Headers   map[string]string
+    ExpiresAt time.Time
+    Mode      string
+}</code></pre>
+
+  <h2>关键设计决定</h2>
+  <ul>
+    <li><code>AuthMaterial.Headers</code> 只能由内置适配器产生，数据库与用户输入不能写入任意出站请求头。</li>
+    <li>访问令牌、刷新令牌与 ID Token 作为一个加密 JSON 包原子更新，避免部分字段轮换造成不一致。</li>
+    <li>网关不缓存明文刷新令牌，只在请求作用域内解析所需材料，日志与错误信息统一脱敏。</li>
+    <li>API Key 继续走现有路径，迁移完成后由同一个解析器返回 Bearer 或服务商专用请求头，保持现有连接兼容。</li>
+  </ul>
+</section>
+
+<section class="chapter">
+  <div class="chapter-num">05 · Provider Adapters</div>
+  <h1>三家平台适配方案</h1>
+
+  <p class="lead">
+    三家平台共享连接状态、加密、续期和监控框架。认证来源、回调方式、运行时接口和发布等级由提供商清单明确声明，前端据此展示不同交互。
+  </p>
+
+  <h2>ChatGPT：Codex OAuth 实验适配器</h2>
+  <table>
+    <thead><tr><th>候选路径</th><th>优点</th><th>限制</th><th>结论</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>直接复用 Codex OAuth + 私有 Responses</td>
+        <td>符合现有网关协议，改造量可控，sub2api 已验证工程可行</td>
+        <td>固定 localhost 回调、官方客户端身份、私有接口漂移与条款风险</td>
+        <td>选为自托管实验路径</td>
+      </tr>
+      <tr>
+        <td>官方 <code>codex app-server</code> 侧车</td>
+        <td>Codex 管理登录、刷新与限额</td>
+        <td>引入 Rust/Codex 运行时；输出是 Codex Agent 事件，可能执行工具，无法稳定模拟通用模型 API</td>
+        <td>不进入首版，可作为独立 Codex Agent 产品评估</td>
+      </tr>
+      <tr>
+        <td>OpenAI 开发者 API Key</td>
+        <td>正式、稳定、已支持</td>
+        <td>无法复用 ChatGPT 消费者权益</td>
+        <td>继续作为生产默认</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>授权流程</h3>
+  <ol>
+    <li>用户完成 TokHub 密码二次验证，创建 10 分钟授权事务。</li>
+    <li>TokHub 生成 256-bit state、PKCE verifier 与 challenge，打开 <code>auth.openai.com</code>。</li>
+    <li>OpenAI 固定回调到 <code>http://localhost:1455/auth/callback</code>。用户复制浏览器地址栏中的完整回调地址并粘贴回 TokHub。</li>
+    <li>TokHub 解析 code 与 state，常量时间比对，交换 access、refresh 与 ID token；授权事务立即删除。</li>
+    <li>从已验证的 JWT claims 提取稳定账号 ID，生成 HMAC 指纹；不把邮箱或完整账号 ID写入日志。</li>
+  </ol>
+
+  <h3>运行时与限制</h3>
+  <ul>
+    <li>固定上游为 <code>https://chatgpt.com/backend-api/codex/responses</code>，不允许用户修改域名、路径或代理头。</li>
+    <li>只支持 Responses 与可无损映射的 Chat Completions 子集；图片、文件、网页搜索、持久会话和工具执行首版关闭。</li>
+    <li>连接固定为个人范围，默认 QPS 1、并发 2、单连接仅允许 1 个活动中转密钥。</li>
+    <li>401 触发一次刷新与一次重试；403、客户端身份拒绝、协议结构变化立即转为 <code>attention</code> 并打开平台熔断评估。</li>
+    <li>界面显示「实验」标识和最后验证时间，部署端必须显式设置风险确认开关才能启用。</li>
+  </ul>
+
+  <h2>Gemini：正式 Google OAuth</h2>
+  <ol>
+    <li>TokHub 使用自有 Google Cloud Web Application OAuth Client，回调固定为 <code>{TOKHUB_PUBLIC_URL}/api/me/ai-authorizations/google/callback</code>。</li>
+    <li>授权请求使用 state、PKCE、<code>access_type=offline</code> 和最小权限；生产域名、隐私政策与 OAuth 品牌审核按 Google 要求完成。</li>
+    <li>用户或部署方提供计费项目 ID，运行时发送 Bearer token 与 <code>x-goog-user-project</code>，调用官方 Gemini API。</li>
+    <li>Google 未返回新 refresh token 时保留旧值；<code>invalid_grant</code> 直接进入重新授权，网络错误采用退避。</li>
+  </ol>
+
+  <div class="callout">
+    <strong>产品说明必须明确：</strong>Google OAuth 解决授权与项目访问，它不会把 Gemini Advanced 网页订阅自动转换成 Gemini API 配额。若用户希望使用个人 Google Cloud 项目，应填写有权限且已启用 Gemini API 的项目 ID。
+  </div>
+
+  <h3>暂不采用 Gemini CLI / Google One 私有桥接</h3>
+  <p>sub2api 的 Gemini Code Assist 与 Google One 模式能接近消费者权益，但依赖内置 CLI 客户端身份、项目发现和非公开稳定性。首版把这条路径保留在研究清单，待取得正式许可或独立完成条款评审后再进入实验适配器。</p>
+
+  <h2>DeepSeek：官方开放平台引导</h2>
+  <ol>
+    <li>新增「前往 DeepSeek 开放平台创建密钥」按钮，以新标签页打开官方控制台。</li>
+    <li>用户返回 TokHub 粘贴 API Key，沿用现有加密、模型验证和个人中转流程。</li>
+    <li>连接中心仍显示为统一的网页引导入口，但认证方式标记为 <code>api_key_guided</code>。</li>
+  </ol>
+
+  <p>DeepSeek 目前没有公开的消费者 OAuth 或网页会话委托接口。非官方项目需要 <code>userToken</code>、<code>cf_clearance</code>、Cloudflare 绕过与 PoW 逆向；这些路径不进入 TokHub。</p>
+
+  <table class="striped">
+    <thead><tr><th>能力</th><th>ChatGPT</th><th>Gemini</th><th>DeepSeek</th></tr></thead>
+    <tbody>
+      <tr><td>打开官方网页完成操作</td><td>支持，OAuth</td><td>支持，OAuth</td><td>支持，开放平台引导</td></tr>
+      <tr><td>TokHub 自动获得授权结果</td><td>半自动，粘贴回调地址</td><td>支持，固定回调</td><td>用户粘贴 API Key</td></tr>
+      <tr><td>自动续期</td><td>支持，实验</td><td>支持，正式</td><td>无刷新令牌，定期验证</td></tr>
+      <tr><td>消费者网页接口反代</td><td>Codex 私有接口，实验</td><td>首版不支持</td><td>不支持</td></tr>
+      <tr><td>个人中转</td><td>支持，严格限额</td><td>支持</td><td>支持</td></tr>
+      <tr><td>工作区共享</td><td>关闭</td><td>首版关闭</td><td>沿用 API Key 连接策略</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="chapter">
+  <div class="chapter-num">06 · User Experience</div>
+  <h1>用户入口与授权流程</h1>
+
+  <p class="lead">
+    入口继续放在登录后的「AI 服务连接」页面。新增连接时先选平台，再选认证方式。平台只展示真实可用的方式，避免出现一个通用按钮后再告诉用户该平台不能完成。
+  </p>
+
+  <h2>页面结构</h2>
+  <table>
+    <thead><tr><th>区域</th><th>新增内容</th><th>交互结果</th></tr></thead>
+    <tbody>
+      <tr><td>顶部主操作</td><td>「新增连接」展开认证方式选择</td><td>API Key、网页登录授权、开放平台引导</td></tr>
+      <tr><td>服务商卡片</td><td>显示「正式」「实验」「API Key」标签</td><td>用户在点击前理解风险等级</td></tr>
+      <tr><td>授权面板</td><td>说明将打开的域名、需要的权限、是否可续期</td><td>二次验证后打开服务商页面</td></tr>
+      <tr><td>待完成状态</td><td>进度、剩余时间、复制回调输入、取消按钮</td><td>轮询授权事务，不把 token 送到浏览器</td></tr>
+      <tr><td>连接详情</td><td>认证方式、账号掩码、过期时间、最后续期、分享范围</td><td>验证、重新授权、断开连接、创建个人中转</td></tr>
+      <tr><td>风险提示</td><td>ChatGPT 实验标识与条款说明</td><td>用户确认后才创建连接</td></tr>
+    </tbody>
+  </table>
+
+  <h2>标准 OAuth 流程</h2>
+  <ol>
+    <li>用户选择 Gemini，阅读授权说明，完成 TokHub 密码二次验证。</li>
+    <li>前端调用授权开始 API，收到 <code>authorizationUrl</code>、<code>transactionId</code>、有效期和轮询间隔。</li>
+    <li>浏览器通过用户点击打开 Google 官方页面，不使用 iframe 或受 TokHub 控制的嵌入式浏览器。</li>
+    <li>Google 回调 TokHub，后端完成 code exchange、加密保存、最小模型验证和连接创建。</li>
+    <li>回调页通过同源 <code>postMessage</code> 通知原页面并关闭；弹窗被拦截时显示「授权完成，返回 TokHub」。</li>
+  </ol>
+
+  <h2>ChatGPT 复制回调流程</h2>
+  <ol>
+    <li>TokHub 打开 OpenAI 官方授权页，同时保留授权面板。</li>
+    <li>浏览器跳转到 localhost 后可能显示无法访问，面板提前说明这是固定回调行为。</li>
+    <li>用户复制完整地址，粘贴到 TokHub；前端只提交 URL，后端解析 code 与 state。</li>
+    <li>粘贴内容最多 8 KB，只允许 <code>http://localhost:1455/auth/callback</code>，拒绝其他 scheme、host、path 与重复参数。</li>
+  </ol>
+
+  <h2>用户可见状态</h2>
+  <table class="striped">
+    <thead><tr><th>状态</th><th>界面文案</th><th>可用操作</th></tr></thead>
+    <tbody>
+      <tr><td><code>authorization_pending</code></td><td>等待完成网页登录</td><td>继续、粘贴回调、取消</td></tr>
+      <tr><td><code>validating</code></td><td>正在验证模型权限</td><td>查看进度</td></tr>
+      <tr><td><code>active</code></td><td>已连接</td><td>创建中转、重新验证、断开</td></tr>
+      <tr><td><code>refreshing</code></td><td>正在续期</td><td>继续使用仍有效的旧 token</td></tr>
+      <tr><td><code>attention</code></td><td>连接异常</td><td>查看原因、重新验证</td></tr>
+      <tr><td><code>reauth_required</code></td><td>登录已失效</td><td>重新登录</td></tr>
+      <tr><td><code>disabled</code></td><td>已停用</td><td>恢复或删除</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="chapter">
+  <div class="chapter-num">07 · Lifecycle</div>
+  <h1>登录态续期与失效处理</h1>
+
+  <p class="lead">
+    登录态管理采用主动续期与请求时兜底两条路径。后台任务提前刷新，真实请求只处理临界状态和 401，所有竞争都汇聚到同一个连接锁。
+  </p>
+
+  <figure>
+    <svg viewBox="0 0 1000 600" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <pattern id="dots2" width="22" height="22" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="0.9" fill="#E3E2DC"/>
+        </pattern>
+      </defs>
+      <rect width="100%" height="100%" fill="#f5f4ed"/>
+      <rect width="100%" height="100%" fill="url(#dots2)" opacity="0.55"/>
+      <text x="80" y="38" fill="#1B365D" font-size="13" font-weight="600" font-family="monospace" letter-spacing="3">FIGURE  2</text>
+      <text x="240" y="38" fill="#504e49" font-size="13" font-family="monospace" letter-spacing="3">CREDENTIAL LIFECYCLE</text>
+      <line x1="80" y1="52" x2="920" y2="52" stroke="#1B365D" stroke-width="0.8"/>
+
+      <rect x="80" y="116" width="168" height="72" rx="8" fill="#faf9f5" stroke="#504e49"/>
+      <text x="164" y="160" text-anchor="middle" font-size="22" fill="#141413" font-family="serif">待授权</text>
+      <rect x="416" y="116" width="168" height="72" rx="8" fill="#EEF2F7" stroke="#1B365D" stroke-width="2"/>
+      <text x="500" y="160" text-anchor="middle" font-size="22" fill="#1B365D" font-family="serif">可用</text>
+      <rect x="752" y="116" width="168" height="72" rx="8" fill="#faf9f5" stroke="#504e49"/>
+      <text x="836" y="160" text-anchor="middle" font-size="22" fill="#141413" font-family="serif">续期中</text>
+
+      <rect x="80" y="392" width="168" height="72" rx="8" fill="#faf9f5" stroke="#504e49"/>
+      <text x="164" y="436" text-anchor="middle" font-size="22" fill="#141413" font-family="serif">需处理</text>
+      <rect x="416" y="392" width="168" height="72" rx="8" fill="#faf9f5" stroke="#504e49"/>
+      <text x="500" y="436" text-anchor="middle" font-size="22" fill="#141413" font-family="serif">需重新登录</text>
+      <rect x="752" y="392" width="168" height="72" rx="8" fill="#faf9f5" stroke="#504e49"/>
+      <text x="836" y="436" text-anchor="middle" font-size="22" fill="#141413" font-family="serif">已停用</text>
+
+      <line x1="248" y1="152" x2="416" y2="152" stroke="#1B365D" stroke-width="2"/>
+      <path d="M408 147 L416 152 L408 157" fill="none" stroke="#1B365D" stroke-width="2"/>
+      <text x="332" y="136" text-anchor="middle" font-size="15" fill="#6b6a64" font-family="monospace">授权成功</text>
+
+      <line x1="584" y1="152" x2="752" y2="152" stroke="#504e49" stroke-width="1.5"/>
+      <path d="M744 147 L752 152 L744 157" fill="none" stroke="#504e49" stroke-width="1.5"/>
+      <text x="668" y="136" text-anchor="middle" font-size="15" fill="#6b6a64" font-family="monospace">到达刷新窗口</text>
+
+      <path d="M836 188 Q836 288 584 288 Q500 288 500 188" fill="none" stroke="#1B365D" stroke-width="2"/>
+      <path d="M495 196 L500 188 L505 196" fill="none" stroke="#1B365D" stroke-width="2"/>
+      <text x="700" y="276" text-anchor="middle" font-size="15" fill="#6b6a64" font-family="monospace">刷新成功</text>
+
+      <line x1="500" y1="188" x2="500" y2="392" stroke="#504e49" stroke-width="1.5" stroke-dasharray="8 6"/>
+      <path d="M495 384 L500 392 L505 384" fill="none" stroke="#504e49" stroke-width="1.5"/>
+      <text x="516" y="300" font-size="15" fill="#6b6a64" font-family="monospace">INVALID_GRANT / 401</text>
+
+      <path d="M752 428 Q668 428 584 428" fill="none" stroke="#504e49" stroke-width="1.5"/>
+      <path d="M592 423 L584 428 L592 433" fill="none" stroke="#504e49" stroke-width="1.5"/>
+      <text x="668" y="412" text-anchor="middle" font-size="15" fill="#6b6a64" font-family="monospace">重新启用</text>
+
+      <line x1="416" y1="428" x2="248" y2="428" stroke="#504e49" stroke-width="1.5"/>
+      <path d="M256 423 L248 428 L256 433" fill="none" stroke="#504e49" stroke-width="1.5"/>
+      <text x="332" y="412" text-anchor="middle" font-size="15" fill="#6b6a64" font-family="monospace">暂时错误</text>
+
+      <path d="M164 392 Q164 288 416 288 Q500 288 500 392" fill="none" stroke="#504e49" stroke-width="1.5"/>
+      <path d="M495 384 L500 392 L505 384" fill="none" stroke="#504e49" stroke-width="1.5"/>
+      <text x="300" y="276" text-anchor="middle" font-size="15" fill="#6b6a64" font-family="monospace">失效或撤销</text>
+    </svg>
+    <figcaption>图 2：网络类错误进入受控重试，凭证类错误直接要求重新登录，删除与停用始终失败关闭。</figcaption>
+  </figure>
+
+  <h2>刷新算法</h2>
+  <ol>
+    <li>后台工作进程每分钟查询 <code>next_refresh_at &lt; now()</code> 的连接，单批次上限由配置控制。</li>
+    <li>令牌到期前 5 分钟进入刷新窗口，并加入 0 至 60 秒随机抖动，降低同一时刻集中刷新。</li>
+    <li>先进入进程内 singleflight，再获取 Redis 锁 <code>ai-auth:refresh:{connectionID}</code>，锁 TTL 30 秒。</li>
+    <li>未获得锁的请求最多等待 2 秒，然后重读数据库；仍无新版本时返回可重试的 503，禁止各自刷新。</li>
+    <li>刷新成功后通过乐观版本号原子更新密文、过期时间和版本；旧刷新结果无法覆盖新凭证。</li>
+    <li>401 只允许触发一次强制刷新和一次上游重试，避免循环；已写出流式首字节后不重试。</li>
+  </ol>
+
+  <h2>错误分类</h2>
+  <table class="striped">
+    <thead><tr><th>类别</th><th>例子</th><th>系统动作</th><th>用户状态</th></tr></thead>
+    <tbody>
+      <tr><td>临时网络</td><td>timeout、502、连接失败</td><td>指数退避 1m、5m、15m、60m</td><td>继续使用仍有效 token</td></tr>
+      <tr><td>服务商限流</td><td>429、quota exhausted</td><td>尊重 Retry-After，连接冷却</td><td>显示重置时间</td></tr>
+      <tr><td>凭证失效</td><td>invalid_grant、refresh token revoked</td><td>停止刷新，关闭路由</td><td>需重新登录</td></tr>
+      <tr><td>协议变化</td><td>字段缺失、私有接口 404/403</td><td>平台熔断候选，通知管理员</td><td>连接异常</td></tr>
+      <tr><td>密钥库错误</td><td>key ID 不存在、解密失败</td><td>失败关闭，P1 告警</td><td>暂不可用</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="chapter">
+  <div class="chapter-num">08 · Security</div>
+  <h1>安全、风控与隐私</h1>
+
+  <p class="lead">
+    这项能力会把普通用户的长期授权带入 TokHub，风险级别高于 API Key 表单。安全策略围绕「少拿、短存、强绑定、可撤销、可关闭」展开。
+  </p>
+
+  <h2>凭证与授权安全</h2>
+  <table class="compact striped">
+    <thead><tr><th>威胁</th><th>控制措施</th><th>失败策略</th></tr></thead>
+    <tbody>
+      <tr><td>CSRF 与登录串号</td><td>state 256-bit、PKCE S256、TokHub 用户/组织/会话哈希绑定、SameSite=Lax</td><td>任一不匹配立即拒绝，绑定不匹配不会破坏合法事务</td></tr>
+      <tr><td>回调重放</td><td>Redis Lua 原子校验绑定并删除、10 分钟 TTL、code 只使用一次</td><td>第二次返回 409</td></tr>
+      <tr><td>账号被盗后追加连接</td><td>TokHub 密码二次验证，10 分钟 step-up grant</td><td>失败 5 次冻结新增授权 30 分钟</td></tr>
+      <tr><td>凭证泄漏</td><td>AES-256-GCM、版本化 keyring、密文 JSON 包、日志字段红名单</td><td>缺失密钥时服务拒绝启动或连接失败关闭</td></tr>
+      <tr><td>SSRF 与请求头注入</td><td>域名、路径、Header 全部来自内置适配器 allowlist</td><td>用户配置无法覆盖</td></tr>
+      <tr><td>刷新风暴</td><td>singleflight、Redis 锁、抖动、指数退避</td><td>等待新版本或返回 503</td></tr>
+      <tr><td>连接删除后仍可用</td><td>先禁用路由、吊销中转密钥并擦除密文，再在 5 秒边界内尝试撤销服务商 token</td><td>撤销结果进入审计，路由始终保持关闭</td></tr>
+      <tr><td>条款或协议变化</td><td>全局与平台双层 kill switch，适配器版本与策略版本入库</td><td>立即停用实验路由</td></tr>
+    </tbody>
+  </table>
+
+  <h2>个人中转风控</h2>
+  <ul>
+    <li>OAuth 与消费者权益连接首版固定 <code>sharing_scope=personal</code>，界面隐藏成员与工作区分发入口。</li>
+    <li>ChatGPT 实验连接固定 QPS 1、并发 2，同一连接只允许一个活动或暂停状态的个人中转。</li>
+    <li>刷新任务按服务商设置并发、QPS 与单次超时，结合 singleflight、Redis 分布式锁、抖动和分级退避控制刷新流量。</li>
+    <li>请求正文、Prompt、图片和文件不进入审计日志；只记录请求 ID、模型、字节数、状态码、耗时与计量。</li>
+    <li>网关仅在首字节写出前对 401 执行一次刷新和重试，实验并发保护不可用时直接返回 503。</li>
+  </ul>
+
+  <h3>下一阶段风控增强</h3>
+  <p>可继续增加服务商与模型维度的 429 自适应冷却、多来源异常检测、重复账号风险事件和自动暂停策略。这些项目保留为后续迭代，不计入本轮已交付范围。</p>
+
+  <h2>明确禁止的凭证类型</h2>
+  <p><span class="tag">PASSWORD</span><span class="tag">OTP</span><span class="tag">BROWSER COOKIE</span><span class="tag">LOCAL STORAGE</span><span class="tag">CF_CLEARANCE</span><span class="tag">POW BYPASS</span></p>
+
+  <div class="takeaway">
+    <div class="takeaway-label">删除语义</div>
+    用户删除连接后，所有受管通道立即关闭，个人中转密钥立即吊销，数据库凭证密文在同一事务内擦除。服务商撤销调用在 5 秒边界内执行并记录审计结果，不阻塞本地关闭。
+  </div>
+</section>
+
+<section class="chapter">
+  <div class="chapter-num">09 · Data and API</div>
+  <h1>数据结构、API 与配置</h1>
+
+  <p class="lead">
+    数据库采用向后兼容迁移。现有 API Key 数据原样保留，新列提供授权状态、稳定指纹、过期时间和刷新调度。迁移发布后，旧版本应用仍能读取原字段，回滚无需反向转换密文。
+  </p>
+
+  <h2>数据库迁移 0047</h2>
+  <table class="compact striped">
+    <thead><tr><th>对象</th><th>新增或调整字段</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><code>ai_connections</code></td><td><code>auth_method</code> 扩展为 api_key、api_key_guided、oauth、codex_oauth</td><td>认证方式路由</td></tr>
+      <tr><td><code>ai_connections</code></td><td><code>auth_status</code>、<code>sharing_scope</code>、<code>risk_level</code></td><td>生命周期与产品限制</td></tr>
+      <tr><td><code>ai_connections</code></td><td><code>provider_adapter_version</code>、<code>terms_ack_version</code></td><td>协议变化与用户确认追踪</td></tr>
+      <tr><td><code>ai_connection_secrets</code></td><td><code>secret_type</code>、<code>payload_format</code></td><td>区分 API Key 与 OAuth JSON 包</td></tr>
+      <tr><td><code>ai_connection_secrets</code></td><td><code>subject_fingerprint</code>、<code>expires_at</code>、<code>next_refresh_at</code></td><td>稳定去重与调度</td></tr>
+      <tr><td><code>ai_connection_secrets</code></td><td><code>last_refreshed_at</code>、<code>refresh_failures</code>、<code>last_refresh_error_code</code></td><td>续期健康</td></tr>
+      <tr><td><code>ai_authorization_attempts</code></td><td>事务 ID、用户、平台、模式、状态、错误码、开始与结束时间</td><td>授权漏斗与审计，不存 token/code</td></tr>
+    </tbody>
+  </table>
+
+  <h2>加密凭证包</h2>
+  <pre><code>{
+  "schema": "oauth_bundle_v1",
+  "accessToken": "...",
+  "refreshToken": "...",
+  "idToken": "...",
+  "tokenType": "Bearer",
+  "scopes": ["..."],
+  "expiresAt": "2026-07-29T12:00:00Z",
+  "providerSubject": "...",
+  "accountId": "...",
+  "projectId": "..."
+}</code></pre>
+  <p>整包使用当前 Credential Keyring 加密。稳定指纹基于 provider、auth method、provider subject 与 account ID 生成独立 HMAC，不以会变化的 access token 或 refresh token 计算。</p>
+
+  <h2>新增 API</h2>
+  <table class="compact">
+    <thead><tr><th>方法与路径</th><th>用途</th><th>安全要求</th></tr></thead>
+    <tbody>
+      <tr><td><code>POST /api/me/ai-auth/step-up</code></td><td>验证 TokHub 密码并签发短期 grant</td><td>CSRF、限流、密码不记录</td></tr>
+      <tr><td><code>POST /api/me/ai-authorizations</code></td><td>开始 OAuth 或网页引导</td><td>消费 step-up grant</td></tr>
+      <tr><td><code>GET /api/me/ai-authorizations/{id}</code></td><td>轮询授权状态</td><td>用户与会话绑定</td></tr>
+      <tr><td><code>POST /api/me/ai-authorizations/{id}/complete</code></td><td>提交 ChatGPT 回调 URL</td><td>8 KB 上限、固定 URL allowlist</td></tr>
+      <tr><td><code>DELETE /api/me/ai-authorizations/{id}</code></td><td>取消授权事务</td><td>一次性终止</td></tr>
+      <tr><td><code>GET /api/me/ai-authorizations/google/callback</code></td><td>Google OAuth 回调</td><td>state、PKCE、会话绑定</td></tr>
+      <tr><td><code>POST /api/me/ai-connections/{id}/reauthorize</code></td><td>重新授权失效连接</td><td>复用连接 ID，版本原子更新</td></tr>
+      <tr><td><code>POST /api/me/ai-connections/{id}/disconnect</code></td><td>撤销与停用</td><td>路由先关闭，撤销可重试</td></tr>
+    </tbody>
+  </table>
+
+  <h2>注册表能力字段</h2>
+  <pre><code>{
+  "code": "openai",
+  "authMethods": [
+    {"code": "api_key", "release": "stable"},
+    {"code": "codex_oauth", "release": "experimental", "sharingScope": "personal"}
+  ],
+  "webAuth": {
+    "enabled": true,
+    "completionMode": "paste_callback",
+    "providerDomains": ["auth.openai.com"],
+    "runtimeStability": "private"
+  }
+}</code></pre>
+
+  <h2>配置与外部依赖</h2>
+  <table class="compact striped">
+    <thead><tr><th>配置</th><th>默认值</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>TOKHUB_AI_WEB_AUTH_ENABLED</code></td><td>false</td><td>全局开关</td></tr>
+      <tr><td><code>TOKHUB_AI_GEMINI_OAUTH_ENABLED</code></td><td>false</td><td>Google 审核完成后开启</td></tr>
+      <tr><td><code>TOKHUB_AI_CHATGPT_CODEX_EXPERIMENTAL</code></td><td>false</td><td>自托管实验开关</td></tr>
+      <tr><td><code>TOKHUB_AI_DEEPSEEK_GUIDED_ENABLED</code></td><td>true</td><td>开放平台引导</td></tr>
+      <tr><td><code>TOKHUB_AI_OAUTH_TTL</code></td><td>10m</td><td>授权事务有效期</td></tr>
+      <tr><td><code>TOKHUB_AI_OAUTH_REFRESH_SKEW</code></td><td>5m</td><td>提前刷新窗口</td></tr>
+      <tr><td><code>TOKHUB_AI_OAUTH_REFRESH_WORKERS</code></td><td>8</td><td>单实例并发刷新上限</td></tr>
+      <tr><td><code>TOKHUB_GOOGLE_OAUTH_CLIENT_ID</code></td><td>无</td><td>Google Web Client</td></tr>
+      <tr><td><code>TOKHUB_GOOGLE_OAUTH_CLIENT_SECRET</code></td><td>无</td><td>Secret Manager 注入</td></tr>
+      <tr><td><code>TOKHUB_GOOGLE_OAUTH_PROJECT_ID</code></td><td>无</td><td>默认 quota project</td></tr>
+      <tr><td><code>TOKHUB_AI_EXPERIMENTAL_BRIDGE_ACK</code></td><td>空</td><td>ChatGPT 实验必须填入固定确认值</td></tr>
+    </tbody>
+  </table>
+
+  <p>基础阶段不增加新运行时，继续使用 Go、PostgreSQL、Redis、NATS 与现有前端栈。若未来采用 Codex app-server 侧车，需要单独批准 Rust/Codex 二进制、镜像供应链、进程隔离和升级策略。</p>
+</section>
+
+<section class="chapter">
+  <div class="chapter-num">10 · Observability</div>
+  <h1>监控、告警与运营看板</h1>
+
+  <p class="lead">
+    监控分为授权转化、凭证健康、上游稳定性和风险事件四组。Prometheus 标签不包含用户 ID、连接 ID、邮箱或账号 ID，单连接明细通过权限受控的后台查询查看。
+  </p>
+
+  <h2>核心指标</h2>
+  <table class="compact striped">
+    <thead><tr><th>指标</th><th>标签</th><th>用途</th></tr></thead>
+    <tbody>
+      <tr><td><code>tokhub_ai_authorization_attempts</code></td><td>provider、method、status</td><td>授权尝试与当前状态</td></tr>
+      <tr><td><code>tokhub_ai_oauth_connections</code></td><td>provider、method、auth_status</td><td>OAuth 连接健康分布</td></tr>
+      <tr><td><code>tokhub_ai_oauth_refresh_failures_current</code></td><td>provider</td><td>当前连续刷新失败数</td></tr>
+      <tr><td><code>tokhub_ai_connections_active</code></td><td>无</td><td>活动 AI 连接数</td></tr>
+      <tr><td><code>tokhub_ai_connections_attention</code></td><td>无</td><td>需要用户处理的连接数</td></tr>
+      <tr><td><code>tokhub_ai_connection_validations_total</code></td><td>无</td><td>连接验证次数</td></tr>
+      <tr><td><code>tokhub_ai_connection_validation_failures_total</code></td><td>无</td><td>连接验证失败次数</td></tr>
+      <tr><td><code>tokhub_ai_quick_relays_total</code></td><td>无</td><td>个人快速中转创建数</td></tr>
+    </tbody>
+  </table>
+
+  <h2>后台看板</h2>
+  <ol>
+    <li><strong>授权漏斗：</strong>开始、打开网页、回调到达、凭证交换、模型验证、连接成功。</li>
+    <li><strong>凭证健康：</strong>各平台 active、attention、reauth_required 数量与最近 24 小时变化。</li>
+    <li><strong>刷新运行：</strong>成功率、p50/p95、锁等待、重试、invalid_grant 与队列积压。</li>
+    <li><strong>上游质量：</strong>按平台展示请求量、2xx、401、403、429、5xx、首字节和总时延。</li>
+    <li><strong>风险事件：</strong>多来源、异常并发、频繁重授权、重复指纹与平台熔断记录。</li>
+  </ol>
+
+  <h2>告警规则</h2>
+  <table class="compact">
+    <thead><tr><th>级别</th><th>条件</th><th>动作</th></tr></thead>
+    <tbody>
+      <tr><td>P1</td><td>生产环境凭证解密失败持续出现，或 keyring active key 缺失</td><td>停止新增授权，通知值班，保留 API Key 既有路径</td></tr>
+      <tr><td>P1</td><td>ChatGPT 私有接口结构变化导致连续协议错误</td><td>自动关闭 ChatGPT 实验适配器</td></tr>
+      <tr><td>P2</td><td>单平台刷新失败率 15 分钟超过 10%</td><td>暂停主动刷新，保留仍有效 token，通知管理员</td></tr>
+      <tr><td>P2</td><td>单平台 401/403 比例 10 分钟超过 5%</td><td>触发适配器健康检查与熔断评估</td></tr>
+      <tr><td>P3</td><td>授权完成率 30 分钟低于 70%</td><td>检查回调、弹窗与服务商状态</td></tr>
+      <tr><td>P3</td><td>刷新队列最老任务延迟超过 5 分钟</td><td>扩容 worker 或降低批次</td></tr>
+    </tbody>
+  </table>
+
+  <h2>审计事件</h2>
+  <p><code>ai_authorization.started</code>、<code>completed</code>、<code>failed</code>、<code>cancelled</code>、<code>ai_connection.refreshed</code>、<code>reauth_required</code>、<code>risk_paused</code>、<code>disconnected</code>。审计元数据只包含平台、认证方式、策略版本、结果、错误分类和耗时。</p>
+</section>
+
+<section class="chapter">
+  <div class="chapter-num">11 · Delivery Plan</div>
+  <h1>实施阶段、测试与回滚</h1>
+
+  <p class="lead">
+    预计影响超过 20 个文件，并跨越 API、网关、数据库、Redis worker、前端和文档。为控制风险，拆成 4 个可独立合并、可独立关闭的阶段，每个阶段都先保持功能开关关闭。
+  </p>
+
+  <h2>阶段划分</h2>
+  <table class="compact striped">
+    <thead><tr><th>阶段</th><th>交付内容</th><th>独立验收</th><th>默认开关</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Phase 0<br>认证基础</td>
+        <td>迁移 0047、Auth Adapter、Redis 事务、step-up、加密包、刷新锁、指标</td>
+        <td>API Key 全量回归；模拟 OAuth 完成、续期、失效</td>
+        <td>全部关闭</td>
+      </tr>
+      <tr>
+        <td>Phase 1<br>Gemini 正式 OAuth</td>
+        <td>Google OAuth、项目 ID、Bearer 请求头、官方 Gemini API、UI 状态</td>
+        <td>测试项目完成授权、刷新、模型验证、个人中转</td>
+        <td>灰度开启</td>
+      </tr>
+      <tr>
+        <td>Phase 2<br>DeepSeek 引导</td>
+        <td>开放平台跳转、返回表单、api_key_guided、统一连接文案</td>
+        <td>从零到中转完整流程，现有 API Key 无回归</td>
+        <td>开启</td>
+      </tr>
+      <tr>
+        <td>Phase 3<br>ChatGPT Codex 实验</td>
+        <td>PKCE、复制回调、Codex token、私有 Responses 转换、严格限额、kill switch</td>
+        <td>自托管环境 7 天稳定性试验，条款再次评审</td>
+        <td>关闭，需显式确认</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>主要文件落点</h2>
+  <table class="compact">
+    <thead><tr><th>模块</th><th>计划文件</th><th>变化</th></tr></thead>
+    <tbody>
+      <tr><td>迁移</td><td><code>db/migrations/0047_ai_web_authorization.sql</code></td><td>认证状态、凭证格式、授权尝试</td></tr>
+      <tr><td>认证核心</td><td><code>internal/connections/auth.go</code>、<code>auth_registry.go</code></td><td>接口、能力清单、可信 Auth Material</td></tr>
+      <tr><td>授权事务</td><td><code>internal/connections/authorization_store.go</code></td><td>Redis TTL、原子绑定校验与消费、会话绑定</td></tr>
+      <tr><td>平台适配器</td><td><code>internal/connections/providers/*.go</code></td><td>Gemini、ChatGPT、DeepSeek</td></tr>
+      <tr><td>刷新运行时</td><td><code>internal/events/credential_refresh_runtime.go</code></td><td>扫描、锁、退避、状态更新</td></tr>
+      <tr><td>API</td><td><code>internal/api/connection_auth_handlers.go</code></td><td>step-up、start、status、complete、callback、disconnect</td></tr>
+      <tr><td>Store</td><td><code>internal/store/connection_auth.go</code></td><td>乐观版本、稳定指纹、到期查询</td></tr>
+      <tr><td>网关</td><td><code>internal/gateway/auth_resolver.go</code>、<code>upstream.go</code></td><td>从 API Key 参数升级为 Auth Material</td></tr>
+      <tr><td>启动与配置</td><td><code>cmd/tokhub/main.go</code>、<code>internal/api/config.go</code>、<code>docker-compose.yml</code></td><td>worker、开关、OAuth Secret</td></tr>
+      <tr><td>前端</td><td><code>AIConnectionsPage.tsx</code>、<code>api.ts</code>、<code>app.css</code></td><td>认证方式、授权流程、状态与风险提示</td></tr>
+      <tr><td>契约与文档</td><td><code>docs/API.md</code>、<code>openapi.yaml</code>、部署与发布文档</td><td>端点、环境变量、运维手册</td></tr>
+    </tbody>
+  </table>
+
+  <h2>测试矩阵</h2>
+  <table class="compact striped">
+    <thead><tr><th>层级</th><th>必须覆盖</th><th>通过标准</th></tr></thead>
+    <tbody>
+      <tr><td>单元</td><td>state、PKCE、URL allowlist、指纹、加密包、错误分类、请求头</td><td>边界与恶意输入全部失败关闭</td></tr>
+      <tr><td>Store 集成</td><td>迁移、旧数据、乐观版本、重复连接、删除擦除</td><td>API Key 数据零损失，旧连接可继续调用</td></tr>
+      <tr><td>Redis 集成</td><td>TTL、原子绑定校验与消费、跨实例回调、刷新锁、锁过期</td><td>回调只消费一次，并发刷新只调用上游一次</td></tr>
+      <tr><td>提供商契约</td><td>授权成功、拒绝、invalid_grant、401、429、5xx、字段缺失</td><td>状态与重试动作符合错误分类表</td></tr>
+      <tr><td>网关回归</td><td>JSON、SSE、三个公开协议、API Key 与 OAuth 混合路由</td><td>现有网关测试全绿，首字节后无错误重试</td></tr>
+      <tr><td>安全</td><td>CSRF、会话串号、回放、SSRF、Header 注入、日志泄漏</td><td>日志扫描不出现 access、refresh、code、Cookie</td></tr>
+      <tr><td>并发</td><td>100 请求同时命中过期连接</td><td>单连接只产生 1 次刷新，其余读取新版本</td></tr>
+      <tr><td>E2E</td><td>桌面 1280px、手机 375px、弹窗阻止、取消、重登</td><td>无溢出、状态可恢复、键盘与焦点可用</td></tr>
+    </tbody>
+  </table>
+
+  <h2>成功标准</h2>
+  <ul>
+    <li>所有现有 API Key 连接、快速中转与网关测试保持通过。</li>
+    <li>Gemini 可以从授权开始走到自动续期，并完成一次真实个人中转请求。</li>
+    <li>DeepSeek 用户从官方开放平台返回后可在同一页面完成连接，不再需要理解平台通道配置。</li>
+    <li>ChatGPT 实验连接在开关关闭时无路由、无入口、无后台刷新；开启后只允许个人范围和受限协议。</li>
+    <li>任何 token、code、Cookie 与 Prompt 均不出现在应用日志、审计元数据或 Prometheus 标签中。</li>
+    <li>Redis 暂时不可用时禁止开始新 OAuth；现有仍有效 token 可以继续请求，刷新失败不会形成风暴。</li>
+  </ul>
+
+  <h2>发布与回滚</h2>
+  <ol>
+    <li>先发布数据库迁移与关闭状态的后端，确认 API Key 回归。</li>
+    <li>发布前端入口，注册表只返回已开启平台，避免空入口。</li>
+    <li>Gemini 按内部账号、5%、25%、100% 四档灰度，逐档观察授权完成率与刷新失败率。</li>
+    <li>DeepSeek 引导可直接启用；ChatGPT 只在自托管测试部署开放。</li>
+    <li>回滚优先关闭平台开关；Auth Resolver 回退到 API Key 分支，OAuth 数据保留但停止解密和刷新。</li>
+    <li>若必须回滚应用版本，新列保持向后兼容；0047 不做破坏性 down migration，后续维护窗口再清理。</li>
+  </ol>
+
+  <div class="takeaway">
+    <div class="takeaway-label">确认后实施顺序</div>
+    Phase 0 → Phase 1 → Phase 2 可以连续实施并分别提交。Phase 3 在 ChatGPT 实验边界获得明确确认后单独实施、单独评审、单独灰度。
+  </div>
+</section>
+
+<section class="chapter">
+  <div class="chapter-num">12 · Sources</div>
+  <h1>参考资料与许可边界</h1>
+
+  <p class="lead">
+    资料核对日期为 2026.07.29。技术事实优先采用官方文档和项目源码；开源项目只提供架构与行为证据，平台条款决定可发布范围。
+  </p>
+
+  <h2>官方资料</h2>
+  <ul>
+    <li><a style="color:#1B365D" href="https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md">OpenAI Codex app-server 认证与账号接口</a></li>
+    <li><a style="color:#1B365D" href="https://github.com/openai/codex/blob/main/codex-rs/login/src/server.rs">OpenAI Codex 登录服务源码</a></li>
+    <li><a style="color:#1B365D" href="https://openai.com/policies/terms-of-use/">OpenAI Terms of Use</a></li>
+    <li><a style="color:#1B365D" href="https://help.openai.com/en/articles/20001410-sign-in-with-chatgpt">OpenAI Sign in with ChatGPT 说明</a></li>
+    <li><a style="color:#1B365D" href="https://ai.google.dev/gemini-api/docs/oauth?hl=en">Gemini API OAuth 文档</a></li>
+    <li><a style="color:#1B365D" href="https://developers.google.com/identity/protocols/oauth2/web-server">Google OAuth Web Server 流程</a></li>
+    <li><a style="color:#1B365D" href="https://developers.google.com/identity/protocols/oauth2/policies">Google OAuth 2.0 政策</a></li>
+    <li><a style="color:#1B365D" href="https://api-docs.deepseek.com/api/deepseek-api">DeepSeek 官方 API 认证</a></li>
+    <li><a style="color:#1B365D" href="https://cdn.deepseek.com/policies/en-US/deepseek-terms-of-use.html">DeepSeek Terms of Use</a></li>
+    <li><a style="color:#1B365D" href="https://cdn.deepseek.com/policies/en-US/deepseek-open-platform-terms-of-service.html">DeepSeek Open Platform Terms</a></li>
+  </ul>
+
+  <h2>开源实现</h2>
+  <ul>
+    <li><a style="color:#1B365D" href="https://github.com/Wei-Shaw/sub2api">Wei-Shaw/sub2api</a>，LGPL-3.0，研究版本含 OpenAI Codex OAuth、Gemini CLI OAuth、刷新与私有接口适配。</li>
+    <li><a style="color:#1B365D" href="https://github.com/router-for-me/CLIProxyAPI">router-for-me/CLIProxyAPI</a>，MIT，参考认证器注册、刷新协调和执行器拆分。</li>
+    <li><a style="color:#1B365D" href="https://github.com/HanaokaYuzu/Gemini-API">HanaokaYuzu/Gemini-API</a>，AGPL-3.0，仅用于识别 Cookie 与网页协议风险。</li>
+    <li><a style="color:#1B365D" href="https://github.com/xtekky/deepseek4free">xtekky/deepseek4free</a>，MIT，仅用于识别 Cloudflare、PoW 与消费者网页逆向边界。</li>
+  </ul>
+
+  <h2>许可执行规则</h2>
+  <ol>
+    <li>TokHub 保持 Apache-2.0 主许可，LGPL 与 AGPL 项目的源码不复制、不改写进入仓库。</li>
+    <li>协议和算法根据官方文档、公开网络行为与 TokHub 既有代码独立实现，并保留研究记录。</li>
+    <li>MIT 与 Apache 项目的接口思想可以参考；若复制任何可识别代码片段，必须保留版权与许可通知并进入 SBOM。</li>
+    <li>每个阶段合并前运行许可证扫描、依赖清单与源码相似度抽查。</li>
+  </ol>
+
+  <div class="takeaway">
+    <div class="takeaway-label">实施结论</div>
+    方案中的 4 项决策已经确认并完成首版实施。Gemini 正式 OAuth、DeepSeek 官方开放平台引导和 ChatGPT Codex 自托管实验适配均已进入统一授权框架；Cookie、密码、验证码、Cloudflare 绕过与 PoW 逆向继续排除在系统能力之外。
+  </div>
+</section>
+
+</body>
+</html>

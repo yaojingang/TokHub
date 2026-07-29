@@ -442,13 +442,19 @@ func (s *Server) runGatewayDebug(ctx context.Context, gateway store.Gateway, req
 			s.recordDebugGatewayEvent(ctx, gateway.ID, upstream.ChannelID, model, http.StatusOK, start, usage, "")
 			return gatewayDebugResult{OK: true, GatewayID: gateway.ID, Gateway: gateway.Name, UpstreamID: upstream.ChannelID, Upstream: upstream.Name, Model: model, StatusCode: http.StatusOK, LatencyMs: int(time.Since(start).Milliseconds()), Tokens: usage.TotalTokens, UsageEstimated: usage.Estimated, Message: "调试调用成功", Preview: truncateText(fmt.Sprint(body["id"])+" "+responsePreviewFromMap(body), 220)}
 		}
-		apiKey, err := s.gatewayUpstreamAPIKey(ctx, store.AuthenticatedGatewayKey{Gateway: gateway, Key: store.GatewayKey{OrgID: gateway.OrgID}}, upstream)
+		credential, err := s.gatewayUpstreamAuthorization(ctx, store.AuthenticatedGatewayKey{Gateway: gateway, Key: store.GatewayKey{OrgID: gateway.OrgID}}, upstream)
 		if err != nil {
 			lastErrType = "upstream_credential_unavailable"
 			continue
 		}
 		estimate := upstreamUsageFromGateway(estimateUsage(payload))
-		result, err := s.upstreamClient.JSON(ctx, gatewaycache.Upstream{Name: upstream.Name, Provider: upstream.Provider, Type: upstream.Type, Endpoint: upstream.Endpoint, Model: upstream.Model, ProviderConfig: upstream.ProviderConfig}, apiKey, kind, raw, estimate)
+		clientUpstream := gatewaycache.Upstream{Name: upstream.Name, Provider: upstream.Provider, Type: upstream.Type, Endpoint: upstream.Endpoint, Model: upstream.Model, ProviderConfig: upstream.ProviderConfig}
+		var result gatewaycache.UpstreamResult
+		if credential.Material != nil {
+			result, err = s.upstreamClient.JSONWithAuth(ctx, clientUpstream, *credential.Material, kind, raw, estimate)
+		} else {
+			result, err = s.upstreamClient.JSON(ctx, clientUpstream, credential.APIKey, kind, raw, estimate)
+		}
 		usage := gatewayUsageFromUpstream(result.Usage)
 		if err != nil {
 			lastErrType = nonEmpty(result.ErrorType, "upstream_failed")
