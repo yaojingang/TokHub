@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: TokHub Admin-Agent Internal API
-  version: 0.1.0
+  version: 2.0.0-rc.1
   description: Internal machine contract for TokHub administrator agent execution. This is not the public third-party API contract.
 servers:
   - url: http://localhost:8080

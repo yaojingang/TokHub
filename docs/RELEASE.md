@@ -29,7 +29,7 @@ deploy/scripts/preflight.sh --env-file .env.production
 deploy/scripts/release-check.sh
 ```
 
-该脚本会执行 Go/TypeScript/前端构建、安全扫描、Docker Compose 配置校验、生产示例预检；仓库存在提交后，还会校验 `sqlc generate` 是否造成生成文件漂移。
+该脚本会先校验 `VERSION` 与 package、Helm、OpenAPI、Agent Skill 和发布文档是否一致，再执行 Go/TypeScript/前端构建、安全扫描、Docker Compose 配置校验和生产示例预检；仓库存在提交后，还会校验 `sqlc generate` 是否造成生成文件漂移。
 
 如果本地 Docker 环境已启动，并且要做完整发布检查：
 
@@ -58,8 +58,10 @@ TOKHUB_BASE_URL="$TOKHUB_PUBLIC_URL" npm run test:no-demo-smoke
 ## 镜像构建
 
 ```bash
-docker build -t tokhub:0.1.0 .
+docker build -t tokhub:2.0.0-rc.1 .
 ```
+
+镜像启动后，`/healthz` 会返回当前构建版本。
 
 ## 单容器首次发布
 
@@ -120,3 +122,17 @@ TOKHUB_RESTORE_CONFIRM=restore deploy/scripts/restore.sh <dump>
 - `/admin`
 - `/gateway/v1/models`，使用真实 Gateway Key
 - `/metrics`
+
+## 2.0 RC 发布
+
+```bash
+npm run version:check
+git tag -a v2.0.0-rc.1 -m "TokHub 2.0.0-rc.1"
+git push origin v2.0.0-rc.1
+gh release create v2.0.0-rc.1 \
+  --prerelease \
+  --title "TokHub 2.0.0-rc.1" \
+  --notes-file docs/releases/v2.0.0-rc.1.md
+```
+
+正式版发布前按照 `docs/AI_WEB_AUTH_OPERATIONS.md` 完成 ChatGPT、Gemini 和 DeepSeek 真实测试账号验收。

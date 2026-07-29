@@ -4,6 +4,10 @@ TokHub 是面向 AI API 中转站的开源监控、推荐运营与 OpenAI 兼容
 
 English: [README.en.md](docs/README.en.md)
 
+当前版本：`v2.0.0-rc.1`
+
+TokHub 2.0 增加个人 AI 账号授权和个人专属中转。普通用户可以连接官方 API Key，也可以按部署配置连接 ChatGPT、Gemini 和 DeepSeek 账号。
+
 ## 它解决什么问题
 
 AI API 中转站、模型服务商和企业自建上游通常会遇到几类问题：
@@ -32,6 +36,14 @@ TokHub 的目标是把这些能力做成一个可运行、可部署、可二次�
 - 私有通道支持 Endpoint、模型、额度、状态、立即探测和连接测试。
 - 用户工作区包含专属网关、Gateway Key、成员、用量、告警、事件和审计。
 - 工作区数据按组织隔离，普通用户不能访问平台后台和其它工作区资源。
+
+### 个人 AI 账号和专属中转
+
+- 支持 OpenAI、Gemini、Kimi、DeepSeek、豆包、Claude 和千问的个人连接。
+- 支持官方 API Key、Gemini Google OAuth、ChatGPT Codex OAuth 和 DeepSeek 网页账号实验连接。
+- TokHub AI 登录助手可以识别 ChatGPT localhost 回调，并在用户点击后读取 DeepSeek `userToken.value`。
+- 授权凭据使用版本化 AES-256-GCM 密钥环加密，支持刷新、失效检测、重新授权、删除和审计。
+- 连接验证通过后可以创建个人 OpenAI 兼容中转，并使用独立 Gateway Key。
 
 ### 平台管理后台
 

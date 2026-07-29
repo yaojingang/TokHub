@@ -53,6 +53,7 @@ run_production_sample_preflight() {
     deploy/scripts/preflight.sh --env-file .env.production.example
 }
 
+run npm run version:check
 run go test ./...
 run go vet ./...
 run sqlc generate

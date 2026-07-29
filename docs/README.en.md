@@ -4,6 +4,10 @@ TokHub is an open-source monitoring, recommendation, and OpenAI-compatible gatew
 
 Simplified Chinese: [README.md](../README.md)
 
+Current release: `v2.0.0-rc.1`
+
+TokHub 2.0 adds personal AI account authorization and dedicated personal relays. Users can connect official API keys or use deployment-enabled authorization flows for ChatGPT, Gemini, and DeepSeek.
+
 ## What TokHub Is For
 
 TokHub is built for teams that operate or compare multiple AI API upstreams:
@@ -32,6 +36,14 @@ TokHub turns those needs into a deployable foundation for AI API monitoring, ope
 - Private channels support endpoint configuration, model selection, daily probe quota, status tracking, manual probe, and connection validation.
 - Each workspace has gateways, Gateway Keys, members, usage analytics, alerts, incidents, and audit logs.
 - Workspace data is isolated by organization. Regular users cannot access platform admin data or other workspaces.
+
+### Personal AI Accounts And Dedicated Relays
+
+- Connect personal OpenAI, Gemini, Kimi, DeepSeek, Doubao, Claude, and Qwen services.
+- Use official API keys, Gemini Google OAuth, ChatGPT Codex OAuth, or the experimental DeepSeek web account flow.
+- The TokHub AI Login Helper recognizes ChatGPT localhost callbacks and reads DeepSeek `userToken.value` only after a user action.
+- Authorized credentials use a versioned AES-256-GCM keyring with refresh, expiry detection, reauthorization, deletion, and auditing.
+- A verified connection can create a personal OpenAI-compatible relay with its own Gateway Key.
 
 ### Platform Admin Console
 

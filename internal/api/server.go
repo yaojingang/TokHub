@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"tokhub/internal/auth"
+	"tokhub/internal/buildinfo"
 	"tokhub/internal/connections"
 	secretcrypto "tokhub/internal/crypto"
 	gatewaycache "tokhub/internal/gateway"
@@ -525,7 +526,7 @@ func (s *Server) csrfToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": buildinfo.Version})
 }
 
 func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {

@@ -12,6 +12,7 @@ import (
 
 	"tokhub/internal/api"
 	"tokhub/internal/auth"
+	"tokhub/internal/buildinfo"
 	"tokhub/internal/connections"
 	secretcrypto "tokhub/internal/crypto"
 	"tokhub/internal/events"
@@ -29,6 +30,7 @@ func main() {
 
 	cfg := api.LoadConfig()
 	logger := observability.NewLogger(cfg.Env)
+	logger.Info("tokhub starting", "version", buildinfo.Version, "role", cfg.Role)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

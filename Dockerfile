@@ -9,9 +9,13 @@ FROM golang:1.26.5-bookworm AS go-build
 WORKDIR /src
 COPY go.mod go.sum* ./
 RUN go mod download
+COPY VERSION ./VERSION
 COPY cmd ./cmd
 COPY internal ./internal
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /out/tokhub ./cmd/tokhub
+RUN TOKHUB_VERSION="$(tr -d '[:space:]' < VERSION)" && \
+    CGO_ENABLED=0 GOOS=linux go build \
+      -ldflags="-s -w -X tokhub/internal/buildinfo.Version=${TOKHUB_VERSION}" \
+      -o /out/tokhub ./cmd/tokhub
 
 FROM scratch
 WORKDIR /app

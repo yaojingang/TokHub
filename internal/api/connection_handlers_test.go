@@ -241,6 +241,23 @@ func TestReadyzRejectsMissingCredentialVaultBeforeDatabase(t *testing.T) {
 	}
 }
 
+func TestHealthzExposesReleaseVersion(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	(&Server{}).healthz(recorder, request)
+
+	var response map[string]string
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode healthz response: %v", err)
+	}
+	if response["status"] != "ok" {
+		t.Fatalf("healthz status = %q, want ok", response["status"])
+	}
+	if response["version"] != "2.0.0-rc.1" {
+		t.Fatalf("healthz version = %q, want 2.0.0-rc.1", response["version"])
+	}
+}
+
 func TestGatewaySupportsOnlyConfiguredModel(t *testing.T) {
 	gateway := store.Gateway{Upstreams: []store.GatewayUpstream{
 		{Model: "model-a", Enabled: true},

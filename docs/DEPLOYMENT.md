@@ -197,7 +197,7 @@ Helm 模板位于 `deploy/helm/tokhub`，默认假设 PostgreSQL/TimescaleDB、R
 ```bash
 helm template tokhub deploy/helm/tokhub \
   --set image.repository=your-registry/tokhub \
-  --set image.tag=0.1.0 \
+  --set image.tag=2.0.0-rc.1 \
   --set publicUrl=https://tokhub.example.com \
   --set secretKey='replace-with-32-byte-min-secret'
 ```

@@ -1,6 +1,6 @@
 {
   "name": "tokhub",
-  "version": "0.1.0",
+  "version": "2.0.0-rc.1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -22,6 +22,7 @@
     "test:no-demo-smoke": "bash deploy/scripts/no-demo-smoke.sh",
     "test:fresh-prod": "bash deploy/scripts/fresh-prod-check.sh",
     "test:real-provider": "bash deploy/scripts/real-provider-check.sh",
+    "version:check": "bash deploy/scripts/version-check.sh",
     "release:check": "bash deploy/scripts/release-check.sh",
     "load:prepare": "node deploy/load/prepare-auth.js",
     "load:public": "node deploy/load/public-api.js",
