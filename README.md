@@ -1,24 +1,118 @@
 # TokHub
 
-TokHub 是面向 AI API 中转站的开源监控、推荐运营与 OpenAI 兼容专属网关系统。它把公开状态页、供应商排行、用户工作区、平台管理后台、分层探测、用量计量、告警审计、密钥加密和 Docker 自托管部署放在同一个系统里，适合用来搭建 AI API 服务导航、可用性监控平台、企业内部专属网关或多上游容灾入口。
+[![Release](https://img.shields.io/github/v/release/yaojingang/TokHub?include_prereleases&sort=semver)](https://github.com/yaojingang/TokHub/releases)
+[![CI](https://github.com/yaojingang/TokHub/actions/workflows/ci.yml/badge.svg)](https://github.com/yaojingang/TokHub/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/yaojingang/TokHub)](LICENSE)
+
+TokHub 是面向 AI API 服务的开源监控、推荐运营和 OpenAI 兼容网关。它把公开状态页、供应商排行、用户工作区、个人 AI 账号连接、专属中转、分层探测、用量计量、告警审计和自托管部署放在一个系统里。
 
 English: [README.en.md](docs/README.en.md)
 
-当前版本：`v2.0.0-rc.1`
+当前版本：`v2.0.0-rc.1`，[查看发布说明](https://github.com/yaojingang/TokHub/releases/tag/v2.0.0-rc.1)
 
-TokHub 2.0 增加个人 AI 账号授权和个人专属中转。普通用户可以连接官方 API Key，也可以按部署配置连接 ChatGPT、Gemini 和 DeepSeek 账号。
+TokHub 2.0 把 AI 服务连接入口开放给普通用户。用户登录自己的工作区后，可以连接官方 API Key，也可以使用部署方启用的 ChatGPT、Gemini 和 DeepSeek 授权方式。连接通过验证后，TokHub 会生成个人 OpenAI 兼容中转和独立 Gateway Key。
 
-## 它解决什么问题
+> ChatGPT Codex OAuth 和 DeepSeek 网页账号当前属于自托管实验能力，默认关闭。Gemini 使用 Google 官方 OAuth。官方 API Key 连接继续作为稳定接入方式。
 
-AI API 中转站、模型服务商和企业自建上游通常会遇到几类问题：
+## 快速导航
 
-- 公开页面只能展示“可用”或“不可用”，但不知道是 DNS、TLS、鉴权、模型列表还是生成链路出了问题。
-- 用户有自己的私有 Key 和上游地址，却缺少统一的健康监控、配额、网关和审计。
-- 平台推荐页依赖人工整理，缺少可复用的榜单规则、推荐位、点击统计和公开 Open API。
-- 企业想用一个 OpenAI 兼容入口接入多个上游，但需要按延迟、成功率、成本做路由，并记录每次请求的用量和费用。
-- 自托管部署不应只给源码，还需要生产预检、备份恢复、无演示数据检查、安全扫描和发布门禁。
+- [TokHub 2.0 的变化](#tokhub-20-的变化)
+- [三种 AI 服务接入方式](#三种-ai-服务接入方式)
+- [服务商支持矩阵](#服务商支持矩阵)
+- [普通用户使用流程](#普通用户使用流程)
+- [应用场景](#应用场景)
+- [核心能力](#核心能力)
+- [快速启动](#快速启动)
+- [生产部署](#生产部署)
+- [API](#api)
 
-TokHub 的目标是把这些能力做成一个可运行、可部署、可二次开发的开源基础系统。
+## TokHub 2.0 的变化
+
+早期 TokHub 主要服务于平台运营者和企业工作区，负责公开监控、推荐运营、私有通道和多上游网关。2.0 增加普通用户的个人 AI 服务连接、授权生命周期和快速中转。
+
+| 维度 | 2.0 之前 | 2.0 RC |
+| --- | --- | --- |
+| 使用入口 | 平台后台、公开前台和企业工作区 | 增加普通用户的“AI 服务连接”入口 |
+| 上游凭据 | 平台或工作区配置 API Key | 增加用户自己的 API Key、官方 OAuth 和受控实验授权 |
+| 支持服务 | OpenAI 兼容上游和平台通道 | 统一管理 OpenAI、Gemini、Kimi、DeepSeek、豆包、Claude 和千问 |
+| 中转创建 | 管理员或工作区手动创建网关 | 已验证连接可以快速创建个人中转 |
+| 协议适配 | OpenAI 兼容网关和常规供应商适配 | 增加 Gemini SSE、ChatGPT Responses 和 DeepSeek 网页协议桥 |
+| 凭据生命周期 | API Key 加密保存、轮换和删除 | 增加 OAuth 刷新、失效检测、账号一致性检查和重新授权 |
+| 风控范围 | 网关 QPS、月配额、熔断和审计 | 实验连接增加个人范围、单中转、低 QPS 和并发限制 |
+| 监控范围 | 通道探测、网关请求和成本 | 增加授权成功率、刷新失败、待重新授权连接和个人中转指标 |
+
+```mermaid
+flowchart LR
+    A["普通用户登录"] --> B["AI 服务连接"]
+    B --> C1["官方 API Key"]
+    B --> C2["Gemini Google OAuth"]
+    B --> C3["ChatGPT Codex OAuth"]
+    B --> C4["DeepSeek 登录助手"]
+    C1 --> D["真实最小生成验证"]
+    C2 --> D
+    C3 --> D
+    C4 --> D
+    D --> E["AES-256-GCM 凭据保险库"]
+    E --> F["个人 OpenAI 兼容中转"]
+    F --> G["独立 Gateway Key"]
+    G --> H["AI 客户端、脚本或应用"]
+```
+
+## 三种 AI 服务接入方式
+
+| 接入方式 | TokHub 获取什么 | 支持范围 | 续期方式 | 推荐场景 |
+| --- | --- | --- | --- | --- |
+| 官方 API Key | 开发者平台签发的 API Key | 七家服务商 | 用户轮换 Key | 生产调用、团队共享、稳定中转 |
+| 官方 OAuth | OAuth Access Token、Refresh Token 和账号标识 | Gemini Google OAuth | 后台自动刷新，失效后重新授权 | 用户拥有 Google Cloud Project，希望减少手动管理 Key |
+| 受控实验授权 | ChatGPT 一次性 OAuth 回调，或 DeepSeek `userToken.value` | ChatGPT、DeepSeek | 按服务商能力刷新，或提示用户重新登录 | 个人自托管、低频使用和协议验证 |
+
+TokHub AI 登录助手的读取范围经过固定限制：
+
+- ChatGPT 只识别 `http://localhost:1455/auth/callback` 中的一次性 `code` 和 `state`。
+- Gemini 跳转 Google 官方授权页，并校验 Cloud Project 权限、OIDC 签名、nonce 和账号标识。
+- DeepSeek 只在用户点击后读取 `https://chat.deepseek.com` 的 `localStorage.userToken.value`。
+- 助手不读取服务商密码、验证码、完整 Cookie、`cf_clearance` 或其它 Local Storage 数据，也不持久化识别结果。
+- 服务端完成真实最小生成验证后才保存连接，凭据使用版本化 AES-256-GCM 密钥环加密。
+
+## 服务商支持矩阵
+
+| 服务商 | 官方 API Key | 账号授权方式 | 当前级别 | 说明 |
+| --- | --- | --- | --- | --- |
+| ChatGPT / OpenAI | 支持 | Codex OAuth | 实验 | 个人范围、单中转、服务端强制低 QPS |
+| Gemini | 支持 | Google 官方 OAuth | 配置后可用 | 需要 OAuth Client、Cloud Project、HTTPS 回调和 Redis |
+| Kimi | 支持 | 暂无 | 稳定 | 支持中国大陆和国际 Endpoint |
+| DeepSeek | 支持 | 开放平台引导、网页账号登录态 | API Key 稳定，网页登录实验 | 网页路径通过独立 DS2API 桥验证和转发 |
+| 豆包 | 支持 | 暂无 | 稳定 | 使用火山方舟 API Key |
+| Claude | 支持 | 暂无 | 稳定 | 使用 Anthropic API Key |
+| 千问 | 支持 | 暂无 | 稳定 | 支持多地域和可选 Workspace Endpoint |
+
+部署管理员可以通过功能开关逐项开放授权入口。网页登录和实验授权开关默认保持关闭，详细配置和灰度检查见 [AI 账号授权与个人中转运行手册](docs/AI_WEB_AUTH_OPERATIONS.md)。
+
+## 普通用户使用流程
+
+1. 登录 TokHub，进入“个人空间 > AI 服务连接”。
+2. 选择 ChatGPT、Gemini、Kimi、DeepSeek、豆包、Claude 或千问。
+3. 选择官方 API Key、官方 OAuth 或部署方开放的实验授权方式。
+4. 完成服务商登录或粘贴开发者凭据。
+5. TokHub 验证账号身份、模型权限和最小生成链路。
+6. 连接可用后创建个人中转，设置模型、名称和额度。
+7. 创建 Gateway Key，把 Base URL 设置为 `https://<your-domain>/gateway/v1`。
+8. 在 OpenAI 兼容客户端、脚本或应用中使用该 Base URL 和 Gateway Key。
+
+授权过期、账号不一致或上游返回明确鉴权错误时，连接会进入 `reauth_required`。用户可以在原连接上重新授权，原中转配置和用量记录继续保留。
+
+## 应用场景
+
+| 场景 | 适合的用户 | 推荐组合 |
+| --- | --- | --- |
+| AI API 状态与导航站 | 社区、媒体、模型服务运营者 | 公开状态页、供应商排行、精选推荐、只读 Open API |
+| 多上游容灾网关 | 企业研发团队、AI 应用团队 | 私有通道、L1/L2/L3 探测、延迟或成功率路由、熔断 |
+| 个人 AI 中转站 | 有多个 AI 账号或开发者 Key 的个人用户 | AI 服务连接、个人中转、独立 Gateway Key、用量审计 |
+| 室友或小团队共享 | 需要按成员控制额度的小团队 | 官方开发者凭据、工作区成员、成员 Gateway Key、QPS 和月配额 |
+| 中转站运营后台 | 提供 AI API 服务的运营团队 | 通道治理、推荐配置、成本估算、用量报表、告警和审计 |
+| 自托管授权实验室 | 需要验证 OAuth 或消费者协议适配的开发者 | 功能开关、独立协议桥、低频率限制、Prometheus 指标和紧急关闭 |
+
+ChatGPT Codex 和 DeepSeek 网页登录态固定用于连接持有人本人。室友或团队共享场景应使用服务商官方开发者凭据，并遵守对应服务商的账户条款和使用限制。
 
 ## 核心能力
 
@@ -39,10 +133,10 @@ TokHub 的目标是把这些能力做成一个可运行、可部署、可二次�
 
 ### 个人 AI 账号和专属中转
 
-- 支持 OpenAI、Gemini、Kimi、DeepSeek、豆包、Claude 和千问的个人连接。
-- 支持官方 API Key、Gemini Google OAuth、ChatGPT Codex OAuth 和 DeepSeek 网页账号实验连接。
-- TokHub AI 登录助手可以识别 ChatGPT localhost 回调，并在用户点击后读取 DeepSeek `userToken.value`。
-- 授权凭据使用版本化 AES-256-GCM 密钥环加密，支持刷新、失效检测、重新授权、删除和审计。
+- 七家服务商统一使用 Provider Manifest，集中管理地域、Endpoint、协议、模型和验证方式。
+- API Key、OAuth 和实验授权连接都要通过真实最小生成验证。
+- OAuth 凭据支持后台刷新、退避、失效检测、账号一致性检查、重新授权、撤销和审计。
+- ChatGPT 和 DeepSeek 实验连接执行个人范围、单中转、低 QPS 和并发保护。
 - 连接验证通过后可以创建个人 OpenAI 兼容中转，并使用独立 Gateway Key。
 
 ### 平台管理后台
@@ -54,7 +148,7 @@ TokHub 的目标是把这些能力做成一个可运行、可部署、可二次�
 
 ### OpenAI 兼容专属网关
 
-- 对外暴露 `/gateway/v1/*`，兼容 OpenAI 风格的 Models 和 Chat Completions 调用。
+- 对外暴露 `/gateway/v1/*`，兼容 OpenAI 风格的 Models、Chat Completions 和 Responses 调用。
 - 每个网关可以绑定多个平台上游或用户私有上游。
 - Gateway Key 支持 QPS、月配额、状态管理、撤销、删除和一次性明文展示。
 - 兼容非流式和流式响应，记录请求模型、上游通道、状态码、Token、延迟、成本和错误类型。
@@ -174,7 +268,7 @@ TokHub 默认把密钥材料当作生产数据处理。
 
 ### 数据模型围绕真实运营
 
-核心表包括用户、组织、通道、通道凭据、模型目录、模型价格、探测运行、探测快照、Incident、Gateway、Gateway Key、请求事件、用量 Rollup、告警、通知通道、审计和 Open API 站点。它不是只给演示用的状态页模型，而是面向运营、监控和网关调用的完整数据边界。
+核心表包括用户、组织、通道、通道凭据、模型目录、模型价格、探测运行、探测快照、Incident、Gateway、Gateway Key、请求事件、用量 Rollup、告警、通知通道、审计和 Open API 站点。该数据模型直接服务于真实运营、监控和网关调用。
 
 ### 发布硬化
 
