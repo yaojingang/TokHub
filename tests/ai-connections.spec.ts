@@ -14,6 +14,10 @@ test("AI connection center exposes seven official developer products and a respo
   await expect(page.getByText(/连接固定保存在个人空间/)).toBeVisible();
   await expect(page.getByText(/服务商密码、验证码、浏览器 Cookie、Local Storage、cf_clearance 与 PoW 数据均不采集/)).toBeVisible();
 
+  await page.getByRole("button", { name: /DeepSeek/ }).click();
+  await expect(page.getByRole("radio", { name: /前往 DeepSeek 开放平台/ })).toBeEnabled();
+  await expect(page.getByRole("radio", { name: /登录 DeepSeek 消费者账号/ })).toBeDisabled();
+
   await page.getByRole("button", { name: /千问/ }).click();
   const setup = page.locator(".ai-setup-panel");
   await expect(setup.getByRole("heading", { name: "千问" })).toBeVisible();
@@ -29,6 +33,7 @@ test("AI connection center exposes seven official developer products and a respo
 
 test("AI connection center renders Gemini OAuth, DeepSeek guided key, and ChatGPT experimental authorization controls", async ({ page }) => {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  let deepSeekStatusPolls = 0;
   const providers = [
     provider("gemini", "Gemini", [
       authMethod("api_key", "官方 API Key", "stable"),
@@ -36,7 +41,15 @@ test("AI connection center renders Gemini OAuth, DeepSeek guided key, and ChatGP
     ]),
     provider("deepseek", "DeepSeek", [
       authMethod("api_key", "官方 API Key", "stable"),
-      authMethod("api_key_guided", "前往 DeepSeek 开放平台", "stable", "guided_api_key")
+      authMethod("api_key_guided", "前往 DeepSeek 开放平台", "stable", "guided_api_key"),
+      authMethod(
+        "consumer_web_login",
+        "登录 DeepSeek 消费者账号",
+        "unavailable",
+        "unavailable",
+        false,
+        "官方暂未开放消费者账号授权。TokHub 不读取 Cookie、Session、密码或验证码。"
+      )
     ]),
     provider("openai", "ChatGPT", [
       authMethod("api_key", "官方 API Key", "stable"),
@@ -76,6 +89,7 @@ test("AI connection center renders Gemini OAuth, DeepSeek guided key, and ChatGP
     });
   });
   await page.route("**/api/me/ai-authorizations/authz_test", async (route) => {
+    deepSeekStatusPolls += 1;
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({
@@ -110,6 +124,10 @@ test("AI connection center renders Gemini OAuth, DeepSeek guided key, and ChatGP
   await expect(page.locator(".ai-experimental-confirm input")).toBeVisible();
 
   await page.getByRole("button", { name: /DeepSeek/ }).click();
+  const deepSeekConsumerLogin = page.getByRole("radio", { name: /登录 DeepSeek 消费者账号/ });
+  await expect(deepSeekConsumerLogin).toBeDisabled();
+  await expect(deepSeekConsumerLogin).toContainText("官方未开放");
+  await expect(deepSeekConsumerLogin).toContainText("TokHub 不读取 Cookie、Session、密码或验证码");
   await page.getByLabel(/TokHub 登录密码/).fill("local-password");
   const popupPromise = page.waitForEvent("popup");
   await page.getByRole("button", { name: "前往开放平台", exact: true }).click();
@@ -117,6 +135,8 @@ test("AI connection center renders Gemini OAuth, DeepSeek guided key, and ChatGP
   await popup.close();
   await expect(page.getByText("请在 DeepSeek 开放平台创建 API Key")).toBeVisible();
   await expect(page.getByPlaceholder("粘贴官方开发者 API Key")).toBeVisible();
+  await page.waitForTimeout(1_800);
+  expect(deepSeekStatusPolls).toBe(0);
 
   await page.setViewportSize({ width: 375, height: 812 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(375);
@@ -189,15 +209,23 @@ test("OAuth disconnect asks for the current TokHub password", async ({ page }) =
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(375);
 });
 
-function authMethod(code: string, label: string, release: string, completionMode = "api_key") {
+function authMethod(
+  code: string,
+  label: string,
+  release: string,
+  completionMode = "api_key",
+  enabled = true,
+  unavailableReason?: string
+) {
   return {
     code,
     label,
     release,
     sharingScope: "personal",
     completionMode,
-    enabled: true,
+    enabled,
     description: `${label} 测试说明`,
+    ...(unavailableReason ? { unavailableReason } : {}),
     docsUrl: "https://example.test/docs"
   };
 }

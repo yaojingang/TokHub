@@ -12,6 +12,8 @@
 | DeepSeek 开放平台引导 | `TOKHUB_AI_DEEPSEEK_GUIDED_ENABLED` | Redis、凭证密钥环 | 可先发布 |
 | ChatGPT Codex OAuth | `TOKHUB_AI_CHATGPT_CODEX_EXPERIMENTAL` | Redis、凭证密钥环、固定风险确认值 | 仅自托管实验 |
 
+DeepSeek 官方 API 当前采用 API Key Bearer 认证，未公开消费者账号 OAuth 或网页会话委托接口。TokHub 的 DeepSeek 引导会打开官方密钥页面，用户返回后粘贴 API Key；消费者网页登录项会保持可见且不可操作，服务端也不会注册对应适配器。引导事务由用户提交 API Key 时完成，前端不会持续轮询等待不存在的服务商回调。
+
 ChatGPT 实验开关还要求：
 
 ```env

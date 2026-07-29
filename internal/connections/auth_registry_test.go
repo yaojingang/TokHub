@@ -83,6 +83,33 @@ func TestAuthRegistryPublishesAvailableAndUnavailableProviderMethods(t *testing.
 	}
 }
 
+func TestDeepSeekGuidedAdapterUsesOfficialAPIKeyBearerMaterial(t *testing.T) {
+	adapter := NewDeepSeekGuidedAdapter()
+	start, err := adapter.Start(context.Background(), AuthorizationTransaction{}, "")
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if start.AuthorizationURL != DeepSeekAPIKeysURL || start.CompletionMode != "guided_api_key" {
+		t.Fatalf("unexpected DeepSeek authorization start: %#v", start)
+	}
+
+	material, err := adapter.ResolveAuthMaterial(context.Background(), CredentialBundle{AccessToken: "deepseek-key"})
+	if err != nil {
+		t.Fatalf("ResolveAuthMaterial() error = %v", err)
+	}
+	if material.Mode != AuthModeAPIKey || material.Endpoint != "https://api.deepseek.com" {
+		t.Fatalf("unexpected DeepSeek auth material: %#v", material)
+	}
+	if got := material.Headers.Get("Authorization"); got != "Bearer deepseek-key" {
+		t.Fatalf("DeepSeek Authorization header = %q", got)
+	}
+	for _, header := range []string{"Cookie", "X-CSRF-Token", "X-Requested-With"} {
+		if got := material.Headers.Get(header); got != "" {
+			t.Fatalf("DeepSeek auth material unexpectedly contains %s", header)
+		}
+	}
+}
+
 func authMethodByCode(items []AuthMethodManifest, code string) *AuthMethodManifest {
 	for index := range items {
 		if items[index].Code == code {

@@ -137,7 +137,7 @@ export function AIConnectionsPage() {
   }, [selectedConnectionId]);
 
   useEffect(() => {
-    if (!authorization) return;
+    if (!authorization || authorization.completionMode === "guided_api_key") return;
     let active = true;
     let timer = 0;
     const poll = async () => {
