@@ -12,15 +12,16 @@ import (
 const ExperimentalBridgeAcknowledgement = "I_ACCEPT_CHATGPT_CODEX_EXPERIMENTAL_RISK"
 
 type AuthMethodManifest struct {
-	Code           string `json:"code"`
-	Label          string `json:"label"`
-	Release        string `json:"release"`
-	SharingScope   string `json:"sharingScope"`
-	CompletionMode string `json:"completionMode"`
-	Enabled        bool   `json:"enabled"`
-	Description    string `json:"description"`
-	RiskNotice     string `json:"riskNotice,omitempty"`
-	DocsURL        string `json:"docsUrl,omitempty"`
+	Code              string `json:"code"`
+	Label             string `json:"label"`
+	Release           string `json:"release"`
+	SharingScope      string `json:"sharingScope"`
+	CompletionMode    string `json:"completionMode"`
+	Enabled           bool   `json:"enabled"`
+	Description       string `json:"description"`
+	UnavailableReason string `json:"unavailableReason,omitempty"`
+	RiskNotice        string `json:"riskNotice,omitempty"`
+	DocsURL           string `json:"docsUrl,omitempty"`
 }
 
 type AuthorizationStart struct {
@@ -74,30 +75,51 @@ func (c AdapterConfig) now() time.Time {
 
 type AuthRegistry struct {
 	adapters map[string]AuthAdapter
+	methods  map[string][]AuthMethodManifest
 }
 
 func NewAuthRegistry(cfg AdapterConfig) *AuthRegistry {
-	registry := &AuthRegistry{adapters: map[string]AuthAdapter{}}
-	if cfg.WebAuthEnabled && cfg.GeminiOAuthEnabled &&
-		strings.TrimSpace(cfg.GoogleClientID) != "" && strings.TrimSpace(cfg.GoogleClientSecret) != "" &&
-		strings.TrimSpace(cfg.PublicURL) != "" {
-		registry.Register(NewGeminiOAuthAdapter(cfg))
+	registry := &AuthRegistry{
+		adapters: map[string]AuthAdapter{},
+		methods:  map[string][]AuthMethodManifest{},
 	}
-	if cfg.WebAuthEnabled && cfg.DeepSeekGuidedEnabled {
-		registry.Register(NewDeepSeekGuidedAdapter())
-	}
-	if cfg.WebAuthEnabled && cfg.ChatGPTCodexExperimental &&
-		strings.TrimSpace(cfg.ExperimentalBridgeAck) == ExperimentalBridgeAcknowledgement {
-		registry.Register(NewChatGPTCodexAdapter(cfg))
-	}
+
+	gemini := NewGeminiOAuthAdapter(cfg)
+	registry.publish(gemini, geminiUnavailableReason(cfg))
+
+	deepSeek := NewDeepSeekGuidedAdapter()
+	registry.publish(deepSeek, deepSeekUnavailableReason(cfg))
+
+	chatGPT := NewChatGPTCodexAdapter(cfg)
+	registry.publish(chatGPT, chatGPTUnavailableReason(cfg))
 	return registry
+}
+
+func (r *AuthRegistry) publish(adapter AuthAdapter, unavailableReason string) {
+	if r == nil || adapter == nil {
+		return
+	}
+	method := adapter.Method()
+	method.Enabled = strings.TrimSpace(unavailableReason) == ""
+	method.UnavailableReason = strings.TrimSpace(unavailableReason)
+	r.catalog(adapter.Provider(), method)
+	if method.Enabled {
+		r.Register(adapter)
+	}
 }
 
 func (r *AuthRegistry) Register(adapter AuthAdapter) {
 	if r == nil || adapter == nil {
 		return
 	}
+	if r.adapters == nil {
+		r.adapters = map[string]AuthAdapter{}
+	}
 	r.adapters[authAdapterKey(adapter.Provider(), adapter.Method().Code)] = adapter
+	method := adapter.Method()
+	method.Enabled = true
+	method.UnavailableReason = ""
+	r.catalog(adapter.Provider(), method)
 }
 
 func (r *AuthRegistry) Adapter(provider string, method string) (AuthAdapter, bool) {
@@ -113,14 +135,7 @@ func (r *AuthRegistry) Methods(provider string) []AuthMethodManifest {
 		return nil
 	}
 	provider = strings.ToLower(strings.TrimSpace(provider))
-	items := []AuthMethodManifest{}
-	for _, adapter := range r.adapters {
-		if adapter.Provider() == provider {
-			method := adapter.Method()
-			method.Enabled = true
-			items = append(items, method)
-		}
-	}
+	items := append([]AuthMethodManifest(nil), r.methods[provider]...)
 	sort.Slice(items, func(i, j int) bool { return items[i].Code < items[j].Code })
 	return items
 }
@@ -135,4 +150,57 @@ func (r *AuthRegistry) MustAdapter(provider string, method string) (AuthAdapter,
 
 func authAdapterKey(provider string, method string) string {
 	return strings.ToLower(strings.TrimSpace(provider)) + "\x00" + strings.ToLower(strings.TrimSpace(method))
+}
+
+func (r *AuthRegistry) catalog(provider string, method AuthMethodManifest) {
+	if r.methods == nil {
+		r.methods = map[string][]AuthMethodManifest{}
+	}
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	for index := range r.methods[provider] {
+		if strings.EqualFold(r.methods[provider][index].Code, method.Code) {
+			r.methods[provider][index] = method
+			return
+		}
+	}
+	r.methods[provider] = append(r.methods[provider], method)
+}
+
+func geminiUnavailableReason(cfg AdapterConfig) string {
+	switch {
+	case !cfg.WebAuthEnabled:
+		return "管理员尚未开启网页登录授权。"
+	case !cfg.GeminiOAuthEnabled:
+		return "管理员尚未开启 Gemini Google OAuth。"
+	case strings.TrimSpace(cfg.PublicURL) == "":
+		return "部署端需要配置公开回调地址。"
+	case strings.TrimSpace(cfg.GoogleClientID) == "" || strings.TrimSpace(cfg.GoogleClientSecret) == "":
+		return "部署端需要配置 Google OAuth Client ID 与 Secret。"
+	default:
+		return ""
+	}
+}
+
+func deepSeekUnavailableReason(cfg AdapterConfig) string {
+	switch {
+	case !cfg.WebAuthEnabled:
+		return "管理员尚未开启网页登录授权。"
+	case !cfg.DeepSeekGuidedEnabled:
+		return "管理员尚未开启 DeepSeek 开放平台引导。"
+	default:
+		return ""
+	}
+}
+
+func chatGPTUnavailableReason(cfg AdapterConfig) string {
+	switch {
+	case !cfg.WebAuthEnabled:
+		return "管理员尚未开启网页登录授权。"
+	case !cfg.ChatGPTCodexExperimental:
+		return "管理员尚未开启 ChatGPT 登录实验能力。"
+	case strings.TrimSpace(cfg.ExperimentalBridgeAck) != ExperimentalBridgeAcknowledgement:
+		return "部署端尚未完成 ChatGPT 实验风险部署确认。"
+	default:
+		return ""
+	}
 }

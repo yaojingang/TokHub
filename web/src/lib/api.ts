@@ -852,6 +852,7 @@ export type AIConnectionAuthMethod = {
   completionMode: string;
   enabled: boolean;
   description: string;
+  unavailableReason?: string;
   riskNotice?: string;
   docsUrl?: string;
 };

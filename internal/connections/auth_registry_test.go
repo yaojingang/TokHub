@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-func TestAuthRegistryPublishesOnlyEnabledProviderMethods(t *testing.T) {
+func TestAuthRegistryPublishesAvailableAndUnavailableProviderMethods(t *testing.T) {
 	registry := NewAuthRegistry(AdapterConfig{
 		WebAuthEnabled:           true,
 		GeminiOAuthEnabled:       true,
@@ -41,6 +41,42 @@ func TestAuthRegistryPublishesOnlyEnabledProviderMethods(t *testing.T) {
 	if _, ok := disabled.Adapter("openai", "codex_oauth"); ok {
 		t.Fatal("ChatGPT Codex adapter ignored the deployment acknowledgement")
 	}
+	for _, test := range []struct {
+		provider string
+		method   string
+		reason   string
+	}{
+		{provider: "openai", method: "codex_oauth", reason: "部署确认"},
+		{provider: "gemini", method: "oauth", reason: "Google OAuth"},
+		{provider: "deepseek", method: "api_key_guided", reason: "管理员"},
+	} {
+		method := authMethodByCode(disabled.Methods(test.provider), test.method)
+		if method == nil {
+			t.Fatalf("%s method %s is missing from the capability catalog", test.provider, test.method)
+		}
+		if method.Enabled {
+			t.Fatalf("%s method %s was unexpectedly enabled", test.provider, test.method)
+		}
+		if !strings.Contains(method.UnavailableReason, test.reason) {
+			t.Fatalf("%s method %s reason %q does not contain %q", test.provider, test.method, method.UnavailableReason, test.reason)
+		}
+	}
+
+	manual := &AuthRegistry{}
+	manual.Register(NewDeepSeekGuidedAdapter())
+	method := authMethodByCode(manual.Methods("deepseek"), "api_key_guided")
+	if method == nil || !method.Enabled {
+		t.Fatal("manually registered adapters must remain visible in the method catalog")
+	}
+}
+
+func authMethodByCode(items []AuthMethodManifest, code string) *AuthMethodManifest {
+	for index := range items {
+		if items[index].Code == code {
+			return &items[index]
+		}
+	}
+	return nil
 }
 
 func TestGeminiOAuthExchangesAndRefreshesOfficialBearerMaterial(t *testing.T) {

@@ -480,7 +480,11 @@ export function AIConnectionsPage() {
           <div className="ai-provider-grid" aria-busy={loading}>
             {providers.map((provider) => {
               const enabledMethods = provider.authMethods.filter((method) => method.enabled);
-              const interactive = enabledMethods.some((method) => method.code !== "api_key");
+              const oauthEnabled = enabledMethods.some((method) => ["oauth", "codex_oauth"].includes(method.code));
+              const guidedEnabled = enabledMethods.some((method) => method.code === "api_key_guided");
+              const unavailableInteractive = unavailableInteractiveAuthMethods(provider);
+              const methodLabels = enabledMethods.map((method) => method.label);
+              if (unavailableInteractive.length > 0) methodLabels.push("登录能力待配置");
               return (
                 <button
                   className={`ai-provider-item ${selectedProviderCode === provider.code && setupOpen ? "selected" : ""}`}
@@ -491,9 +495,9 @@ export function AIConnectionsPage() {
                   <span className={`ai-provider-mark provider-${provider.code}`}>{providerMarks[provider.code] || provider.name.slice(0, 1)}</span>
                   <span className="ai-provider-copy">
                     <b>{provider.name}</b>
-                    <small>{enabledMethods.map((method) => method.label).join(" · ")}</small>
+                    <small>{methodLabels.join(" · ")}</small>
                   </span>
-                  <span className="ai-provider-action">{interactive ? "授权 / 密钥" : "密钥连接"}</span>
+                  <span className="ai-provider-action">{oauthEnabled ? "授权 / 密钥" : guidedEnabled ? "官网引导" : unavailableInteractive.length > 0 ? "授权待配置" : "密钥连接"}</span>
                 </button>
               );
             })}
@@ -537,6 +541,14 @@ export function AIConnectionsPage() {
                 </button>
               ))}
             </div>
+            {unavailableInteractiveAuthMethods(selectedProvider).length > 0 ? (
+              <div className="form-notice" role="status">
+                <b>其他登录方式待部署配置</b>
+                {unavailableInteractiveAuthMethods(selectedProvider).map((method) => (
+                  <p key={method.code}><strong>{method.label}</strong>：{method.unavailableReason || "当前部署尚未启用。"}</p>
+                ))}
+              </div>
+            ) : null}
 
             <form className="ai-setup-form" onSubmit={submitConnection}>
               <label>
@@ -903,6 +915,10 @@ function preferredAuthMethod(provider: AIConnectionProvider) {
       description: "使用官方开发者 API Key。",
       docsUrl: provider.docsUrl
     };
+}
+
+function unavailableInteractiveAuthMethods(provider: AIConnectionProvider) {
+  return provider.authMethods.filter((method) => !method.enabled && method.code !== "api_key");
 }
 
 function connectionDraftForProvider(provider: AIConnectionProvider, authMethod: string): ConnectionDraft {
