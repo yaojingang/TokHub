@@ -149,7 +149,7 @@ curl -b cookies.txt -X POST http://localhost:8080/api/me/ai-connections \
 
 ### OAuth 与开放平台引导
 
-敏感授权操作先调用 `POST /api/me/ai-auth/step-up`，提交当前 TokHub 密码。返回的 grant 与当前用户、登录 Session 绑定，10 分钟内只能使用一次。
+Gemini OAuth、ChatGPT Codex 和开放平台引导等敏感授权操作先调用 `POST /api/me/ai-auth/step-up`，提交当前 TokHub 密码。返回的 grant 与当前用户、登录 Session 绑定，10 分钟内只能使用一次。
 
 随后调用 `POST /api/me/ai-authorizations`：
 
@@ -183,14 +183,17 @@ DeepSeek 网页账号流程使用 `method: "deepseek_web_token"` 开始授权。
 {
   "provider": "deepseek",
   "method": "deepseek_web_token",
-  "stepUpGrant": "<single-use-grant>",
   "displayName": "我的 DeepSeek 网页账号",
   "models": ["deepseek-v4-flash"],
   "termsAckVersion": "deepseek-web-session-experimental-v1"
 }
 ```
 
-响应的 `completionMode` 为 `paste_token`，`authorizationUrl` 指向 `https://chat.deepseek.com`。用户完成网页登录后，从该站点的 Local Storage `userToken` 对象复制 `value`，再提交：
+该流程使用当前 TokHub 登录 Session、CSRF、个人工作区隔离、实验条款确认和授权频率限制，不要求在识别前重复输入 TokHub 密码。响应的 `completionMode` 为 `paste_token`，`authorizationUrl` 指向 `https://chat.deepseek.com`。
+
+安装 TokHub DeepSeek Chrome 扩展后，用户点击“一键读取当前登录态”，扩展会在已打开的 DeepSeek 标签页中读取 `localStorage.userToken.value`，通过带随机请求 ID 的同源页面消息直接传给 TokHub。扩展只接受 `tokhub.me`、`www.tokhub.me` 及固定本地开发端口的请求，不读取 Cookie、密码或完整 Local Storage，也不持久化 Token。
+
+未安装扩展时，用户可以从 DeepSeek Local Storage 的 `userToken` 对象复制 `value`，再提交：
 
 ```json
 {

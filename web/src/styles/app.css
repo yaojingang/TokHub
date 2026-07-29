@@ -13016,7 +13016,29 @@ body:has(.admin-login-wrap) {
 .ai-deepseek-entry-actions {
   display: flex;
   flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 9px;
+}
+
+.ai-deepseek-extension-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 11px;
+  border: 1px solid #c9d9f4;
+  border-radius: 9px;
+  background: #eef4ff;
+  color: #365b94;
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.ai-deepseek-extension-status a {
+  flex: 0 0 auto;
+  color: var(--brand);
+  font-weight: 750;
 }
 
 .ai-connection-workspace {
@@ -13726,6 +13748,11 @@ body:has(.admin-login-wrap) {
   .ai-deepseek-entry-actions {
     display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .ai-deepseek-extension-status {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .ai-setup-footer .btn {

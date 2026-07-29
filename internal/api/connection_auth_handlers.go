@@ -121,9 +121,11 @@ func (s *Server) startAIConnectionAuthorization(w http.ResponseWriter, r *http.R
 		writeError(w, r, http.StatusUnauthorized, "unauthorized", "Login required")
 		return
 	}
-	if err := s.authzStore.ConsumeStepUp(r.Context(), request.StepUpGrant, user.ID, sessionHash); err != nil {
-		writeError(w, r, http.StatusUnauthorized, "step_up_required", "请重新输入 TokHub 密码完成二次验证")
-		return
+	if requiresAIConnectionAuthorizationStartStepUp(method) {
+		if err := s.authzStore.ConsumeStepUp(r.Context(), request.StepUpGrant, user.ID, sessionHash); err != nil {
+			writeError(w, r, http.StatusUnauthorized, "step_up_required", "请重新输入 TokHub 密码完成二次验证")
+			return
+		}
 	}
 	resolved, err := connections.ResolveProvider(connections.ResolveProviderInput{Code: provider})
 	if err != nil {
@@ -296,6 +298,10 @@ func (s *Server) completeAIConnectionAuthorization(w http.ResponseWriter, r *htt
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"connection": connection, "authorizationId": authorizationID})
+}
+
+func requiresAIConnectionAuthorizationStartStepUp(method string) bool {
+	return method != connections.AuthModeDeepSeekWeb
 }
 
 func (s *Server) googleAIAuthorizationCallback(w http.ResponseWriter, r *http.Request) {

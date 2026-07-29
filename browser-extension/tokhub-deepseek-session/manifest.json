@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "TokHub DeepSeek 登录态助手",
+  "version": "0.1.0",
+  "description": "在用户明确点击后读取 DeepSeek userToken.value，并安全传递给 TokHub。",
+  "minimum_chrome_version": "102",
+  "permissions": [
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://chat.deepseek.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost/*",
+        "http://127.0.0.1/*",
+        "https://tokhub.me/*",
+        "https://www.tokhub.me/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "action": {
+    "default_title": "TokHub DeepSeek 登录态助手"
+  }
+}

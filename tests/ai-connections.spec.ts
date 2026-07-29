@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 test("AI connection center exposes seven official developer products and a responsive setup flow", async ({ page }) => {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -34,6 +34,8 @@ test("AI connection center exposes seven official developer products and a respo
 test("AI connection center renders Gemini OAuth, DeepSeek web login, guided key, and ChatGPT experimental controls", async ({ page }) => {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   let deepSeekStatusPolls = 0;
+  let stepUpCalls = 0;
+  const deepSeekCompleteTokens: string[] = [];
   const providers = [
     provider("gemini", "Gemini", [
       authMethod("api_key", "官方 API Key", "stable"),
@@ -71,23 +73,18 @@ test("AI connection center renders Gemini OAuth, DeepSeek web login, guided key,
     await route.continue();
   });
   await page.route("**/api/me/ai-auth/step-up", async (route) => {
-    const request = route.request().postDataJSON() as { password?: string };
-    if (request.password === "wrong-password") {
-      await route.fulfill({
-        status: 401,
-        contentType: "application/json",
-        body: JSON.stringify({ error: { code: "step_up_failed", message: "当前账号密码验证失败" } })
-      });
-      return;
-    }
+    stepUpCalls += 1;
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({ grant: "step_test", expiresAt: new Date(Date.now() + 600_000).toISOString() })
     });
   });
   await page.route("**/api/me/ai-authorizations", async (route) => {
-    const request = route.request().postDataJSON() as { method?: string };
+    const request = route.request().postDataJSON() as { method?: string; stepUpGrant?: string };
     const deepSeekWeb = request.method === "deepseek_web_token";
+    if (deepSeekWeb) {
+      expect(request.stepUpGrant).toBeUndefined();
+    }
     await route.fulfill({
       status: 201,
       contentType: "application/json",
@@ -118,6 +115,15 @@ test("AI connection center renders Gemini OAuth, DeepSeek web login, guided key,
     });
   });
   await page.route("**/api/me/ai-authorizations/authz_test/complete", async (route) => {
+    const request = route.request().postDataJSON() as { deepSeekToken?: string };
+    deepSeekCompleteTokens.push(request.deepSeekToken || "");
+    if (request.deepSeekToken === "extension-token-value-for-deepseek-session") {
+      await route.fulfill({
+        contentType: "application/json",
+        body: JSON.stringify({ connection: { id: "aic_extension_test" }, authorizationId: "authz_test" })
+      });
+      return;
+    }
     await route.fulfill({
       status: 502,
       contentType: "application/json",
@@ -126,6 +132,28 @@ test("AI connection center renders Gemini OAuth, DeepSeek web login, guided key,
   });
   await page.context().route("https://chat.deepseek.com/**", async (route) => {
     await route.fulfill({ contentType: "text/html", body: "<title>DeepSeek</title><main>DeepSeek login</main>" });
+  });
+  await page.addInitScript(() => {
+    const browserWindow = window as typeof window & {
+      __TOKHUB_DEEPSEEK_EXTENSION_TEST__: { status: string; token?: string };
+    };
+    browserWindow.__TOKHUB_DEEPSEEK_EXTENSION_TEST__ = { status: "not_logged_in" };
+    window.addEventListener("message", (event) => {
+      if (
+        event.source !== window ||
+        event.data?.source !== "tokhub-web" ||
+        event.data?.type !== "TOKHUB_DEEPSEEK_SESSION_REQUEST"
+      ) {
+        return;
+      }
+      window.postMessage({
+        source: "tokhub-extension",
+        type: "TOKHUB_DEEPSEEK_SESSION_RESPONSE",
+        version: 1,
+        requestId: event.data.requestId,
+        ...browserWindow.__TOKHUB_DEEPSEEK_EXTENSION_TEST__
+      }, window.location.origin);
+    });
   });
 
   await page.goto("/login?next=%2Fconsole%2Fconnections");
@@ -152,20 +180,9 @@ test("AI connection center renders Gemini OAuth, DeepSeek web login, guided key,
   await expect(deepSeekConsumerLogin).toContainText("实验");
   await expect(page.locator(".ai-risk-notice")).toContainText("DeepSeek 网页私有协议");
   const setup = page.locator(".ai-setup-panel");
-  let unexpectedPopupCount = 0;
-  const countUnexpectedPopup = async (popup: Page) => {
-    unexpectedPopupCount += 1;
-    await popup.close();
-  };
-  page.on("popup", countUnexpectedPopup);
-  await page.getByLabel(/TokHub 登录密码/).fill("wrong-password");
+  await expect(setup.getByLabel(/TokHub 登录密码/)).toHaveCount(0);
   await page.locator(".ai-experimental-confirm input").check();
-  await setup.locator('button[type="submit"]').click();
-  await expect(setup.getByRole("alert")).toContainText("当前账号密码验证失败");
-  await expect.poll(() => unexpectedPopupCount).toBe(0);
-  page.off("popup", countUnexpectedPopup);
 
-  await page.getByLabel(/TokHub 登录密码/).fill("local-password");
   const deepSeekLoginLink = page.getByRole("link", { name: "1. 打开 DeepSeek 登录", exact: true });
   await expect(deepSeekLoginLink).toHaveAttribute("href", "https://chat.deepseek.com");
   const deepSeekLoginPagePromise = page.waitForEvent("popup");
@@ -173,8 +190,12 @@ test("AI connection center renders Gemini OAuth, DeepSeek web login, guided key,
   const deepSeekLoginPage = await deepSeekLoginPagePromise;
   await expect(deepSeekLoginPage).toHaveURL("https://chat.deepseek.com/");
   await deepSeekLoginPage.close();
-  await page.getByRole("button", { name: "2. 我已登录，继续识别", exact: true }).click();
-  await expect(page.getByText("登录 DeepSeek 并导入当前登录态")).toBeVisible();
+  await expect(page.getByRole("link", { name: "下载 Chrome 识别扩展", exact: true }))
+    .toHaveAttribute("href", "/downloads/tokhub-deepseek-session-extension.zip");
+  await page.getByRole("button", { name: "2. 一键读取当前登录态", exact: true }).click();
+  await expect(page.getByText("识别 DeepSeek 当前登录态")).toBeVisible();
+  await expect(page.getByText(/已找到 DeepSeek 网页，但没有读取到可用登录态/)).toBeVisible();
+  expect(stepUpCalls).toBe(0);
   await expect(page.getByText("浏览器阻止了授权窗口，请使用下方按钮继续。")).toHaveCount(0);
   await expect(page.getByText("复制当前账号的 userToken")).toBeVisible();
   await expect(page.getByText('copy(JSON.parse(localStorage.getItem("userToken")).value)')).toBeVisible();
@@ -185,8 +206,24 @@ test("AI connection center renders Gemini OAuth, DeepSeek web login, guided key,
   await tokenInput.fill("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.signature");
   await expect(recognizeButton).toBeEnabled();
   await recognizeButton.click();
-  await expect(page.getByText(/本次识别已结束，请重新点击“打开 DeepSeek 并开始”/)).toBeVisible();
-  await expect(page.getByText("登录 DeepSeek 并导入当前登录态")).toHaveCount(0);
+  await expect(page.getByText(/本次识别已结束，请重新点击“一键读取当前登录态”/)).toBeVisible();
+  await expect(page.getByText("识别 DeepSeek 当前登录态")).toHaveCount(0);
+
+  await page.evaluate(() => {
+    const browserWindow = window as typeof window & {
+      __TOKHUB_DEEPSEEK_EXTENSION_TEST__: { status: string; token?: string };
+    };
+    browserWindow.__TOKHUB_DEEPSEEK_EXTENSION_TEST__ = {
+      status: "ok",
+      token: "extension-token-value-for-deepseek-session"
+    };
+  });
+  await page.getByRole("button", { name: "2. 一键读取当前登录态", exact: true }).click();
+  await expect(page.getByText("DeepSeek 登录态验证通过，凭证已加密保存，个人连接已经可用。")).toBeVisible();
+  expect(deepSeekCompleteTokens).toEqual([
+    "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.signature",
+    "extension-token-value-for-deepseek-session"
+  ]);
   await page.waitForTimeout(1_800);
   expect(deepSeekStatusPolls).toBe(0);
 

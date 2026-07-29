@@ -20,6 +20,10 @@ import {
   stepUpAIConnectionAuthorization,
   validateAIConnection
 } from "../lib/api";
+import {
+  DeepSeekExtensionStatus,
+  requestDeepSeekSessionFromExtension
+} from "../lib/deepseekExtension";
 
 type ConnectionDraft = {
   authMethod: string;
@@ -56,6 +60,7 @@ const providerMarks: Record<string, string> = {
 
 const authorizationTerminalStatuses = new Set(["completed", "failed", "cancelled", "expired"]);
 const deepSeekWebLoginURL = "https://chat.deepseek.com";
+const deepSeekExtensionDownloadURL = "/downloads/tokhub-deepseek-session-extension.zip";
 
 export function AIConnectionsPage() {
   const [providers, setProviders] = useState<AIConnectionProvider[]>([]);
@@ -79,6 +84,7 @@ export function AIConnectionsPage() {
   const [working, setWorking] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [deepSeekExtensionStatus, setDeepSeekExtensionStatus] = useState<DeepSeekExtensionStatus | "checking" | "">("");
 
   const selectedProvider = useMemo(
     () => providers.find((provider) => provider.code === selectedProviderCode),
@@ -116,6 +122,7 @@ export function AIConnectionsPage() {
     const preferred = preferredAuthMethod(selectedProvider);
     setDraft(connectionDraftForProvider(selectedProvider, preferred.code));
     setAuthorization(null);
+    setDeepSeekExtensionStatus("");
   }, [selectedProvider, reauthorizeConnectionId]);
 
   useEffect(() => {
@@ -197,12 +204,14 @@ export function AIConnectionsPage() {
     setAuthorization(null);
     setError("");
     setNotice("");
+    setDeepSeekExtensionStatus("");
   }
 
   function chooseAuthMethod(method: AIConnectionAuthMethod) {
     if (!selectedProvider || !method.enabled || authorization) return;
     setDraft(connectionDraftForProvider(selectedProvider, method.code));
     setError("");
+    setDeepSeekExtensionStatus("");
   }
 
   async function submitConnection(event: FormEvent) {
@@ -251,12 +260,13 @@ export function AIConnectionsPage() {
     setWorking("authorize");
     setError("");
     setNotice("");
+    setDeepSeekExtensionStatus(deepSeekWeb ? "checking" : "");
     try {
-      const stepUp = await stepUpAIConnectionAuthorization(draft.password);
+      const stepUp = deepSeekWeb ? null : await stepUpAIConnectionAuthorization(draft.password);
       const started = await startAIConnectionAuthorization({
         provider: selectedProvider.code,
         method: selectedAuthMethod.code,
-        stepUpGrant: stepUp.grant,
+        stepUpGrant: stepUp?.grant,
         displayName: draft.displayName.trim(),
         projectId: draft.projectId.trim() || undefined,
         models: splitModels(draft.models),
@@ -265,13 +275,17 @@ export function AIConnectionsPage() {
       });
       setAuthorization(started);
       setDraft((current) => ({ ...current, password: "" }));
-      if (!deepSeekWeb) {
-        if (popup) {
-          popup.location.href = started.authorizationUrl;
-          popup.focus();
-        } else {
-          setNotice("浏览器阻止了授权窗口，请使用下方按钮继续。");
+      if (deepSeekWeb) {
+        const extensionResult = await requestDeepSeekSessionFromExtension();
+        setDeepSeekExtensionStatus(extensionResult.status);
+        if (extensionResult.status === "ok" && extensionResult.token) {
+          await completeDeepSeekWebTokenValue(started.id, extensionResult.token);
         }
+      } else if (popup) {
+        popup.location.href = started.authorizationUrl;
+        popup.focus();
+      } else {
+        setNotice("浏览器阻止了授权窗口，请使用下方按钮继续。");
       }
     } catch (err) {
       popup?.close();
@@ -303,12 +317,16 @@ export function AIConnectionsPage() {
 
   async function completeDeepSeekWebToken() {
     if (!authorization) return;
+    await completeDeepSeekWebTokenValue(authorization.id, draft.deepSeekToken);
+  }
+
+  async function completeDeepSeekWebTokenValue(authorizationID: string, token: string) {
     setWorking("complete");
     setError("");
     setNotice("");
     try {
-      const payload = await completeAIConnectionAuthorization(authorization.id, {
-        deepSeekToken: draft.deepSeekToken,
+      const payload = await completeAIConnectionAuthorization(authorizationID, {
+        deepSeekToken: token,
         termsAckVersion: "deepseek-web-session-experimental-v1"
       });
       const connections = await aiConnections();
@@ -318,11 +336,13 @@ export function AIConnectionsPage() {
       setSetupOpen(false);
       setReauthorizeConnectionId("");
       setDraft((current) => ({ ...current, deepSeekToken: "" }));
+      setDeepSeekExtensionStatus("");
       setNotice("DeepSeek 登录态验证通过，凭证已加密保存，个人连接已经可用。");
     } catch (err) {
       setDraft((current) => ({ ...current, deepSeekToken: "" }));
       setAuthorization(null);
-      setError(`${errorMessage(err)} 本次识别已结束，请重新点击“打开 DeepSeek 并开始”。`);
+      setDeepSeekExtensionStatus("");
+      setError(`${errorMessage(err)} 本次识别已结束，请重新点击“一键读取当前登录态”。`);
     } finally {
       setWorking("");
     }
@@ -334,6 +354,7 @@ export function AIConnectionsPage() {
     try {
       await cancelAIConnectionAuthorization(authorization.id);
       setAuthorization(null);
+      setDeepSeekExtensionStatus("");
       setNotice("本次授权已取消，临时状态已清理。");
     } catch (err) {
       setError(errorMessage(err));
@@ -348,6 +369,7 @@ export function AIConnectionsPage() {
     setSelectedProviderCode(provider.code);
     setReauthorizeConnectionId(connection.id);
     setAuthorization(null);
+    setDeepSeekExtensionStatus("");
     setDraft({
       ...connectionDraftForProvider(provider, connection.authMethod),
       displayName: connection.displayName,
@@ -625,13 +647,16 @@ export function AIConnectionsPage() {
                 </>
               ) : null}
 
+              {(usesInteractiveAuthorization || (usesGuidedAPIKey && !authorization)) && draft.authMethod !== "deepseek_web_token" ? (
+                <label className="ai-form-wide">
+                  <span>TokHub 登录密码 <em>用于本次敏感操作二次验证</em></span>
+                  <input className="input" type="password" autoComplete="current-password" required value={draft.password} onChange={(event) => setDraft({ ...draft, password: event.target.value })} />
+                  <small>密码只提交给 TokHub，不会发送给 AI 服务商。</small>
+                </label>
+              ) : null}
+
               {(usesInteractiveAuthorization || (usesGuidedAPIKey && !authorization)) ? (
                 <>
-                  <label className="ai-form-wide">
-                    <span>TokHub 登录密码 <em>用于本次敏感操作二次验证</em></span>
-                    <input className="input" type="password" autoComplete="current-password" required value={draft.password} onChange={(event) => setDraft({ ...draft, password: event.target.value })} />
-                    <small>密码只提交给 TokHub，不会发送给 AI 服务商。</small>
-                  </label>
                   {isExperimentalAuthorization(draft.authMethod) ? (
                     <label className="ai-experimental-confirm ai-form-wide">
                       <input type="checkbox" required checked={draft.confirmExperimental} onChange={(event) => setDraft({ ...draft, confirmExperimental: event.target.checked })} />
@@ -671,12 +696,22 @@ export function AIConnectionsPage() {
                     </div>
                   ) : null}
                   {draft.authMethod === "deepseek_web_token" ? (
-                    <DeepSeekTokenGuide
-                      token={draft.deepSeekToken}
-                      working={working === "complete"}
-                      onTokenChange={(deepSeekToken) => setDraft((current) => ({ ...current, deepSeekToken }))}
-                      onComplete={() => void completeDeepSeekWebToken()}
-                    />
+                    <>
+                      {deepSeekExtensionStatus ? (
+                        <div className="ai-deepseek-extension-status" role="status">
+                          <span>{deepSeekExtensionStatusMessage(deepSeekExtensionStatus)}</span>
+                          {deepSeekExtensionStatus === "extension_unavailable" ? (
+                            <a href={deepSeekExtensionDownloadURL} download>下载 Chrome 识别扩展</a>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      <DeepSeekTokenGuide
+                        token={draft.deepSeekToken}
+                        working={working === "complete"}
+                        onTokenChange={(deepSeekToken) => setDraft((current) => ({ ...current, deepSeekToken }))}
+                        onComplete={() => void completeDeepSeekWebToken()}
+                      />
+                    </>
                   ) : null}
                 </section>
               ) : null}
@@ -686,14 +721,15 @@ export function AIConnectionsPage() {
               {!authorization && draft.authMethod === "deepseek_web_token" ? (
                 <section className="ai-deepseek-entry ai-form-wide" aria-label="DeepSeek 网页登录步骤">
                   <div className="ai-deepseek-entry-copy">
-                    <b>先登录，再识别当前账号</b>
-                    <p>第一步独立打开 DeepSeek 网页；完成登录后返回这里，通过 TokHub 二次验证进入登录态识别引导。</p>
-                    <small>浏览器安全策略禁止普通网页跨域读取 DeepSeek 的登录数据。当前流程仅导入 userToken.value；一键读取需要安装并授权 TokHub 浏览器扩展。</small>
+                    <b>登录后，一键读取当前 Chrome 账号</b>
+                    <p>打开 DeepSeek 并完成登录，TokHub 扩展会在你点击时读取当前账号的 userToken.value，随后立即完成验证和加密保存。</p>
+                    <small>扩展不读取 Cookie、密码或完整 Local Storage，也不会持久化 Token。未安装扩展时可继续使用下方手动导入流程。</small>
                   </div>
                   <div className="ai-deepseek-entry-actions">
                     <a className="btn btn-ghost" href={deepSeekWebLoginURL} target="_blank" rel="noreferrer">1. 打开 DeepSeek 登录</a>
+                    <a className="btn btn-ghost" href={deepSeekExtensionDownloadURL} download>下载 Chrome 识别扩展</a>
                     <button className="btn btn-primary" disabled={!!working} type="submit">
-                      {working === "authorize" ? "正在验证…" : "2. 我已登录，继续识别"}
+                      {working === "authorize" || working === "complete" ? "正在读取并验证…" : "2. 一键读取当前登录态"}
                     </button>
                   </div>
                 </section>
@@ -1098,14 +1134,14 @@ function releaseLabel(release: string) {
 function authorizationTitle(method: string) {
   if (method === "api_key_guided") return "请在 DeepSeek 开放平台创建 API Key";
   if (method === "codex_oauth") return "请在新窗口完成 ChatGPT 登录";
-  if (method === "deepseek_web_token") return "登录 DeepSeek 并导入当前登录态";
+  if (method === "deepseek_web_token") return "识别 DeepSeek 当前登录态";
   return "正在等待 Google 授权结果";
 }
 
 function authorizationInstructions(method: string) {
   if (method === "api_key_guided") return "创建密钥后返回此页粘贴。TokHub 不接触 DeepSeek 网页登录态。";
   if (method === "codex_oauth") return "登录完成后复制浏览器最终停留的 localhost 地址，再粘贴到下方。";
-  if (method === "deepseek_web_token") return "按下方三步完成登录态识别，随后即可创建个人 API 中转。";
+  if (method === "deepseek_web_token") return "扩展读取失败时，可按下方三步手动导入 userToken.value。";
   return "授权窗口完成后会自动关闭，本页将继续验证账号和模型。";
 }
 
@@ -1113,9 +1149,28 @@ function submitLabel(method: string, hasAuthorization: boolean, working: string)
   if (working === "authorize") return "正在发起授权…";
   if (working === "create") return "正在连接并验证…";
   if (method === "api_key_guided" && !hasAuthorization) return "前往开放平台";
-  if (method === "deepseek_web_token") return "打开 DeepSeek 并开始";
+  if (method === "deepseek_web_token") return "一键读取当前登录态";
   if (method === "oauth" || method === "codex_oauth") return "打开登录授权";
   return "连接并验证";
+}
+
+function deepSeekExtensionStatusMessage(status: DeepSeekExtensionStatus | "checking"): string {
+  switch (status) {
+    case "checking":
+      return "正在请求 Chrome 扩展读取当前 DeepSeek 登录态…";
+    case "extension_unavailable":
+      return "未检测到 TokHub Chrome 识别扩展。安装扩展后可一键读取，也可以继续使用下方手动导入。";
+    case "deepseek_not_open":
+      return "没有找到已打开的 DeepSeek 网页。请先打开 DeepSeek、完成登录，再重新点击一键读取。";
+    case "not_logged_in":
+      return "已找到 DeepSeek 网页，但没有读取到可用登录态。请确认网页可以正常对话后重试。";
+    case "permission_denied":
+      return "Chrome 没有授予读取 DeepSeek 网页的权限。请在扩展管理页允许访问 chat.deepseek.com。";
+    case "read_failed":
+      return "扩展读取登录态失败。请刷新 DeepSeek 网页后重试，或使用下方手动导入。";
+    default:
+      return "";
+  }
 }
 
 function authorizationTermsVersion(method: string): string | undefined {

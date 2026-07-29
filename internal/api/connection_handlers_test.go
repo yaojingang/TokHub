@@ -35,6 +35,17 @@ func TestOAuthConnectionDisconnectRequiresPasswordStepUp(t *testing.T) {
 	}
 }
 
+func TestAuthorizationStartStepUpPolicySkipsOnlyDeepSeekSessionImport(t *testing.T) {
+	if requiresAIConnectionAuthorizationStartStepUp("deepseek_web_token") {
+		t.Fatal("DeepSeek browser session import required a TokHub password before login-state detection")
+	}
+	for _, method := range []string{"oauth", "codex_oauth", "api_key_guided"} {
+		if !requiresAIConnectionAuthorizationStartStepUp(method) {
+			t.Fatalf("%s authorization start skipped password step-up", method)
+		}
+	}
+}
+
 func TestStoredOAuthValidationRejectsMalformedBundleBeforeUpstream(t *testing.T) {
 	server := &Server{authRegistry: connections.NewAuthRegistry(connections.AdapterConfig{})}
 	_, err := server.validateStoredOAuthCredentialSet(

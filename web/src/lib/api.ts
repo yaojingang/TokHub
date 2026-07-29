@@ -1585,7 +1585,7 @@ export async function stepUpAIConnectionAuthorization(password: string): Promise
 export async function startAIConnectionAuthorization(input: {
   provider: string;
   method: string;
-  stepUpGrant: string;
+  stepUpGrant?: string;
   displayName: string;
   projectId?: string;
   models: string[];
