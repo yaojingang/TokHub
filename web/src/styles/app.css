@@ -12638,7 +12638,7 @@ body:has(.admin-login-wrap) {
 }
 
 @media (hover: hover) {
-  .ai-auth-method:hover {
+  .ai-auth-method:not(:disabled):hover {
     border-color: #92b4f4;
     background: #f6f9ff;
     box-shadow: 0 0 0 2px rgba(37, 99, 235, .08);
@@ -12648,6 +12648,23 @@ body:has(.admin-login-wrap) {
 .ai-auth-method:disabled {
   cursor: default;
   opacity: .72;
+}
+
+.ai-auth-method.unavailable {
+  border-style: dashed;
+  border-color: #d8dee8;
+  background: #f8fafc;
+  color: #647187;
+  opacity: 1;
+}
+
+.ai-auth-method.unavailable i {
+  background: #fff3d6;
+  color: #8a5a00;
+}
+
+.ai-auth-method.unavailable small {
+  color: #6f7b8d;
 }
 
 .ai-auth-method > span {

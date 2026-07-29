@@ -32,6 +32,19 @@ func TestAuthRegistryPublishesAvailableAndUnavailableProviderMethods(t *testing.
 	if _, ok := registry.Adapter("openai", "codex_oauth"); !ok {
 		t.Fatal("ChatGPT Codex adapter is missing")
 	}
+	consumerLogin := authMethodByCode(registry.Methods("deepseek"), "consumer_web_login")
+	if consumerLogin == nil {
+		t.Fatal("DeepSeek consumer login capability is missing from the catalog")
+	}
+	if consumerLogin.Enabled {
+		t.Fatal("DeepSeek consumer login must remain unavailable until an official authorization protocol exists")
+	}
+	if !strings.Contains(consumerLogin.UnavailableReason, "官方") {
+		t.Fatalf("unexpected DeepSeek consumer login reason: %q", consumerLogin.UnavailableReason)
+	}
+	if _, ok := registry.Adapter("deepseek", "consumer_web_login"); ok {
+		t.Fatal("DeepSeek consumer login must not register an executable adapter")
+	}
 
 	disabled := NewAuthRegistry(AdapterConfig{
 		WebAuthEnabled:           true,

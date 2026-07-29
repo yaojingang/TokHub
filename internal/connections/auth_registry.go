@@ -89,6 +89,7 @@ func NewAuthRegistry(cfg AdapterConfig) *AuthRegistry {
 
 	deepSeek := NewDeepSeekGuidedAdapter()
 	registry.publish(deepSeek, deepSeekUnavailableReason(cfg))
+	registry.catalog("deepseek", deepSeekConsumerLoginManifest())
 
 	chatGPT := NewChatGPTCodexAdapter(cfg)
 	registry.publish(chatGPT, chatGPTUnavailableReason(cfg))

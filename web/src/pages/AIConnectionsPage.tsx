@@ -484,7 +484,10 @@ export function AIConnectionsPage() {
               const guidedEnabled = enabledMethods.some((method) => method.code === "api_key_guided");
               const unavailableInteractive = unavailableInteractiveAuthMethods(provider);
               const methodLabels = enabledMethods.map((method) => method.label);
-              if (unavailableInteractive.length > 0) methodLabels.push("登录能力待配置");
+              for (const method of unavailableInteractive) {
+                const label = unavailableAuthMethodSummary(method);
+                if (!methodLabels.includes(label)) methodLabels.push(label);
+              }
               return (
                 <button
                   className={`ai-provider-item ${selectedProviderCode === provider.code && setupOpen ? "selected" : ""}`}
@@ -523,32 +526,25 @@ export function AIConnectionsPage() {
             </div>
 
             <div className="ai-auth-methods" role="radiogroup" aria-label="连接方式">
-              {selectedProvider.authMethods.filter((method) => method.enabled).map((method) => (
+              {selectedProvider.authMethods.map((method) => (
                 <button
-                  className={`ai-auth-method ${draft.authMethod === method.code ? "selected" : ""}`}
+                  className={`ai-auth-method ${method.enabled && draft.authMethod === method.code ? "selected" : ""} ${method.enabled ? "" : "unavailable"}`}
                   type="button"
                   role="radio"
-                  aria-checked={draft.authMethod === method.code}
-                  disabled={!!authorization || (!!reauthorizeConnectionId && draft.authMethod !== method.code)}
+                  aria-checked={method.enabled && draft.authMethod === method.code}
+                  aria-disabled={!method.enabled}
+                  disabled={!method.enabled || !!authorization || (!!reauthorizeConnectionId && draft.authMethod !== method.code)}
                   key={method.code}
                   onClick={() => chooseAuthMethod(method)}
                 >
                   <span>
                     <b>{method.label}</b>
-                    <i>{releaseLabel(method.release)}</i>
+                    <i>{method.enabled ? releaseLabel(method.release) : unavailableReleaseLabel(method)}</i>
                   </span>
-                  <small>{method.description}</small>
+                  <small>{method.enabled ? method.description : `${method.description} ${method.unavailableReason || "当前暂不可用。"}`}</small>
                 </button>
               ))}
             </div>
-            {unavailableInteractiveAuthMethods(selectedProvider).length > 0 ? (
-              <div className="form-notice" role="status">
-                <b>其他登录方式待部署配置</b>
-                {unavailableInteractiveAuthMethods(selectedProvider).map((method) => (
-                  <p key={method.code}><strong>{method.label}</strong>：{method.unavailableReason || "当前部署尚未启用。"}</p>
-                ))}
-              </div>
-            ) : null}
 
             <form className="ai-setup-form" onSubmit={submitConnection}>
               <label>
@@ -921,6 +917,14 @@ function unavailableInteractiveAuthMethods(provider: AIConnectionProvider) {
   return provider.authMethods.filter((method) => !method.enabled && method.code !== "api_key");
 }
 
+function unavailableAuthMethodSummary(method: AIConnectionAuthMethod) {
+  return method.release === "unavailable" ? "消费者登录未开放" : "登录能力待配置";
+}
+
+function unavailableReleaseLabel(method: AIConnectionAuthMethod) {
+  return method.release === "unavailable" ? "官方未开放" : "待配置";
+}
+
 function connectionDraftForProvider(provider: AIConnectionProvider, authMethod: string): ConnectionDraft {
   return {
     ...emptyConnectionDraft,
@@ -944,6 +948,7 @@ function releaseLabel(release: string) {
   switch (release) {
     case "experimental": return "实验";
     case "preview": return "预览";
+    case "unavailable": return "官方未开放";
     default: return "稳定";
   }
 }
