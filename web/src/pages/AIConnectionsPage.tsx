@@ -55,6 +55,7 @@ const providerMarks: Record<string, string> = {
 };
 
 const authorizationTerminalStatuses = new Set(["completed", "failed", "cancelled", "expired"]);
+const deepSeekWebLoginURL = "https://chat.deepseek.com";
 
 export function AIConnectionsPage() {
   const [providers, setProviders] = useState<AIConnectionProvider[]>([]);
@@ -244,11 +245,9 @@ export function AIConnectionsPage() {
   async function beginAuthorization() {
     if (!selectedProvider || !selectedAuthMethod) return;
     const deepSeekWeb = draft.authMethod === "deepseek_web_token";
-    const popup = window.open(
-      "",
-      deepSeekWeb ? "_blank" : "tokhub-ai-authorization",
-      deepSeekWeb ? undefined : "popup,width=760,height=820"
-    );
+    const popup = deepSeekWeb
+      ? null
+      : window.open("", "tokhub-ai-authorization", "popup,width=760,height=820");
     setWorking("authorize");
     setError("");
     setNotice("");
@@ -266,11 +265,13 @@ export function AIConnectionsPage() {
       });
       setAuthorization(started);
       setDraft((current) => ({ ...current, password: "" }));
-      if (popup) {
-        popup.location.href = started.authorizationUrl;
-        popup.focus();
-      } else {
-        setNotice("浏览器阻止了授权窗口，请使用下方按钮继续。");
+      if (!deepSeekWeb) {
+        if (popup) {
+          popup.location.href = started.authorizationUrl;
+          popup.focus();
+        } else {
+          setNotice("浏览器阻止了授权窗口，请使用下方按钮继续。");
+        }
       }
     } catch (err) {
       popup?.close();
@@ -502,7 +503,7 @@ export function AIConnectionsPage() {
           <span className="ai-safety-meta">AES-256-GCM · 单次授权 · 个人隔离</span>
         </section>
 
-        {error ? <div className="form-error ai-live-message" role="alert">{error}</div> : null}
+        {error && !setupOpen ? <div className="form-error ai-live-message" role="alert">{error}</div> : null}
         {notice ? <div className="form-notice ai-live-message" role="status">{notice}</div> : null}
 
         <section className="ai-provider-section">
@@ -680,14 +681,32 @@ export function AIConnectionsPage() {
                 </section>
               ) : null}
 
-              <div className="ai-setup-footer ai-form-wide">
-                <a href={selectedAuthMethod?.docsUrl || selectedProvider.docsUrl} target="_blank" rel="noreferrer">查看官方说明 ↗</a>
-                {!authorization || (usesGuidedAPIKey && authorization) ? (
-                  <button className="btn btn-primary" disabled={!!working} type="submit">
-                    {submitLabel(draft.authMethod, !!authorization, working)}
-                  </button>
-                ) : null}
-              </div>
+              {error ? <div className="form-error ai-setup-error ai-form-wide" role="alert">{error}</div> : null}
+
+              {!authorization && draft.authMethod === "deepseek_web_token" ? (
+                <section className="ai-deepseek-entry ai-form-wide" aria-label="DeepSeek 网页登录步骤">
+                  <div className="ai-deepseek-entry-copy">
+                    <b>先登录，再识别当前账号</b>
+                    <p>第一步独立打开 DeepSeek 网页；完成登录后返回这里，通过 TokHub 二次验证进入登录态识别引导。</p>
+                    <small>浏览器安全策略禁止普通网页跨域读取 DeepSeek 的登录数据。当前流程仅导入 userToken.value；一键读取需要安装并授权 TokHub 浏览器扩展。</small>
+                  </div>
+                  <div className="ai-deepseek-entry-actions">
+                    <a className="btn btn-ghost" href={deepSeekWebLoginURL} target="_blank" rel="noreferrer">1. 打开 DeepSeek 登录</a>
+                    <button className="btn btn-primary" disabled={!!working} type="submit">
+                      {working === "authorize" ? "正在验证…" : "2. 我已登录，继续识别"}
+                    </button>
+                  </div>
+                </section>
+              ) : (
+                <div className="ai-setup-footer ai-form-wide">
+                  <a href={selectedAuthMethod?.docsUrl || selectedProvider.docsUrl} target="_blank" rel="noreferrer">查看官方说明 ↗</a>
+                  {!authorization || (usesGuidedAPIKey && authorization) ? (
+                    <button className="btn btn-primary" disabled={!!working} type="submit">
+                      {submitLabel(draft.authMethod, !!authorization, working)}
+                    </button>
+                  ) : null}
+                </div>
+              )}
             </form>
           </section>
         ) : null}

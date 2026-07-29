@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 test("AI connection center exposes seven official developer products and a responsive setup flow", async ({ page }) => {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -71,6 +71,15 @@ test("AI connection center renders Gemini OAuth, DeepSeek web login, guided key,
     await route.continue();
   });
   await page.route("**/api/me/ai-auth/step-up", async (route) => {
+    const request = route.request().postDataJSON() as { password?: string };
+    if (request.password === "wrong-password") {
+      await route.fulfill({
+        status: 401,
+        contentType: "application/json",
+        body: JSON.stringify({ error: { code: "step_up_failed", message: "当前账号密码验证失败" } })
+      });
+      return;
+    }
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({ grant: "step_test", expiresAt: new Date(Date.now() + 600_000).toISOString() })
@@ -115,6 +124,9 @@ test("AI connection center renders Gemini OAuth, DeepSeek web login, guided key,
       body: JSON.stringify({ error: { message: "DeepSeek 登录态验证失败，请重新登录 DeepSeek 后复制新的 userToken" } })
     });
   });
+  await page.context().route("https://chat.deepseek.com/**", async (route) => {
+    await route.fulfill({ contentType: "text/html", body: "<title>DeepSeek</title><main>DeepSeek login</main>" });
+  });
 
   await page.goto("/login?next=%2Fconsole%2Fconnections");
   await page.getByRole("button", { name: "注册新账号", exact: true }).click();
@@ -139,13 +151,31 @@ test("AI connection center renders Gemini OAuth, DeepSeek web login, guided key,
   await expect(deepSeekConsumerLogin).toHaveAttribute("aria-checked", "true");
   await expect(deepSeekConsumerLogin).toContainText("实验");
   await expect(page.locator(".ai-risk-notice")).toContainText("DeepSeek 网页私有协议");
-  await page.getByLabel(/TokHub 登录密码/).fill("local-password");
+  const setup = page.locator(".ai-setup-panel");
+  let unexpectedPopupCount = 0;
+  const countUnexpectedPopup = async (popup: Page) => {
+    unexpectedPopupCount += 1;
+    await popup.close();
+  };
+  page.on("popup", countUnexpectedPopup);
+  await page.getByLabel(/TokHub 登录密码/).fill("wrong-password");
   await page.locator(".ai-experimental-confirm input").check();
-  const popupPromise = page.waitForEvent("popup");
-  await page.getByRole("button", { name: "打开 DeepSeek 并开始", exact: true }).click();
-  const popup = await popupPromise;
-  await popup.close();
+  await setup.locator('button[type="submit"]').click();
+  await expect(setup.getByRole("alert")).toContainText("当前账号密码验证失败");
+  await expect.poll(() => unexpectedPopupCount).toBe(0);
+  page.off("popup", countUnexpectedPopup);
+
+  await page.getByLabel(/TokHub 登录密码/).fill("local-password");
+  const deepSeekLoginLink = page.getByRole("link", { name: "1. 打开 DeepSeek 登录", exact: true });
+  await expect(deepSeekLoginLink).toHaveAttribute("href", "https://chat.deepseek.com");
+  const deepSeekLoginPagePromise = page.waitForEvent("popup");
+  await deepSeekLoginLink.click();
+  const deepSeekLoginPage = await deepSeekLoginPagePromise;
+  await expect(deepSeekLoginPage).toHaveURL("https://chat.deepseek.com/");
+  await deepSeekLoginPage.close();
+  await page.getByRole("button", { name: "2. 我已登录，继续识别", exact: true }).click();
   await expect(page.getByText("登录 DeepSeek 并导入当前登录态")).toBeVisible();
+  await expect(page.getByText("浏览器阻止了授权窗口，请使用下方按钮继续。")).toHaveCount(0);
   await expect(page.getByText("复制当前账号的 userToken")).toBeVisible();
   await expect(page.getByText('copy(JSON.parse(localStorage.getItem("userToken")).value)')).toBeVisible();
   const tokenInput = page.getByPlaceholder("粘贴 userToken 的 value");

@@ -12973,6 +12973,52 @@ body:has(.admin-login-wrap) {
   font-weight: 700;
 }
 
+.ai-setup-error {
+  margin: 0;
+}
+
+.ai-deepseek-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 15px;
+  border: 1px solid #c9d9f4;
+  border-radius: 12px;
+  background: #f6f9ff;
+}
+
+.ai-deepseek-entry-copy {
+  min-width: 0;
+}
+
+.ai-deepseek-entry-copy b {
+  display: block;
+  color: #214d9c;
+  font-size: 12px;
+}
+
+.ai-deepseek-entry-copy p {
+  margin: 4px 0 0;
+  color: #506888;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.ai-deepseek-entry-copy small {
+  display: block;
+  margin-top: 6px;
+  color: #6f7f96;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.ai-deepseek-entry-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 9px;
+}
+
 .ai-connection-workspace {
   display: grid;
   grid-template-columns: minmax(260px, 330px) minmax(0, 1fr);
@@ -13672,7 +13718,21 @@ body:has(.admin-login-wrap) {
     flex-direction: column;
   }
 
+  .ai-deepseek-entry {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ai-deepseek-entry-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
   .ai-setup-footer .btn {
+    justify-content: center;
+  }
+
+  .ai-deepseek-entry-actions .btn {
     justify-content: center;
   }
 
