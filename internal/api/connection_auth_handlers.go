@@ -286,6 +286,9 @@ func (s *Server) completeAIConnectionAuthorization(w http.ResponseWriter, r *htt
 				status = http.StatusServiceUnavailable
 				message = "DeepSeek 网页协议桥暂时不可用，请稍后重试"
 			}
+			if errors.Is(err, connections.ErrCredentialRejected) {
+				message = "DeepSeek 网页接口拒绝了验证请求，请检查模型 ID，或稍后重试"
+			}
 			writeError(w, r, status, "deepseek_web_authorization_failed", message)
 			return
 		}
@@ -418,6 +421,7 @@ func (s *Server) finishAIConnectionAuthorization(ctx context.Context, transactio
 		resolved.Manifest.ValidationMode = "generation"
 		resolved.Manifest.GenerationKind = "chat"
 		resolved.Manifest.ProductLine = "DeepSeek Web"
+		delete(resolved.ProviderConfig, "pathMode")
 		resolved.ProviderConfig["experimental"] = true
 		resolved.ProviderConfig["bridge"] = "ds2api"
 		resolved.ProviderConfig["bridgeVersion"] = connections.DeepSeekWebAdapterVersion()
@@ -429,10 +433,7 @@ func (s *Server) finishAIConnectionAuthorization(ctx context.Context, transactio
 	}
 	validation := s.validateAuthorizedCredentialSet(ctx, resolved, transaction.Models, material)
 	if transaction.Method == "deepseek_web_token" && !validation.OK {
-		validationErr := connections.ErrCredentialTemporary
-		if validation.ErrorType == "upstream_auth_error" || validation.ErrorType == "upstream_rejected" {
-			validationErr = connections.ErrCredentialReauth
-		}
+		validationErr := deepSeekValidationCredentialError(validation.ErrorType)
 		_ = s.repo.FailAIAuthorizationAttempt(
 			ctx,
 			transaction.UserID,
@@ -660,10 +661,23 @@ func authorizationErrorCode(err error) string {
 		return "reauth_required"
 	case errors.Is(err, connections.ErrCredentialTemporary):
 		return "provider_temporary"
+	case errors.Is(err, connections.ErrCredentialRejected):
+		return "provider_rejected"
 	case errors.Is(err, connections.ErrAdapterDisabled):
 		return "adapter_disabled"
 	default:
 		return "authorization_failed"
+	}
+}
+
+func deepSeekValidationCredentialError(errorType string) error {
+	switch strings.TrimSpace(errorType) {
+	case "upstream_auth_error":
+		return connections.ErrCredentialReauth
+	case "upstream_rejected":
+		return connections.ErrCredentialRejected
+	default:
+		return connections.ErrCredentialTemporary
 	}
 }
 

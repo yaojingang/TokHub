@@ -19,6 +19,7 @@ var (
 	ErrCredentialReauth           = errors.New("credential requires reauthorization")
 	ErrCredentialIdentityMismatch = errors.New("credential identity does not match the existing connection")
 	ErrCredentialTemporary        = errors.New("credential provider is temporarily unavailable")
+	ErrCredentialRejected         = errors.New("credential validation request was rejected")
 	ErrCredentialUnsupported      = errors.New("credential operation is unsupported")
 )
 

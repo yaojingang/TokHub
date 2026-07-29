@@ -712,6 +712,11 @@ func TestStreamWithAuthRunsDeepSeekWebSessionThroughPinnedBridge(t *testing.T) {
 		Type:     "openai",
 		Endpoint: "https://user-controlled.example.test",
 		Model:    "deepseek-chat",
+		ProviderConfig: map[string]any{
+			// Existing DeepSeek web connections inherited this official-API
+			// routing mode before the bridge-specific override was added.
+			"pathMode": "direct",
+		},
 	}, connections.AuthMaterial{
 		Mode:     connections.AuthModeDeepSeekWeb,
 		Endpoint: server.URL,

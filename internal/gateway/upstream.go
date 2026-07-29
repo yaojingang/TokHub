@@ -338,12 +338,19 @@ func (c *UpstreamClient) newRequestWithAuth(ctx context.Context, upstream Upstre
 	if strings.TrimSpace(material.Endpoint) != "" {
 		upstream.Endpoint = material.Endpoint
 	}
-	if material.Mode == connections.AuthModeCodexOAuth {
+	if material.Mode == connections.AuthModeCodexOAuth || material.Mode == connections.AuthModeDeepSeekWeb {
 		config := make(map[string]any, len(upstream.ProviderConfig)+1)
 		for key, value := range upstream.ProviderConfig {
 			config[key] = value
 		}
-		config["pathMode"] = "direct"
+		if material.Mode == connections.AuthModeCodexOAuth {
+			config["pathMode"] = "direct"
+		} else {
+			// DeepSeek's official API uses root-level OpenAI paths, while the
+			// isolated DS2API bridge exposes the standard /v1 routes. Removing
+			// an inherited direct mode also repairs already-saved web sessions.
+			delete(config, "pathMode")
+		}
 		upstream.ProviderConfig = config
 	}
 	request, err := c.newRequest(ctx, upstream, "", method, path, body)

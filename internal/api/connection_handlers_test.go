@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -168,8 +169,11 @@ func TestDeepSeekWebCredentialValidationUsesPinnedBridgeAndBearerToken(t *testin
 			Type: "openai-compatible", Protocol: "openai",
 			ValidationMode: "generation", GenerationKind: "chat",
 		},
-		Endpoint:       bridge.URL,
-		ProviderConfig: map[string]any{"authMethod": "deepseek_web_token", "experimental": true},
+		Endpoint: bridge.URL,
+		ProviderConfig: map[string]any{
+			"authMethod": "deepseek_web_token", "experimental": true,
+			"pathMode": "direct",
+		},
 	}, []string{"deepseek-v4-flash"}, material)
 	if !result.OK || requests.Load() != 1 {
 		t.Fatalf("DeepSeek web validation = %#v, requests = %d", result, requests.Load())
@@ -288,6 +292,28 @@ func TestManagedAuthorizationRejectDetectionIncludesForbidden(t *testing.T) {
 	if managedAuthorizationRejected(gatewaycache.UpstreamResult{StatusCode: http.StatusTooManyRequests}, material) ||
 		managedAuthorizationRejected(gatewaycache.UpstreamResult{StatusCode: http.StatusUnauthorized}, nil) {
 		t.Fatal("non-authentication failure was classified as a managed authorization rejection")
+	}
+}
+
+func TestDeepSeekValidationFailureClassificationKeepsProtocolErrorsSeparateFromExpiredLogin(t *testing.T) {
+	tests := []struct {
+		errorType string
+		want      error
+		wantCode  string
+	}{
+		{errorType: "upstream_auth_error", want: connections.ErrCredentialReauth, wantCode: "reauth_required"},
+		{errorType: "upstream_rejected", want: connections.ErrCredentialRejected, wantCode: "provider_rejected"},
+		{errorType: "upstream_rate_limited", want: connections.ErrCredentialTemporary, wantCode: "provider_temporary"},
+		{errorType: "upstream_unavailable", want: connections.ErrCredentialTemporary, wantCode: "provider_temporary"},
+	}
+	for _, test := range tests {
+		got := deepSeekValidationCredentialError(test.errorType)
+		if !errors.Is(got, test.want) {
+			t.Fatalf("deepSeekValidationCredentialError(%q) = %v, want %v", test.errorType, got, test.want)
+		}
+		if gotCode := authorizationErrorCode(got); gotCode != test.wantCode {
+			t.Fatalf("authorizationErrorCode(%q) = %q, want %q", test.errorType, gotCode, test.wantCode)
+		}
 	}
 }
 
