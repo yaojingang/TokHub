@@ -12612,6 +12612,45 @@ body:has(.admin-login-wrap) {
   padding: 16px 20px 0;
 }
 
+.ai-auth-readiness {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 13px 18px 0;
+  padding: 13px 14px;
+  border: 1px solid #efd8a9;
+  border-radius: 11px;
+  background: #fff9ed;
+}
+
+.ai-auth-readiness b {
+  display: block;
+  color: #865619;
+  font-size: 11.5px;
+}
+
+.ai-auth-readiness p {
+  margin: 4px 0 0;
+  color: #755d39;
+  font-size: 10.5px;
+}
+
+.ai-auth-readiness small {
+  display: block;
+  margin-top: 4px;
+  color: #8a7657;
+  font-size: 9.5px;
+  line-height: 1.5;
+}
+
+.ai-auth-readiness a {
+  flex: 0 0 auto;
+  color: #a25d0c;
+  font-size: 10.5px;
+  font-weight: 750;
+}
+
 .ai-auth-method {
   display: grid;
   gap: 7px;
@@ -12857,6 +12896,59 @@ body:has(.admin-login-wrap) {
   gap: 6px;
   color: #3f5576;
   font-size: 10.5px;
+}
+
+.ai-chatgpt-callback-helper {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 14px;
+  align-items: center;
+  padding: 13px;
+  border: 1px solid #c9d9f4;
+  border-radius: 10px;
+  background: #f6f9ff;
+}
+
+.ai-chatgpt-callback-helper b {
+  display: block;
+  color: #214d9c;
+  font-size: 11.5px;
+}
+
+.ai-chatgpt-callback-helper p {
+  margin: 4px 0 0;
+  color: #506888;
+  font-size: 10.5px;
+  line-height: 1.55;
+}
+
+.ai-chatgpt-callback-helper small {
+  display: block;
+  margin-top: 5px;
+  color: #6f7f96;
+  font-size: 9.5px;
+  line-height: 1.5;
+}
+
+.ai-login-helper-status {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border: 1px solid #c9d9f4;
+  border-radius: 8px;
+  background: #eef4ff;
+  color: #365b94;
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.ai-login-helper-status a {
+  flex: 0 0 auto;
+  color: var(--brand);
+  font-weight: 750;
 }
 
 .ai-deepseek-token-guide {
@@ -13666,11 +13758,25 @@ body:has(.admin-login-wrap) {
     padding: 14px 17px 0;
   }
 
+  .ai-auth-readiness {
+    align-items: flex-start;
+    flex-direction: column;
+    margin: 12px 17px 0;
+  }
+
   .ai-callback-complete {
     grid-template-columns: 1fr;
   }
 
   .ai-callback-complete .btn {
+    justify-content: center;
+  }
+
+  .ai-chatgpt-callback-helper {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-chatgpt-callback-helper .btn {
     justify-content: center;
   }
 
@@ -13751,6 +13857,11 @@ body:has(.admin-login-wrap) {
   }
 
   .ai-deepseek-extension-status {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .ai-login-helper-status {
     align-items: flex-start;
     flex-direction: column;
   }

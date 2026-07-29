@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 )
 
@@ -15,6 +16,8 @@ const (
 	geminiOAuthScope          = "openid email https://www.googleapis.com/auth/cloud-platform"
 	geminiAPIEndpoint         = "https://generativelanguage.googleapis.com/v1beta"
 )
+
+var googleCloudProjectIDPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{4,28}[a-z0-9]$`)
 
 type GeminiOAuthAdapter struct {
 	cfg      AdapterConfig
@@ -48,6 +51,9 @@ func (a *GeminiOAuthAdapter) Method() AuthMethodManifest {
 func (a *GeminiOAuthAdapter) Start(_ context.Context, transaction AuthorizationTransaction, challenge string) (AuthorizationStart, error) {
 	if strings.TrimSpace(a.cfg.GoogleClientID) == "" || strings.TrimSpace(a.cfg.GoogleClientSecret) == "" {
 		return AuthorizationStart{}, ErrAdapterDisabled
+	}
+	if _, err := NormalizeGoogleCloudProjectID(firstNonEmpty(transaction.ProjectID, a.cfg.GoogleProjectID)); err != nil {
+		return AuthorizationStart{}, err
 	}
 	values := url.Values{
 		"response_type":          {"code"},
@@ -87,12 +93,9 @@ func (a *GeminiOAuthAdapter) Exchange(ctx context.Context, transaction Authoriza
 	if err != nil {
 		return CredentialBundle{}, AccountProfile{}, err
 	}
-	projectID := strings.TrimSpace(transaction.ProjectID)
-	if projectID == "" {
-		projectID = strings.TrimSpace(a.cfg.GoogleProjectID)
-	}
-	if projectID == "" {
-		return CredentialBundle{}, AccountProfile{}, fmt.Errorf("Google Cloud project ID is required")
+	projectID, err := NormalizeGoogleCloudProjectID(firstNonEmpty(transaction.ProjectID, a.cfg.GoogleProjectID))
+	if err != nil {
+		return CredentialBundle{}, AccountProfile{}, err
 	}
 	bundle := CredentialBundle{
 		Schema: CredentialBundleSchemaV1, AccessToken: token.AccessToken,
@@ -155,15 +158,33 @@ func (a *GeminiOAuthAdapter) Revoke(ctx context.Context, bundle CredentialBundle
 }
 
 func (a *GeminiOAuthAdapter) ResolveAuthMaterial(_ context.Context, bundle CredentialBundle) (AuthMaterial, error) {
-	if strings.TrimSpace(bundle.AccessToken) == "" || strings.TrimSpace(bundle.ProjectID) == "" {
+	projectID, err := NormalizeGoogleCloudProjectID(bundle.ProjectID)
+	if strings.TrimSpace(bundle.AccessToken) == "" || err != nil {
 		return AuthMaterial{}, ErrCredentialReauth
 	}
 	material := AuthMaterial{
 		Mode: AuthModeOAuthBearer, Endpoint: geminiAPIEndpoint, ExpiresAt: bundle.ExpiresAt,
 		Headers: http.Header{
 			"Authorization":       {"Bearer " + bundle.AccessToken},
-			"X-Goog-User-Project": {bundle.ProjectID},
+			"X-Goog-User-Project": {projectID},
 		},
 	}
 	return material, material.Validate()
+}
+
+func NormalizeGoogleCloudProjectID(value string) (string, error) {
+	projectID := strings.TrimSpace(value)
+	if !googleCloudProjectIDPattern.MatchString(projectID) {
+		return "", fmt.Errorf("Google Cloud project ID must contain 6-30 lowercase letters, digits, or hyphens, start with a letter, and end with a letter or digit")
+	}
+	return projectID, nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }

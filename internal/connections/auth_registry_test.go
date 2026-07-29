@@ -309,10 +309,53 @@ func TestGeminiOAuthExchangesAndRefreshesOfficialBearerMaterial(t *testing.T) {
 	}
 }
 
+func TestGeminiOAuthValidatesQuotaProjectBeforeOpeningGoogleAuthorization(t *testing.T) {
+	adapter := NewGeminiOAuthAdapter(AdapterConfig{
+		GoogleClientID:     "google-client",
+		GoogleClientSecret: "google-secret",
+		WebAuthEnabled:     true,
+		GeminiOAuthEnabled: true,
+	})
+	for _, projectID := range []string{"", "Project Name", "123456", "short", "ends-with-hyphen-"} {
+		if _, err := adapter.Start(context.Background(), AuthorizationTransaction{
+			ProjectID: projectID,
+		}, "challenge"); err == nil {
+			t.Fatalf("Start() accepted invalid Google Cloud project ID %q", projectID)
+		}
+	}
+	start, err := adapter.Start(context.Background(), AuthorizationTransaction{
+		State: "state", Nonce: "nonce", ProjectID: "gemini-project-123",
+		RedirectURI: "https://tokhub.example.test/api/me/ai-authorizations/google/callback",
+	}, "challenge")
+	if err != nil {
+		t.Fatalf("Start() rejected valid Google Cloud project ID: %v", err)
+	}
+	if parsed, parseErr := url.Parse(start.AuthorizationURL); parseErr != nil ||
+		parsed.Query().Get("scope") != geminiOAuthScope {
+		t.Fatalf("unexpected Gemini authorization URL: %q error=%v", start.AuthorizationURL, parseErr)
+	}
+}
+
 func TestChatGPTCodexAdapterParsesFixedCallbackAndPinsPrivateEndpoint(t *testing.T) {
+	var refreshCalls int
 	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseForm(); err != nil {
 			t.Fatal(err)
+		}
+		if r.Form.Get("grant_type") == "refresh_token" {
+			refreshCalls++
+			if r.Form.Get("client_id") != CodexOAuthClientID ||
+				r.Form.Get("refresh_token") != "refresh" ||
+				r.Form.Get("scope") != "openid profile email" {
+				t.Fatalf("unexpected ChatGPT refresh form: %v", r.Form)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"access_token":  "access-refreshed",
+				"refresh_token": "refresh-rotated",
+				"token_type":    "Bearer",
+				"expires_in":    3600,
+			})
+			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  fakeJWT(map[string]any{"exp": time.Now().Add(time.Hour).Unix()}),
@@ -341,6 +384,22 @@ func TestChatGPTCodexAdapterParsesFixedCallbackAndPinsPrivateEndpoint(t *testing
 		HTTPClient:               tokenServer.Client(),
 		OIDCSignatureVerifier:    allowTestOIDCSignatureVerifier{},
 	})
+	start, err := adapter.Start(context.Background(), AuthorizationTransaction{
+		State: "authz.state",
+	}, "challenge")
+	if err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	authorizeURL, err := url.Parse(start.AuthorizationURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if authorizeURL.Query().Get("redirect_uri") != CodexOAuthRedirectURI ||
+		authorizeURL.Query().Get("scope") != codexOAuthScope ||
+		authorizeURL.Query().Get("code_challenge") != "challenge" ||
+		authorizeURL.Query().Get("originator") != "codex_cli_rs" {
+		t.Fatalf("unexpected ChatGPT authorization query: %v", authorizeURL.Query())
+	}
 	bundle, profile, err := adapter.Exchange(context.Background(), AuthorizationTransaction{
 		CodeVerifier: "verifier", RedirectURI: CodexOAuthRedirectURI,
 	}, "authorization-code")
@@ -360,6 +419,14 @@ func TestChatGPTCodexAdapterParsesFixedCallbackAndPinsPrivateEndpoint(t *testing
 		material.Headers.Get("Version") != CodexBridgeVersion ||
 		!strings.Contains(material.Headers.Get("User-Agent"), "codex_cli_rs/"+CodexBridgeVersion) {
 		t.Fatalf("Codex material = %#v", material)
+	}
+	refreshed, err := adapter.Refresh(context.Background(), bundle)
+	if err != nil {
+		t.Fatalf("Refresh() error = %v", err)
+	}
+	if refreshCalls != 1 || refreshed.AccessToken != "access-refreshed" ||
+		refreshed.RefreshToken != "refresh-rotated" || refreshed.AccountID != "account-1" {
+		t.Fatalf("refreshed ChatGPT bundle = %#v calls=%d", refreshed, refreshCalls)
 	}
 }
 

@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
-  "name": "TokHub DeepSeek 登录态助手",
-  "version": "0.1.0",
-  "description": "在用户明确点击后读取 DeepSeek userToken.value，并安全传递给 TokHub。",
+  "name": "TokHub AI 登录助手",
+  "version": "0.2.0",
+  "description": "在用户明确点击后识别 ChatGPT OAuth 回调或 DeepSeek userToken，并安全传递给 TokHub。",
   "minimum_chrome_version": "102",
   "permissions": [
     "scripting"
   ],
   "host_permissions": [
-    "https://chat.deepseek.com/*"
+    "https://chat.deepseek.com/*",
+    "http://localhost/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -28,6 +29,6 @@
     }
   ],
   "action": {
-    "default_title": "TokHub DeepSeek 登录态助手"
+    "default_title": "TokHub AI 登录助手"
   }
 }

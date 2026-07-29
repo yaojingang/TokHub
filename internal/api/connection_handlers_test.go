@@ -306,7 +306,7 @@ func TestManagedAuthorizationRejectDetectionIncludesForbidden(t *testing.T) {
 	}
 }
 
-func TestDeepSeekValidationFailureClassificationKeepsProtocolErrorsSeparateFromExpiredLogin(t *testing.T) {
+func TestAuthorizedValidationFailureClassificationKeepsProtocolErrorsSeparateFromExpiredLogin(t *testing.T) {
 	tests := []struct {
 		errorType string
 		want      error
@@ -318,12 +318,16 @@ func TestDeepSeekValidationFailureClassificationKeepsProtocolErrorsSeparateFromE
 		{errorType: "upstream_unavailable", want: connections.ErrCredentialTemporary, wantCode: "provider_temporary"},
 	}
 	for _, test := range tests {
-		got := deepSeekValidationCredentialError(test.errorType)
+		got := authorizedValidationCredentialError(test.errorType)
 		if !errors.Is(got, test.want) {
-			t.Fatalf("deepSeekValidationCredentialError(%q) = %v, want %v", test.errorType, got, test.want)
+			t.Fatalf("authorizedValidationCredentialError(%q) = %v, want %v", test.errorType, got, test.want)
 		}
 		if gotCode := authorizationErrorCode(got); gotCode != test.wantCode {
 			t.Fatalf("authorizationErrorCode(%q) = %q, want %q", test.errorType, gotCode, test.wantCode)
+		}
+		status, code, message := managedAuthorizationFailureResponse("Gemini", got)
+		if status < 400 || status >= 600 || code == "" || !strings.Contains(message, "Gemini") {
+			t.Fatalf("managedAuthorizationFailureResponse(%q) = (%d, %q, %q)", test.errorType, status, code, message)
 		}
 	}
 }

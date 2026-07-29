@@ -154,6 +154,10 @@ if [[ "${TOKHUB_AI_WEB_AUTH_ENABLED:-false}" == "true" ]]; then
   if [[ "${TOKHUB_AI_GEMINI_OAUTH_ENABLED:-false}" == "true" ]]; then
     require_env TOKHUB_GOOGLE_OAUTH_CLIENT_ID
     require_env TOKHUB_GOOGLE_OAUTH_CLIENT_SECRET
+    if [[ -n "${TOKHUB_GOOGLE_OAUTH_PROJECT_ID:-}" &&
+      ! "${TOKHUB_GOOGLE_OAUTH_PROJECT_ID}" =~ ^[a-z][a-z0-9-]{4,28}[a-z0-9]$ ]]; then
+      fail "TOKHUB_GOOGLE_OAUTH_PROJECT_ID must be a valid 6-30 character Google Cloud project ID"
+    fi
   fi
   if [[ "${TOKHUB_AI_CHATGPT_CODEX_EXPERIMENTAL:-false}" == "true" &&
     "${TOKHUB_AI_EXPERIMENTAL_BRIDGE_ACK:-}" != "I_ACCEPT_CHATGPT_CODEX_EXPERIMENTAL_RISK" ]]; then

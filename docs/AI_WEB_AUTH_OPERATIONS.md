@@ -13,7 +13,7 @@
 | DeepSeek 网页账号 | `TOKHUB_AI_DEEPSEEK_WEB_EXPERIMENTAL` | Redis、凭证密钥环、DS2API v4.6.1、固定风险确认值 | 仅个人实验 |
 | ChatGPT Codex OAuth | `TOKHUB_AI_CHATGPT_CODEX_EXPERIMENTAL` | Redis、凭证密钥环、固定风险确认值 | 仅自托管实验 |
 
-DeepSeek 官方 API 使用 API Key Bearer 认证。网页账号实验能力面向已登录的消费者账号，用户手动导入 Local Storage `userToken.value`。TokHub 通过独立 DS2API 桥完成网页私有协议、PoW 和 OpenAI SSE 转换。该路径依赖平台私有协议，接口变化、风控升级和账号限制都可能导致中断。
+DeepSeek 官方 API 使用 API Key Bearer 认证。网页账号实验能力面向已登录的消费者账号，TokHub AI 登录助手可以在用户点击后读取 Local Storage `userToken.value`；手动导入继续作为故障兜底。TokHub 通过独立 DS2API 桥完成网页私有协议、PoW 和 OpenAI SSE 转换。该路径依赖平台私有协议，接口变化、风控升级和账号限制都可能导致中断。
 
 ChatGPT 实验开关还要求：
 
@@ -49,7 +49,15 @@ TOKHUB_GOOGLE_OAUTH_CLIENT_SECRET=
 TOKHUB_GOOGLE_OAUTH_PROJECT_ID=
 ```
 
-用户可以在授权时填写自己的 Project ID。空值会使用部署级默认 Project ID。TokHub 请求 Gemini 时固定使用 `https://generativelanguage.googleapis.com/v1beta`，认证头由适配器生成。
+用户在授权时填写自己的 Project ID，账号需要拥有该项目的 `serviceusage.services.use` 权限。Project ID 在打开 Google 授权页之前校验：长度 6–30 位、小写字母开头、只含小写字母、数字或连字符，并以字母或数字结尾。部署级 Project ID 可用于受控默认值和重新授权回退。TokHub 请求 Gemini 时固定使用 `https://generativelanguage.googleapis.com/v1beta`，认证头由适配器生成。
+
+Gemini 登录只使用 Google 为 Gemini API 提供的官方 OAuth 路径。Google OAuth Client ID、Client Secret 或公开 HTTPS 回调地址缺失时，普通用户页面会显示具体待配置原因，入口保持关闭。Gemini CLI 消费者 OAuth、Gemini 网页 Cookie、Local Storage 和私有会话接口均不接入。
+
+Google Cloud OAuth 客户端的 Authorized redirect URI 必须和下列地址逐字符一致：
+
+`https://<TOKHUB_PUBLIC_URL>/api/me/ai-authorizations/google/callback`
+
+开启入口前至少完成一次测试账号授权、最小生成、流式生成、Refresh Token 续期、重新授权账号一致性和撤销测试。
 
 ## 数据与安全
 
@@ -61,6 +69,7 @@ TOKHUB_GOOGLE_OAUTH_PROJECT_ID=
 - 出站请求只能使用适配器固定 endpoint 与允许的认证头。
 - 重新授权会锁定原 `provider subject`；ChatGPT 同时锁定原 `account id`。账号不一致时记录 `identity_mismatch` 并保留原连接。Gemini 未明确提交新 Project ID 时沿用原项目。
 - 删除受管授权连接需要再次验证当前 TokHub 登录密码。本地路由与凭证会先停用和擦除，再尝试调用服务商撤销接口，避免撤销接口故障延长本地暴露窗口。
+- ChatGPT、Gemini 和 DeepSeek 网页账号都必须通过真实最小生成验证后才会创建连接；失败事务不会落库凭证或创建个人中转。
 
 ## 刷新与故障状态
 
@@ -94,12 +103,15 @@ DeepSeek `userToken` 没有公开 Refresh Token。创建时会执行真实最小
 
 ## ChatGPT 实验保护
 
+- 浏览器登录完成后会落到 `http://localhost:1455/auth/callback`。TokHub AI 登录助手在用户点击后读取该页的一次性 `code` 与 `state`，提交成功后不保存回调地址。手动粘贴完整回调地址保留为兜底。
+- 扩展的 localhost 权限只用于识别端口 `1455`、路径 `/auth/callback` 且同时包含 `code` 与 `state` 的 URL，并按当前授权事务 ID 排除历史回调；服务端继续校验授权事务 ID、常量时间 state 比较、当前用户和登录 Session。
+- 扩展不访问 ChatGPT Cookie、Local Storage、网页 Token 或密码。
 - 个人范围，无法切换到共享工作区。
 - 每个 Codex OAuth 连接最多创建一个 active 或 paused 中转。
 - 网关 QPS 在服务端强制设为 1。
 - Redis 并发槽上限为 2，槽保护不可用时返回 503。
 - 私有接口固定为 `https://chatgpt.com/backend-api/codex/responses`。
-- 出站请求固定发送配套的 `User-Agent`、`Originator`、`Version` 与 `OpenAI-Beta`，当前桥接版本为 `0.144.1`。
+- 出站请求固定发送配套的 `User-Agent`、`Originator`、`Version` 与 `OpenAI-Beta`，当前桥接版本为 `0.146.0`。
 - Chat Completions 文本与 function tool 子集会转换为 Responses 请求。
 - tool result、`tool_choice`、并行工具开关、函数调用结果和函数参数增量均进入协议转换。
 - Responses SSE 可直通；Chat Completions SSE 会转换为标准 chunk，并保持函数 item 与 call 使用同一工具索引。
@@ -140,5 +152,6 @@ Prometheus 指标：
 4. `TOKHUB_PUBLIC_URL` 使用 HTTPS，Google 回调精确匹配。
 5. 先开启全局开关和 DeepSeek 开放平台引导，观察授权状态指标。
 6. DeepSeek 网页账号在测试用户完成登录、Token 验证、非流式、流式、401 失效和重新授权验证后再灰度。
-7. Gemini 在测试用户验证授权、刷新、重新授权和删除后再扩大范围。
-8. ChatGPT 和 DeepSeek 网页实验能力在完成风险确认、自托管环境和紧急关闭演练后启用。
+7. Gemini 在测试用户验证 Project 权限、授权、非流式、流式、刷新、重新授权和删除后再扩大范围。
+8. ChatGPT 在测试用户验证扩展识别、手动回调兜底、非流式、流式、刷新和 401 重新授权后再启用。
+9. ChatGPT 和 DeepSeek 网页实验能力在完成风险确认、自托管环境和紧急关闭演练后启用。

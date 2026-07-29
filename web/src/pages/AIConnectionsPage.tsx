@@ -21,9 +21,11 @@ import {
   validateAIConnection
 } from "../lib/api";
 import {
+  ChatGPTCallbackStatus,
   DeepSeekExtensionStatus,
+  requestChatGPTCallbackFromExtension,
   requestDeepSeekSessionFromExtension
-} from "../lib/deepseekExtension";
+} from "../lib/aiLoginExtension";
 
 type ConnectionDraft = {
   authMethod: string;
@@ -60,7 +62,7 @@ const providerMarks: Record<string, string> = {
 
 const authorizationTerminalStatuses = new Set(["completed", "failed", "cancelled", "expired"]);
 const deepSeekWebLoginURL = "https://chat.deepseek.com";
-const deepSeekExtensionDownloadURL = "/downloads/tokhub-deepseek-session-extension.zip";
+const aiLoginExtensionDownloadURL = "/downloads/tokhub-ai-login-helper.zip";
 
 export function AIConnectionsPage() {
   const [providers, setProviders] = useState<AIConnectionProvider[]>([]);
@@ -85,6 +87,7 @@ export function AIConnectionsPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [deepSeekExtensionStatus, setDeepSeekExtensionStatus] = useState<DeepSeekExtensionStatus | "checking" | "">("");
+  const [chatGPTCallbackStatus, setChatGPTCallbackStatus] = useState<ChatGPTCallbackStatus | "checking" | "">("");
 
   const selectedProvider = useMemo(
     () => providers.find((provider) => provider.code === selectedProviderCode),
@@ -97,6 +100,12 @@ export function AIConnectionsPage() {
   const selectedAuthMethod = useMemo(
     () => selectedProvider?.authMethods.find((method) => method.code === draft.authMethod) ?? null,
     [selectedProvider, draft.authMethod]
+  );
+  const selectedGeminiOAuthMethod = useMemo(
+    () => selectedProvider?.code === "gemini"
+      ? selectedProvider.authMethods.find((method) => method.code === "oauth") ?? null
+      : null,
+    [selectedProvider]
   );
   const usesInteractiveAuthorization = ["oauth", "codex_oauth", "deepseek_web_token"].includes(draft.authMethod);
   const usesGuidedAPIKey = draft.authMethod === "api_key_guided";
@@ -123,6 +132,7 @@ export function AIConnectionsPage() {
     setDraft(connectionDraftForProvider(selectedProvider, preferred.code));
     setAuthorization(null);
     setDeepSeekExtensionStatus("");
+    setChatGPTCallbackStatus("");
   }, [selectedProvider, reauthorizeConnectionId]);
 
   useEffect(() => {
@@ -205,6 +215,7 @@ export function AIConnectionsPage() {
     setError("");
     setNotice("");
     setDeepSeekExtensionStatus("");
+    setChatGPTCallbackStatus("");
   }
 
   function chooseAuthMethod(method: AIConnectionAuthMethod) {
@@ -212,6 +223,7 @@ export function AIConnectionsPage() {
     setDraft(connectionDraftForProvider(selectedProvider, method.code));
     setError("");
     setDeepSeekExtensionStatus("");
+    setChatGPTCallbackStatus("");
   }
 
   async function submitConnection(event: FormEvent) {
@@ -261,6 +273,7 @@ export function AIConnectionsPage() {
     setError("");
     setNotice("");
     setDeepSeekExtensionStatus(deepSeekWeb ? "checking" : "");
+    setChatGPTCallbackStatus("");
     try {
       const stepUp = deepSeekWeb ? null : await stepUpAIConnectionAuthorization(draft.password);
       const started = await startAIConnectionAuthorization({
@@ -297,16 +310,37 @@ export function AIConnectionsPage() {
 
   async function completePastedCallback() {
     if (!authorization) return;
+    await completeChatGPTCallbackValue(authorization.id, draft.callbackUrl);
+  }
+
+  async function completeChatGPTCallbackFromExtension() {
+    if (!authorization) return;
+    setWorking("detect-callback");
+    setError("");
+    setNotice("");
+    setChatGPTCallbackStatus("checking");
+    const result = await requestChatGPTCallbackFromExtension(authorization.id);
+    setChatGPTCallbackStatus(result.status);
+    if (result.status !== "ok" || !result.callbackUrl) {
+      setWorking("");
+      return;
+    }
+    await completeChatGPTCallbackValue(authorization.id, result.callbackUrl);
+  }
+
+  async function completeChatGPTCallbackValue(authorizationID: string, callbackUrl: string) {
     setWorking("complete");
     setError("");
     try {
-      const payload = await completeAIConnectionAuthorization(authorization.id, { callbackUrl: draft.callbackUrl });
+      const payload = await completeAIConnectionAuthorization(authorizationID, { callbackUrl });
       const connections = await aiConnections();
       setItems(connections.items);
       setSelectedConnectionId(payload.connection.id);
       setAuthorization(null);
       setSetupOpen(false);
       setReauthorizeConnectionId("");
+      setDraft((current) => ({ ...current, callbackUrl: "" }));
+      setChatGPTCallbackStatus("");
       setNotice("ChatGPT 授权、凭证加密保存和模型验证已完成。");
     } catch (err) {
       setError(errorMessage(err));
@@ -355,6 +389,7 @@ export function AIConnectionsPage() {
       await cancelAIConnectionAuthorization(authorization.id);
       setAuthorization(null);
       setDeepSeekExtensionStatus("");
+      setChatGPTCallbackStatus("");
       setNotice("本次授权已取消，临时状态已清理。");
     } catch (err) {
       setError(errorMessage(err));
@@ -370,6 +405,7 @@ export function AIConnectionsPage() {
     setReauthorizeConnectionId(connection.id);
     setAuthorization(null);
     setDeepSeekExtensionStatus("");
+    setChatGPTCallbackStatus("");
     setDraft({
       ...connectionDraftForProvider(provider, connection.authMethod),
       displayName: connection.displayName,
@@ -581,6 +617,8 @@ export function AIConnectionsPage() {
                 setSetupOpen(false);
                 setAuthorization(null);
                 setReauthorizeConnectionId("");
+                setDeepSeekExtensionStatus("");
+                setChatGPTCallbackStatus("");
               }}>关闭</button>
             </div>
 
@@ -604,6 +642,16 @@ export function AIConnectionsPage() {
                 </button>
               ))}
             </div>
+            {selectedGeminiOAuthMethod && !selectedGeminiOAuthMethod.enabled ? (
+              <section className="ai-auth-readiness" aria-label="Gemini OAuth 配置状态">
+                <div>
+                  <b>Gemini Google OAuth 等待部署配置</b>
+                  <p>{selectedGeminiOAuthMethod.unavailableReason || "当前部署尚未完成 Google OAuth 配置。"}</p>
+                  <small>管理员需要配置 Google Web OAuth Client、精确回调地址和可用的 Cloud Project。配置完成并重启服务后，此入口会自动开放。</small>
+                </div>
+                <a href={selectedGeminiOAuthMethod.docsUrl} target="_blank" rel="noreferrer">查看 Google OAuth 说明 ↗</a>
+              </section>
+            ) : null}
 
             <form className="ai-setup-form" onSubmit={submitConnection}>
               <label>
@@ -625,7 +673,18 @@ export function AIConnectionsPage() {
               {draft.authMethod === "oauth" ? (
                 <label>
                   <span>Google Cloud Project ID</span>
-                  <input className="input" required value={draft.projectId} onChange={(event) => setDraft({ ...draft, projectId: event.target.value })} placeholder="用于 Gemini API 计费与配额" />
+                  <input
+                    className="input"
+                    required
+                    minLength={6}
+                    maxLength={30}
+                    pattern="[a-z][a-z0-9-]{4,28}[a-z0-9]"
+                    title="请输入 6–30 位 Google Cloud Project ID：小写字母开头，只含小写字母、数字或连字符，并以字母或数字结尾"
+                    value={draft.projectId}
+                    onChange={(event) => setDraft({ ...draft, projectId: event.target.value.trim().toLowerCase() })}
+                    placeholder="例如 my-gemini-project"
+                  />
+                  <small>该项目用于 Gemini API 配额与计费。Google 账号需要拥有该项目的 Service Usage Consumer 权限，并已启用 Gemini API。</small>
                 </label>
               ) : null}
               <label className="ai-form-wide">
@@ -701,7 +760,7 @@ export function AIConnectionsPage() {
                         <div className="ai-deepseek-extension-status" role="status">
                           <span>{deepSeekExtensionStatusMessage(deepSeekExtensionStatus)}</span>
                           {deepSeekExtensionStatus === "extension_unavailable" ? (
-                            <a href={deepSeekExtensionDownloadURL} download>下载 Chrome 识别扩展</a>
+                            <a href={aiLoginExtensionDownloadURL} download>下载 TokHub AI 登录助手</a>
                           ) : null}
                         </div>
                       ) : null}
@@ -713,21 +772,59 @@ export function AIConnectionsPage() {
                       />
                     </>
                   ) : null}
+                  {draft.authMethod === "codex_oauth" ? (
+                    <div className="ai-chatgpt-callback-helper">
+                      <div>
+                        <b>登录完成后，一键识别授权结果</b>
+                        <p>OpenAI 会把授权结果带到 localhost 回调页。页面显示无法访问时直接返回 TokHub，登录助手会读取本次回调并立即提交验证。</p>
+                        <small>登录助手只读取端口 1455 的单次 OAuth code 与 state，不访问 ChatGPT Cookie、网页 Token 或密码。</small>
+                      </div>
+                      <button
+                        className="btn btn-primary btn-sm"
+                        type="button"
+                        disabled={working === "complete" || working === "detect-callback"}
+                        onClick={() => void completeChatGPTCallbackFromExtension()}
+                      >
+                        {working === "detect-callback" ? "正在识别…" : "2. 一键识别授权结果"}
+                      </button>
+                      {chatGPTCallbackStatus ? (
+                        <div className="ai-login-helper-status" role="status">
+                          <span>{chatGPTCallbackStatusMessage(chatGPTCallbackStatus)}</span>
+                          {chatGPTCallbackStatus === "extension_unavailable" ? (
+                            <a href={aiLoginExtensionDownloadURL} download>下载 TokHub AI 登录助手</a>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </section>
               ) : null}
 
               {error ? <div className="form-error ai-setup-error ai-form-wide" role="alert">{error}</div> : null}
 
+              {!authorization && draft.authMethod === "codex_oauth" ? (
+                <section className="ai-deepseek-entry ai-form-wide" aria-label="ChatGPT 登录准备">
+                  <div className="ai-deepseek-entry-copy">
+                    <b>首次使用请先安装登录助手</b>
+                    <p>下载 ZIP 并解压，在 Chrome 扩展程序页开启开发者模式，选择“加载已解压的扩展程序”，随后刷新 TokHub。</p>
+                    <small>扩展只识别本次 OAuth 回调地址。未安装时仍可通过手动粘贴 localhost 地址完成授权。</small>
+                  </div>
+                  <div className="ai-deepseek-entry-actions">
+                    <a className="btn btn-ghost" href={aiLoginExtensionDownloadURL} download>安装 TokHub AI 登录助手</a>
+                  </div>
+                </section>
+              ) : null}
+
               {!authorization && draft.authMethod === "deepseek_web_token" ? (
                 <section className="ai-deepseek-entry ai-form-wide" aria-label="DeepSeek 网页登录步骤">
                   <div className="ai-deepseek-entry-copy">
                     <b>登录后，一键读取当前 Chrome 账号</b>
-                    <p>打开 DeepSeek 并完成登录，TokHub 扩展会在你点击时读取当前账号的 userToken.value，随后立即完成验证和加密保存。</p>
-                    <small>扩展不读取 Cookie、密码或完整 Local Storage，也不会持久化 Token。未安装扩展时可继续使用下方手动导入流程。</small>
+                    <p>先下载 ZIP 并解压，在 Chrome 扩展程序页开启开发者模式并加载文件夹；刷新 TokHub 后打开 DeepSeek 完成登录。</p>
+                    <small>点击读取时，扩展只获取当前账号的 userToken.value，不读取 Cookie、密码或其他 Local Storage，也不会持久化 Token。</small>
                   </div>
                   <div className="ai-deepseek-entry-actions">
                     <a className="btn btn-ghost" href={deepSeekWebLoginURL} target="_blank" rel="noreferrer">1. 打开 DeepSeek 登录</a>
-                    <a className="btn btn-ghost" href={deepSeekExtensionDownloadURL} download>下载 Chrome 识别扩展</a>
+                    <a className="btn btn-ghost" href={aiLoginExtensionDownloadURL} download>下载 TokHub AI 登录助手</a>
                     <button className="btn btn-primary" disabled={!!working} type="submit">
                       {working === "authorize" || working === "complete" ? "正在读取并验证…" : "2. 一键读取当前登录态"}
                     </button>
@@ -1140,7 +1237,7 @@ function authorizationTitle(method: string) {
 
 function authorizationInstructions(method: string) {
   if (method === "api_key_guided") return "创建密钥后返回此页粘贴。TokHub 不接触 DeepSeek 网页登录态。";
-  if (method === "codex_oauth") return "登录完成后复制浏览器最终停留的 localhost 地址，再粘贴到下方。";
+  if (method === "codex_oauth") return "完成登录后返回本页，一键识别 localhost 授权结果；也可以在下方手动粘贴回调地址。";
   if (method === "deepseek_web_token") return "扩展读取失败时，可按下方三步手动导入 userToken.value。";
   return "授权窗口完成后会自动关闭，本页将继续验证账号和模型。";
 }
@@ -1159,7 +1256,7 @@ function deepSeekExtensionStatusMessage(status: DeepSeekExtensionStatus | "check
     case "checking":
       return "正在请求 Chrome 扩展读取当前 DeepSeek 登录态…";
     case "extension_unavailable":
-      return "未检测到 TokHub Chrome 识别扩展。安装扩展后可一键读取，也可以继续使用下方手动导入。";
+      return "未检测到 TokHub AI 登录助手。安装扩展后可一键读取，也可以继续使用下方手动导入。";
     case "deepseek_not_open":
       return "没有找到已打开的 DeepSeek 网页。请先打开 DeepSeek、完成登录，再重新点击一键读取。";
     case "not_logged_in":
@@ -1168,6 +1265,25 @@ function deepSeekExtensionStatusMessage(status: DeepSeekExtensionStatus | "check
       return "Chrome 没有授予读取 DeepSeek 网页的权限。请在扩展管理页允许访问 chat.deepseek.com。";
     case "read_failed":
       return "扩展读取登录态失败。请刷新 DeepSeek 网页后重试，或使用下方手动导入。";
+    default:
+      return "";
+  }
+}
+
+function chatGPTCallbackStatusMessage(status: ChatGPTCallbackStatus | "checking"): string {
+  switch (status) {
+    case "checking":
+      return "正在请求 TokHub AI 登录助手识别 ChatGPT 授权结果…";
+    case "ok":
+      return "已识别本次 ChatGPT 授权结果，正在由 TokHub 验证账号和模型。";
+    case "extension_unavailable":
+      return "未检测到 TokHub AI 登录助手。安装并刷新此页后可一键识别，也可以继续手动粘贴回调地址。";
+    case "callback_not_found":
+      return "没有找到本次 ChatGPT 的 localhost 回调页。请先完成登录并保留最终页面，再重新识别。";
+    case "permission_denied":
+      return "Chrome 没有授予 localhost 回调读取权限。请重新加载扩展并允许 localhost 访问。";
+    case "read_failed":
+      return "授权结果读取失败。请重新打开授权窗口，或使用下方手动回调方式。";
     default:
       return "";
   }

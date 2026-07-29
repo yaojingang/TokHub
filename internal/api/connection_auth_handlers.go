@@ -121,12 +121,6 @@ func (s *Server) startAIConnectionAuthorization(w http.ResponseWriter, r *http.R
 		writeError(w, r, http.StatusUnauthorized, "unauthorized", "Login required")
 		return
 	}
-	if requiresAIConnectionAuthorizationStartStepUp(method) {
-		if err := s.authzStore.ConsumeStepUp(r.Context(), request.StepUpGrant, user.ID, sessionHash); err != nil {
-			writeError(w, r, http.StatusUnauthorized, "step_up_required", "请重新输入 TokHub 密码完成二次验证")
-			return
-		}
-	}
 	resolved, err := connections.ResolveProvider(connections.ResolveProviderInput{Code: provider})
 	if err != nil {
 		writeError(w, r, http.StatusBadRequest, "invalid_provider_profile", "Provider profile is invalid")
@@ -157,6 +151,27 @@ func (s *Server) startAIConnectionAuthorization(w http.ResponseWriter, r *http.R
 		}
 		models = connectionModelIDs(existing.Models)
 		request.DisplayName = existing.DisplayName
+		if provider == "gemini" && method == "oauth" && strings.TrimSpace(request.ProjectID) == "" {
+			request.ProjectID, _ = existing.ProviderConfig["projectId"].(string)
+		}
+	}
+	if provider == "gemini" && method == "oauth" {
+		projectID := strings.TrimSpace(request.ProjectID)
+		if projectID == "" {
+			projectID = strings.TrimSpace(s.cfg.GoogleOAuthProjectID)
+		}
+		projectID, err = connections.NormalizeGoogleCloudProjectID(projectID)
+		if err != nil {
+			writeError(w, r, http.StatusBadRequest, "invalid_google_project_id", "请输入有效的 Google Cloud Project ID（6–30 位小写字母、数字或连字符）")
+			return
+		}
+		request.ProjectID = projectID
+	}
+	if requiresAIConnectionAuthorizationStartStepUp(method) {
+		if err := s.authzStore.ConsumeStepUp(r.Context(), request.StepUpGrant, user.ID, sessionHash); err != nil {
+			writeError(w, r, http.StatusUnauthorized, "step_up_required", "请重新输入 TokHub 密码完成二次验证")
+			return
+		}
 	}
 	transactionID := "authz_" + uuid.NewString()
 	proof, err := connections.GenerateOAuthProof()
@@ -294,7 +309,8 @@ func (s *Server) completeAIConnectionAuthorization(w http.ResponseWriter, r *htt
 			writeError(w, r, status, "deepseek_web_authorization_failed", message)
 			return
 		}
-		writeError(w, r, http.StatusBadGateway, "authorization_exchange_failed", "ChatGPT authorization could not be completed")
+		status, code, message := managedAuthorizationFailureResponse("ChatGPT", err)
+		writeError(w, r, status, code, message)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"connection": connection, "authorizationId": authorizationID})
@@ -343,7 +359,8 @@ func (s *Server) googleAIAuthorizationCallback(w http.ResponseWriter, r *http.Re
 	}
 	connection, err := s.finishAIConnectionAuthorization(r.Context(), transaction, code)
 	if err != nil {
-		s.writeAuthorizationCallbackPage(w, "failed", authorizationID, "Gemini 授权验证失败")
+		_, _, message := managedAuthorizationFailureResponse("Gemini", err)
+		s.writeAuthorizationCallbackPage(w, "failed", authorizationID, message)
 		return
 	}
 	s.writeAuthorizationCallbackPage(w, "completed", authorizationID, connection.DisplayName+" 已连接")
@@ -438,14 +455,14 @@ func (s *Server) finishAIConnectionAuthorization(ctx context.Context, transactio
 		resolved.ProviderConfig["projectId"] = strings.TrimSpace(bundle.ProjectID)
 	}
 	validation := s.validateAuthorizedCredentialSet(ctx, resolved, transaction.Models, material)
-	if transaction.Method == "deepseek_web_token" && !validation.OK {
-		validationErr := deepSeekValidationCredentialError(validation.ErrorType)
+	if !validation.OK {
+		validationErr := authorizedValidationCredentialError(validation.ErrorType)
 		_ = s.repo.FailAIAuthorizationAttempt(
 			ctx,
 			transaction.UserID,
 			transaction.ID,
 			authorizationErrorCode(validationErr),
-			"DeepSeek web credential validation failed",
+			"Authorized provider credential validation failed",
 		)
 		return store.AIConnection{}, validationErr
 	}
@@ -676,7 +693,7 @@ func authorizationErrorCode(err error) string {
 	}
 }
 
-func deepSeekValidationCredentialError(errorType string) error {
+func authorizedValidationCredentialError(errorType string) error {
 	switch strings.TrimSpace(errorType) {
 	case "upstream_auth_error":
 		return connections.ErrCredentialReauth
@@ -684,6 +701,19 @@ func deepSeekValidationCredentialError(errorType string) error {
 		return connections.ErrCredentialRejected
 	default:
 		return connections.ErrCredentialTemporary
+	}
+}
+
+func managedAuthorizationFailureResponse(provider string, err error) (int, string, string) {
+	switch {
+	case errors.Is(err, connections.ErrCredentialReauth):
+		return http.StatusUnauthorized, "provider_reauthorization_required", provider + " 授权已失效，请重新登录后再试"
+	case errors.Is(err, connections.ErrCredentialRejected):
+		return http.StatusUnprocessableEntity, "provider_validation_rejected", provider + " 已拒绝模型验证，请检查账号权限和模型 ID"
+	case errors.Is(err, connections.ErrCredentialTemporary):
+		return http.StatusServiceUnavailable, "provider_temporarily_unavailable", provider + " 授权或模型验证暂时不可用，请稍后重试"
+	default:
+		return http.StatusBadGateway, "authorization_exchange_failed", provider + " 授权验证未完成，请重新发起"
 	}
 }
 

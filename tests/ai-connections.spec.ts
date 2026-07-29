@@ -165,7 +165,11 @@ test("AI connection center renders Gemini OAuth, DeepSeek web login, guided key,
 
   await page.getByRole("button", { name: /Gemini/ }).click();
   await expect(page.getByRole("radio", { name: /使用 Google 账号授权/ })).toHaveAttribute("aria-checked", "true");
-  await expect(page.getByLabel("Google Cloud Project ID")).toBeVisible();
+  const geminiProjectID = page.getByLabel("Google Cloud Project ID");
+  await expect(geminiProjectID).toBeVisible();
+  await expect(geminiProjectID).toHaveAttribute("pattern", "[a-z][a-z0-9-]{4,28}[a-z0-9]");
+  await expect(geminiProjectID).toHaveAttribute("maxlength", "30");
+  await expect(page.getByText(/Google 账号需要拥有该项目的 Service Usage Consumer 权限/)).toBeVisible();
   await expect(page.getByLabel(/TokHub 登录密码/)).toBeVisible();
 
   await page.getByRole("button", { name: /ChatGPT/ }).click();
@@ -190,8 +194,8 @@ test("AI connection center renders Gemini OAuth, DeepSeek web login, guided key,
   const deepSeekLoginPage = await deepSeekLoginPagePromise;
   await expect(deepSeekLoginPage).toHaveURL("https://chat.deepseek.com/");
   await deepSeekLoginPage.close();
-  await expect(page.getByRole("link", { name: "下载 Chrome 识别扩展", exact: true }))
-    .toHaveAttribute("href", "/downloads/tokhub-deepseek-session-extension.zip");
+  await expect(page.getByRole("link", { name: "下载 TokHub AI 登录助手", exact: true }))
+    .toHaveAttribute("href", "/downloads/tokhub-ai-login-helper.zip");
   await page.getByRole("button", { name: "2. 一键读取当前登录态", exact: true }).click();
   await expect(page.getByText("识别 DeepSeek 当前登录态")).toBeVisible();
   await expect(page.getByText(/已找到 DeepSeek 网页，但没有读取到可用登录态/)).toBeVisible();
@@ -224,11 +228,162 @@ test("AI connection center renders Gemini OAuth, DeepSeek web login, guided key,
     "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.signature",
     "extension-token-value-for-deepseek-session"
   ]);
-  await page.waitForTimeout(1_800);
   expect(deepSeekStatusPolls).toBe(0);
 
   await page.setViewportSize({ width: 375, height: 812 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(375);
+});
+
+test("ChatGPT login helper reads the localhost OAuth callback and completes the personal connection", async ({ page }) => {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const authorizationID = "authz_123e4567-e89b-42d3-a456-426614174000";
+  const callbackURL = `http://localhost:1455/auth/callback?code=chatgpt-code&state=${authorizationID}.state`;
+  const completedCallbacks: string[] = [];
+  const providers = [
+    provider("openai", "ChatGPT", [
+      authMethod("api_key", "官方 API Key", "stable"),
+      authMethod("codex_oauth", "登录 ChatGPT", "experimental", "paste_callback")
+    ])
+  ];
+  await page.route("**/api/me/ai-connection-providers", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ items: providers, policyVersion: "ai-authorization-v2", credentialPolicy: { accepted: [], rejected: [] } })
+    });
+  });
+  await page.route("**/api/me/ai-connections", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ items: [] }) });
+  });
+  await page.route("**/api/me/ai-auth/step-up", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ grant: "step_chatgpt", expiresAt: new Date(Date.now() + 600_000).toISOString() })
+    });
+  });
+  await page.route("**/api/me/ai-authorizations", async (route) => {
+    const request = route.request().postDataJSON() as { provider?: string; method?: string; stepUpGrant?: string };
+    expect(request).toMatchObject({ provider: "openai", method: "codex_oauth", stepUpGrant: "step_chatgpt" });
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        id: authorizationID,
+        authorizationUrl: `${new URL(page.url()).origin}/healthz`,
+        completionMode: "paste_callback",
+        expiresAt: new Date(Date.now() + 600_000).toISOString(),
+        pollIntervalMs: 60_000
+      })
+    });
+  });
+  await page.route(`**/api/me/ai-authorizations/${authorizationID}/complete`, async (route) => {
+    const request = route.request().postDataJSON() as { callbackUrl?: string };
+    completedCallbacks.push(request.callbackUrl || "");
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ connection: { id: "aic_chatgpt" }, authorizationId: authorizationID })
+    });
+  });
+  await page.route(`**/api/me/ai-authorizations/${authorizationID}`, async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        authorization: {
+          id: authorizationID,
+          provider: "openai",
+          authMethod: "codex_oauth",
+          status: "authorization_pending",
+          completionMode: "paste_callback",
+          startedAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 600_000).toISOString()
+        }
+      })
+    });
+  });
+  await page.addInitScript((resultURL) => {
+    window.addEventListener("message", (event) => {
+      if (
+        event.source !== window ||
+        event.data?.source !== "tokhub-web" ||
+        event.data?.type !== "TOKHUB_CHATGPT_CALLBACK_REQUEST"
+      ) {
+        return;
+      }
+      if (event.data.authorizationId !== new URL(resultURL).searchParams.get("state")?.split(".")[0]) {
+        return;
+      }
+      window.postMessage({
+        source: "tokhub-extension",
+        type: "TOKHUB_CHATGPT_CALLBACK_RESPONSE",
+        version: 1,
+        requestId: event.data.requestId,
+        status: "ok",
+        callbackUrl: resultURL
+      }, window.location.origin);
+    });
+  }, callbackURL);
+
+  await page.goto("/login?next=%2Fconsole%2Fconnections");
+  await page.getByRole("button", { name: "注册新账号", exact: true }).click();
+  await page.getByLabel("邮箱").fill(`ai-chatgpt-${suffix}@example.test`);
+  await page.getByLabel("设置密码").fill(`AIChatGPT-${suffix}!`);
+  await page.getByRole("button", { name: "创建账号并进入控制台 →", exact: true }).click();
+  await page.waitForURL((url) => url.pathname === "/console/connections");
+
+  await page.getByRole("button", { name: /ChatGPT/ }).click();
+  await expect(page.getByRole("link", { name: "安装 TokHub AI 登录助手", exact: true }))
+    .toHaveAttribute("href", "/downloads/tokhub-ai-login-helper.zip");
+  await page.getByLabel(/TokHub 登录密码/).fill("current-password");
+  await page.locator(".ai-experimental-confirm input").check();
+  const popupPromise = page.waitForEvent("popup");
+  await page.getByRole("button", { name: "打开登录授权", exact: true }).click();
+  const popup = await popupPromise;
+  await popup.close();
+
+  await expect(page.getByText("请在新窗口完成 ChatGPT 登录")).toBeVisible();
+  await expect(page.getByPlaceholder("http://localhost:1455/auth/callback?code=…&state=…")).toBeVisible();
+  await page.getByRole("button", { name: "2. 一键识别授权结果", exact: true }).click();
+  await expect(page.getByText("ChatGPT 授权、凭证加密保存和模型验证已完成。")).toBeVisible();
+  expect(completedCallbacks).toEqual([callbackURL]);
+});
+
+test("Gemini explains the deployment dependency when Google OAuth is not ready", async ({ page }) => {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const providers = [
+    provider("gemini", "Gemini", [
+      authMethod("api_key", "官方 API Key", "stable"),
+      authMethod(
+        "oauth",
+        "使用 Google 账号授权",
+        "stable",
+        "redirect_callback",
+        false,
+        "部署端需要配置 Google OAuth Client ID 与 Secret。"
+      )
+    ])
+  ];
+  await page.route("**/api/me/ai-connection-providers", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ items: providers, policyVersion: "ai-authorization-v2", credentialPolicy: { accepted: [], rejected: [] } })
+    });
+  });
+  await page.route("**/api/me/ai-connections", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ items: [] }) });
+  });
+
+  await page.goto("/login?next=%2Fconsole%2Fconnections");
+  await page.getByRole("button", { name: "注册新账号", exact: true }).click();
+  await page.getByLabel("邮箱").fill(`ai-gemini-readiness-${suffix}@example.test`);
+  await page.getByLabel("设置密码").fill(`AIGemini-${suffix}!`);
+  await page.getByRole("button", { name: "创建账号并进入控制台 →", exact: true }).click();
+  await page.waitForURL((url) => url.pathname === "/console/connections");
+
+  await page.getByRole("button", { name: /Gemini/ }).click();
+  await expect(page.getByRole("radio", { name: /使用 Google 账号授权/ })).toBeDisabled();
+  const readiness = page.getByRole("region", { name: "Gemini OAuth 配置状态" });
+  await expect(readiness.getByText("Gemini Google OAuth 等待部署配置")).toBeVisible();
+  await expect(readiness).toContainText("Google OAuth Client ID 与 Secret");
+  await expect(page.getByLabel("Gemini API Key")).toBeVisible();
 });
 
 test("OAuth disconnect asks for the current TokHub password", async ({ page }) => {

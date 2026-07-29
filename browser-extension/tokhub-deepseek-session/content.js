@@ -1,31 +1,45 @@
 "use strict";
 
 (() => {
-  const requestType = "TOKHUB_DEEPSEEK_SESSION_REQUEST";
-  const responseType = "TOKHUB_DEEPSEEK_SESSION_RESPONSE";
-  const extensionRequestType = "TOKHUB_READ_DEEPSEEK_SESSION";
+  const requests = {
+    TOKHUB_DEEPSEEK_SESSION_REQUEST: {
+      responseType: "TOKHUB_DEEPSEEK_SESSION_RESPONSE",
+      extensionRequestType: "TOKHUB_READ_DEEPSEEK_SESSION",
+      requestPrefix: "ds_"
+    },
+    TOKHUB_CHATGPT_CALLBACK_REQUEST: {
+      responseType: "TOKHUB_CHATGPT_CALLBACK_RESPONSE",
+      extensionRequestType: "TOKHUB_READ_CHATGPT_CALLBACK",
+      requestPrefix: "cg_"
+    }
+  };
   const trustedLocalPorts = new Set(["5173", "8080", "28125"]);
 
   if (!isTrustedTokHubOrigin(window.location.origin)) return;
 
   window.addEventListener("message", (event) => {
     const request = event.data;
+    const requestConfig = requests[request?.type];
     if (
       event.source !== window ||
       event.origin !== window.location.origin ||
       request?.source !== "tokhub-web" ||
-      request.type !== requestType ||
+      !requestConfig ||
       request.version !== 1 ||
-      !validRequestID(request.requestId)
+      !validRequestID(request.requestId, requestConfig.requestPrefix)
     ) {
       return;
     }
 
-    chrome.runtime.sendMessage({ type: extensionRequestType }, (response) => {
+    const extensionMessage = { type: requestConfig.extensionRequestType };
+    if (request.type === "TOKHUB_CHATGPT_CALLBACK_REQUEST") {
+      extensionMessage.authorizationId = request.authorizationId;
+    }
+    chrome.runtime.sendMessage(extensionMessage, (response) => {
       const status = chrome.runtime.lastError ? "read_failed" : response?.status || "read_failed";
       const payload = {
         source: "tokhub-extension",
-        type: responseType,
+        type: requestConfig.responseType,
         version: 1,
         requestId: request.requestId,
         status
@@ -33,12 +47,17 @@
       if (status === "ok" && typeof response?.token === "string") {
         payload.token = response.token;
       }
+      if (status === "ok" && typeof response?.callbackUrl === "string") {
+        payload.callbackUrl = response.callbackUrl;
+      }
       window.postMessage(payload, window.location.origin);
     });
   });
 
-  function validRequestID(value) {
-    return typeof value === "string" && /^ds_[A-Za-z0-9_-]{8,80}$/.test(value);
+  function validRequestID(value, prefix) {
+    return typeof value === "string" &&
+      value.startsWith(prefix) &&
+      /^[A-Za-z0-9_-]{8,80}$/.test(value);
   }
 
   function isTrustedTokHubOrigin(origin) {

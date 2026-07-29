@@ -11,7 +11,7 @@ import (
 const (
 	CodexOAuthClientID    = "app_EMoamEEZ73f0CkXaXp7hrann"
 	CodexOAuthRedirectURI = "http://localhost:1455/auth/callback"
-	CodexBridgeVersion    = "0.144.1"
+	CodexBridgeVersion    = "0.146.0"
 	defaultOpenAIAuthURL  = "https://auth.openai.com/oauth/authorize"
 	defaultOpenAITokenURL = "https://auth.openai.com/oauth/token"
 	chatGPTCodexEndpoint  = "https://chatgpt.com/backend-api/codex"
