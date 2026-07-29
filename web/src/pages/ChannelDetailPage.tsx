@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router";
 import { Footer } from "../components/Footer";
 import { PublicNav } from "../components/PublicNav";
 import { addFavorite, adminProbeNow, currentUser, disableAdminChannel, favoriteChannels, officialExperienceHref, publicChannel, publicChannelPath, PublicChannel, PublicChannelDetail, removeFavorite, TrendBucket, User } from "../lib/api";

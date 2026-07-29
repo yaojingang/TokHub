@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router";
 import { useTranslation } from "react-i18next";
 import { AdminSettingsSummary, adminSettings, cachedCurrentUser, currentUser, logout, User } from "../lib/api";
 import { adminLoginPath, adminPath } from "../lib/adminPath";

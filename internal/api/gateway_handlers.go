@@ -1541,7 +1541,7 @@ func (s *Server) refreshGatewayOAuthBundle(ctx context.Context, authn store.Auth
 		if reauthRequired {
 			code = "invalid_grant"
 		}
-		_ = s.repo.MarkOAuthRefreshFailure(ctx, cred.ConnectionID, reauthRequired, code, time.Now().Add(time.Minute))
+		_ = s.repo.MarkOAuthRefreshFailure(ctx, cred.ConnectionID, cred.Version, reauthRequired, code, time.Now().Add(time.Minute))
 		return gatewayResolvedAuthorization{}, err
 	}
 	raw, err := refreshed.Marshal()

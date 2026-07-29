@@ -13,10 +13,11 @@ import (
 )
 
 var (
-	ErrIdempotencyConflict     = errors.New("idempotency key was already used for a different request")
-	ErrAIConnectionLimit       = errors.New("AI connection limit reached")
-	ErrAIConnectionDuplicate   = errors.New("AI connection credential is already connected")
-	ErrExperimentalRelayExists = errors.New("experimental AI connection already has a personal relay")
+	ErrIdempotencyConflict                       = errors.New("idempotency key was already used for a different request")
+	ErrAIConnectionLimit                         = errors.New("AI connection limit reached")
+	ErrAIConnectionDuplicate                     = errors.New("AI connection credential is already connected")
+	ErrAIConnectionCredentialRotationUnsupported = errors.New("AI connection credential rotation is unsupported")
+	ErrExperimentalRelayExists                   = errors.New("experimental AI connection already has a personal relay")
 )
 
 type AIConnection struct {
@@ -456,9 +457,12 @@ func (r *Repository) RotateAIConnectionSecret(ctx context.Context, ownerUserID s
 	`, connectionID, ownerUserID, orgID).Scan(&locked); err != nil {
 		return AIConnection{}, err
 	}
-	var provider, endpoint string
-	if err := tx.QueryRow(ctx, `select provider,endpoint from ai_connections where id=$1`, connectionID).Scan(&provider, &endpoint); err != nil {
+	var provider, endpoint, authMethod string
+	if err := tx.QueryRow(ctx, `select provider,endpoint,auth_method from ai_connections where id=$1`, connectionID).Scan(&provider, &endpoint, &authMethod); err != nil {
 		return AIConnection{}, err
+	}
+	if !supportsAIConnectionSecretRotation(authMethod) {
+		return AIConnection{}, ErrAIConnectionCredentialRotationUnsupported
 	}
 	if err := rejectDuplicateAIConnectionCredentialTx(ctx, tx, ownerUserID, orgID, provider, endpoint, credential, connectionID); err != nil {
 		return AIConnection{}, err
@@ -503,6 +507,15 @@ func (r *Repository) RotateAIConnectionSecret(ctx context.Context, ownerUserID s
 		return AIConnection{}, err
 	}
 	return r.AIConnectionForOwnerOrg(ctx, ownerUserID, orgID, connectionID)
+}
+
+func supportsAIConnectionSecretRotation(authMethod string) bool {
+	switch strings.ToLower(strings.TrimSpace(authMethod)) {
+	case "api_key", "api_key_guided":
+		return true
+	default:
+		return false
+	}
 }
 
 func (r *Repository) DeleteAIConnection(ctx context.Context, ownerUserID string, orgID string, connectionID string) error {

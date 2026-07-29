@@ -724,6 +724,7 @@ func (s *Server) writeAuthorizationCallbackPage(w http.ResponseWriter, status st
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Referrer-Policy", "no-referrer")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'")
 	_, _ = fmt.Fprintf(w, `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>TokHub 授权结果</title><style>body{font-family:system-ui,sans-serif;background:#f6f7fb;color:#172033;display:grid;place-items:center;min-height:100vh;margin:0}.card{max-width:420px;background:#fff;border:1px solid #dfe3eb;border-radius:16px;padding:32px;box-shadow:0 16px 50px rgba(28,43,76,.1)}a{color:#2959c8}</style><body><main class="card"><h1>%s</h1><p>%s</p><p><a href="%s">返回 TokHub</a></p></main><script>if(window.opener){window.opener.postMessage({type:"tokhub:ai-authorization",status:%q,id:%q},window.location.origin);window.close()}</script></body></html>`,
 		map[bool]string{true: "授权完成", false: "授权未完成"}[status == "completed"],

@@ -298,7 +298,7 @@ func (s *Server) validateAIConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if item.AuthMethod == "deepseek_web_token" && validation.ErrorType == "upstream_auth_error" {
-		if markErr := s.repo.MarkOAuthRefreshFailure(r.Context(), connectionID, true, "invalid_grant", time.Time{}); markErr != nil {
+		if markErr := s.repo.MarkOAuthRefreshFailure(r.Context(), connectionID, secret.Version, true, "invalid_grant", time.Time{}); markErr != nil {
 			s.logger.Warn("failed to mark DeepSeek web session for reauthorization",
 				"connection_id", connectionID, "error", markErr)
 		} else if refreshed, readErr := s.repo.AIConnectionForOwnerOrg(r.Context(), user.ID, orgID, connectionID); readErr == nil {
@@ -339,6 +339,10 @@ func (s *Server) rotateAIConnectionCredential(w http.ResponseWriter, r *http.Req
 	}
 	if err != nil {
 		writeError(w, r, http.StatusInternalServerError, "ai_connection_unavailable", "Could not load AI service connection")
+		return
+	}
+	if !supportsAIConnectionCredentialRotation(item.AuthMethod) {
+		writeError(w, r, http.StatusUnprocessableEntity, "credential_rotation_not_supported", "该连接使用账号授权，请通过“重新授权”更新登录态")
 		return
 	}
 	resolved, err := connections.ResolveProvider(connections.ResolveProviderInput{
@@ -391,11 +395,24 @@ func (s *Server) rotateAIConnectionCredential(w http.ResponseWriter, r *http.Req
 		writeError(w, r, http.StatusConflict, "ai_connection_duplicate", "This official credential is already connected to the same provider endpoint")
 		return
 	}
+	if errors.Is(err, store.ErrAIConnectionCredentialRotationUnsupported) {
+		writeError(w, r, http.StatusUnprocessableEntity, "credential_rotation_not_supported", "该连接使用账号授权，请通过“重新授权”更新登录态")
+		return
+	}
 	if err != nil {
 		writeError(w, r, http.StatusInternalServerError, "credential_rotate_failed", "Could not rotate connection credential")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"connection": updated, "validation": validation})
+}
+
+func supportsAIConnectionCredentialRotation(authMethod string) bool {
+	switch strings.ToLower(strings.TrimSpace(authMethod)) {
+	case "api_key", "api_key_guided":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) deleteAIConnection(w http.ResponseWriter, r *http.Request) {

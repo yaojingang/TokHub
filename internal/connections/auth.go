@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -78,6 +79,9 @@ func ParseCredentialBundle(raw string) (CredentialBundle, error) {
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&bundle); err != nil {
 		return CredentialBundle{}, fmt.Errorf("invalid credential bundle: %w", err)
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return CredentialBundle{}, fmt.Errorf("invalid credential bundle: trailing data")
 	}
 	if bundle.Schema != CredentialBundleSchemaV1 {
 		return CredentialBundle{}, fmt.Errorf("unsupported credential bundle schema %q", bundle.Schema)

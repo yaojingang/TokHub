@@ -14,6 +14,19 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+func TestAIConnectionSecretRotationOnlyAcceptsOfficialAPIKeyMethods(t *testing.T) {
+	for _, method := range []string{"api_key", "api_key_guided"} {
+		if !supportsAIConnectionSecretRotation(method) {
+			t.Fatalf("%s connection could not rotate its official API key", method)
+		}
+	}
+	for _, method := range []string{"", "oauth", "codex_oauth", "deepseek_web_token"} {
+		if supportsAIConnectionSecretRotation(method) {
+			t.Fatalf("%s managed connection accepted raw API key rotation", method)
+		}
+	}
+}
+
 func TestAIConnectionCanCreateIdempotentManagedRelay(t *testing.T) {
 	databaseURL := strings.TrimSpace(os.Getenv("TOKHUB_TEST_DATABASE_URL"))
 	if databaseURL == "" {
@@ -330,6 +343,52 @@ func TestAIConnectionCanCreateIdempotentManagedRelay(t *testing.T) {
 	completedAuthorization, err := repo.AIAuthorizationAttemptForOwner(ctx, userID, authorizationID)
 	if err != nil || completedAuthorization.Status != "completed" || completedAuthorization.ConnectionID != experimentalConnection.ID {
 		t.Fatalf("authorization and connection were not committed together: attempt=%#v err=%v", completedAuthorization, err)
+	}
+	staleSecret, err := repo.AIConnectionSecretForOwnerOrg(ctx, userID, orgID, experimentalConnection.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.MarkOAuthRefreshFailure(
+		ctx,
+		experimentalConnection.ID,
+		staleSecret.Version,
+		true,
+		"invalid_grant",
+		time.Time{},
+	); err != nil {
+		t.Fatalf("current refresh failure could not require reauthorization: %v", err)
+	}
+	experimentalConnection, err = repo.AIConnectionForOwnerOrg(ctx, userID, orgID, experimentalConnection.ID)
+	if err != nil || experimentalConnection.AuthStatus != "reauth_required" {
+		t.Fatalf("current invalid grant was not quarantined: connection=%#v err=%v", experimentalConnection, err)
+	}
+	if _, err := db.Exec(ctx, `
+		update ai_connection_secrets
+		set version=version+1,updated_at=now()
+		where connection_id=$1
+	`, experimentalConnection.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(ctx, `
+		update ai_connections
+		set auth_status='active',last_error_code='',last_error_message='',updated_at=now()
+		where id=$1
+	`, experimentalConnection.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.MarkOAuthRefreshFailure(
+		ctx,
+		experimentalConnection.ID,
+		staleSecret.Version,
+		true,
+		"invalid_grant",
+		time.Time{},
+	); !errors.Is(err, pgx.ErrNoRows) {
+		t.Fatalf("stale refresh failure overwrote a newer authorization: %v", err)
+	}
+	experimentalConnection, err = repo.AIConnectionForOwnerOrg(ctx, userID, orgID, experimentalConnection.ID)
+	if err != nil || experimentalConnection.AuthStatus != "active" {
+		t.Fatalf("newer authorization was quarantined by stale refresh failure: connection=%#v err=%v", experimentalConnection, err)
 	}
 	experimentalRelayInput := QuickRelayInput{
 		OwnerUserID: userID, OrgID: orgID, ConnectionID: experimentalConnection.ID,

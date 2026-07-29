@@ -120,11 +120,10 @@ func (a *ChatGPTCodexAdapter) Refresh(ctx context.Context, bundle CredentialBund
 	if strings.TrimSpace(bundle.RefreshToken) == "" {
 		return CredentialBundle{}, ErrCredentialReauth
 	}
-	token, err := exchangeOAuthForm(ctx, a.cfg.client(), a.cfg.OpenAITokenURL, url.Values{
-		"grant_type":    {"refresh_token"},
-		"client_id":     {CodexOAuthClientID},
-		"refresh_token": {bundle.RefreshToken},
-		"scope":         {"openid profile email"},
+	token, err := exchangeOAuthJSON(ctx, a.cfg.client(), a.cfg.OpenAITokenURL, map[string]string{
+		"grant_type":    "refresh_token",
+		"client_id":     CodexOAuthClientID,
+		"refresh_token": bundle.RefreshToken,
 	})
 	if err != nil {
 		return CredentialBundle{}, err

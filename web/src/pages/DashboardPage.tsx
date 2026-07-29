@@ -1,6 +1,6 @@
 import type { CSSProperties, Dispatch, FormEvent, ReactNode, SetStateAction } from "react";
 import { useEffect, useMemo, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation } from "react-router";
 import { ConsoleShell } from "../components/ConsoleShell";
 import {
   bulkPrivateChannels,

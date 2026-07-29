@@ -453,7 +453,7 @@ func (r *Repository) ReplaceOAuthAIConnectionAuthorization(ctx context.Context, 
 	return r.AIConnectionForOwnerOrg(ctx, input.OwnerUserID, input.OrgID, connectionID)
 }
 
-func (r *Repository) MarkOAuthRefreshFailure(ctx context.Context, connectionID string, reauthRequired bool, errorCode string, nextRefresh time.Time) error {
+func (r *Repository) MarkOAuthRefreshFailure(ctx context.Context, connectionID string, expectedVersion int, reauthRequired bool, errorCode string, nextRefresh time.Time) error {
 	authStatus := "attention"
 	if reauthRequired {
 		authStatus = "reauth_required"
@@ -463,12 +463,21 @@ func (r *Repository) MarkOAuthRefreshFailure(ctx context.Context, connectionID s
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	var locked bool
+	if err := tx.QueryRow(ctx, `
+		select true
+		from ai_connections
+		where id=$1 and deleted_at is null
+		for update
+	`, connectionID).Scan(&locked); err != nil {
+		return err
+	}
 	tag, err := tx.Exec(ctx, `
 		update ai_connection_secrets
 		set refresh_failures=refresh_failures+1,last_refresh_error_code=$2,
-			next_refresh_at=case when $3 then null else $4 end,updated_at=now()
-		where connection_id=$1 and secret_type='oauth_bundle'
-	`, connectionID, errorCode, reauthRequired, nextRefresh)
+			next_refresh_at=case when $3 then null else $4::timestamptz end,updated_at=now()
+		where connection_id=$1 and version=$5 and secret_type='oauth_bundle'
+	`, connectionID, errorCode, reauthRequired, nextRefresh, expectedVersion)
 	if err != nil {
 		return err
 	}

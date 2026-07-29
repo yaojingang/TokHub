@@ -1,6 +1,7 @@
 package connections
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -35,11 +36,23 @@ type oauthTokenResponse struct {
 }
 
 func exchangeOAuthForm(ctx context.Context, client *http.Client, endpoint string, form url.Values) (oauthTokenResponse, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
+	return exchangeOAuthRequest(ctx, client, endpoint, strings.NewReader(form.Encode()), "application/x-www-form-urlencoded")
+}
+
+func exchangeOAuthJSON(ctx context.Context, client *http.Client, endpoint string, payload any) (oauthTokenResponse, error) {
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return oauthTokenResponse{}, err
 	}
-	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	return exchangeOAuthRequest(ctx, client, endpoint, bytes.NewReader(body), "application/json")
+}
+
+func exchangeOAuthRequest(ctx context.Context, client *http.Client, endpoint string, requestBody io.Reader, contentType string) (oauthTokenResponse, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, requestBody)
+	if err != nil {
+		return oauthTokenResponse{}, err
+	}
+	request.Header.Set("Content-Type", contentType)
 	request.Header.Set("Accept", "application/json")
 	response, err := client.Do(request)
 	if err != nil {

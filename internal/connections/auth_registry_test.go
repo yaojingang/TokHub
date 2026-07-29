@@ -84,6 +84,43 @@ func TestAuthRegistryPublishesAvailableAndUnavailableProviderMethods(t *testing.
 	}
 }
 
+func TestGeminiOAuthRequiresSafeCallbackBaseURL(t *testing.T) {
+	base := AdapterConfig{
+		WebAuthEnabled:     true,
+		GeminiOAuthEnabled: true,
+		GoogleClientID:     "google-client",
+		GoogleClientSecret: "google-secret",
+	}
+	for _, publicURL := range []string{
+		"http://tokhub.example.test",
+		"https://user@tokhub.example.test",
+		"https://tokhub.example.test/custom/path",
+		"https://tokhub.example.test?next=callback",
+		"https://tokhub.example.test#callback",
+	} {
+		cfg := base
+		cfg.PublicURL = publicURL
+		registry := NewAuthRegistry(cfg)
+		if _, ok := registry.Adapter("gemini", "oauth"); ok {
+			t.Fatalf("Gemini OAuth accepted unsafe public URL %q", publicURL)
+		}
+	}
+	for _, publicURL := range []string{
+		"https://tokhub.example.test",
+		"https://tokhub.example.test/",
+		"http://localhost:8125",
+		"http://127.0.0.1:8125",
+		"http://[::1]:8125",
+	} {
+		cfg := base
+		cfg.PublicURL = publicURL
+		registry := NewAuthRegistry(cfg)
+		if _, ok := registry.Adapter("gemini", "oauth"); !ok {
+			t.Fatalf("Gemini OAuth rejected safe public URL %q", publicURL)
+		}
+	}
+}
+
 func TestDeepSeekWebAdapterGuidesLoginAndPinsDirectTokenBridge(t *testing.T) {
 	bridge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/healthz" {
@@ -339,15 +376,17 @@ func TestGeminiOAuthValidatesQuotaProjectBeforeOpeningGoogleAuthorization(t *tes
 func TestChatGPTCodexAdapterParsesFixedCallbackAndPinsPrivateEndpoint(t *testing.T) {
 	var refreshCalls int
 	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := r.ParseForm(); err != nil {
-			t.Fatal(err)
-		}
-		if r.Form.Get("grant_type") == "refresh_token" {
+		if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+			var refreshRequest map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&refreshRequest); err != nil {
+				t.Fatal(err)
+			}
 			refreshCalls++
-			if r.Form.Get("client_id") != CodexOAuthClientID ||
-				r.Form.Get("refresh_token") != "refresh" ||
-				r.Form.Get("scope") != "openid profile email" {
-				t.Fatalf("unexpected ChatGPT refresh form: %v", r.Form)
+			if refreshRequest["grant_type"] != "refresh_token" ||
+				refreshRequest["client_id"] != CodexOAuthClientID ||
+				refreshRequest["refresh_token"] != "refresh" ||
+				refreshRequest["scope"] != "" {
+				t.Fatalf("unexpected ChatGPT refresh JSON: %v", refreshRequest)
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"access_token":  "access-refreshed",
@@ -356,6 +395,12 @@ func TestChatGPTCodexAdapterParsesFixedCallbackAndPinsPrivateEndpoint(t *testing
 				"expires_in":    3600,
 			})
 			return
+		}
+		if err := r.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		if r.Form.Get("grant_type") == "refresh_token" {
+			t.Fatalf("ChatGPT refresh used legacy form encoding: %v", r.Form)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"access_token":  fakeJWT(map[string]any{"exp": time.Now().Add(time.Hour).Unix()}),

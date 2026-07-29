@@ -3,7 +3,9 @@ package connections
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -183,10 +185,33 @@ func geminiUnavailableReason(cfg AdapterConfig) string {
 		return "管理员尚未开启 Gemini Google OAuth。"
 	case strings.TrimSpace(cfg.PublicURL) == "":
 		return "部署端需要配置公开回调地址。"
+	case !validOAuthCallbackBaseURL(cfg.PublicURL):
+		return "部署端需要配置 HTTPS 公共回调地址；本地开发仅允许 loopback HTTP。"
 	case strings.TrimSpace(cfg.GoogleClientID) == "" || strings.TrimSpace(cfg.GoogleClientSecret) == "":
 		return "部署端需要配置 Google OAuth Client ID 与 Secret。"
 	default:
 		return ""
+	}
+}
+
+func validOAuthCallbackBaseURL(rawURL string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil || parsed.Host == "" || parsed.Opaque != "" || parsed.User != nil ||
+		(parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return false
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "https":
+		return true
+	case "http":
+		host := strings.TrimSuffix(strings.ToLower(parsed.Hostname()), ".")
+		if host == "localhost" {
+			return true
+		}
+		ip := net.ParseIP(host)
+		return ip != nil && ip.IsLoopback()
+	default:
+		return false
 	}
 }
 

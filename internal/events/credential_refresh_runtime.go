@@ -244,7 +244,10 @@ func (r *credentialRefreshRunner) recordFailure(ctx context.Context, candidate s
 		return refreshErr
 	}
 	defer cancel()
-	if err := r.repo.MarkOAuthRefreshFailure(mutationCtx, candidate.ConnectionID, reauth, code, next); err != nil {
+	if err := r.repo.MarkOAuthRefreshFailure(mutationCtx, candidate.ConnectionID, candidate.Secret.Version, reauth, code, next); err != nil {
+		if store.IsOptimisticCredentialConflict(err) {
+			return refreshErr
+		}
 		return err
 	}
 	r.logger.Warn("OAuth credential refresh failed", "provider", candidate.Provider, "reason", code)

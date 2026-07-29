@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router";
 import { useTranslation } from "react-i18next";
 import { activeWorkspaceId, cachedCurrentUser, consoleSettings, currentUser, logout, setActiveWorkspaceId, User, WorkspaceOption, WorkspaceSettings } from "../lib/api";
 import { groupedNavModules, type ModuleConfig } from "../modules/registry";

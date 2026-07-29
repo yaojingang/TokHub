@@ -156,6 +156,22 @@ func TestCredentialBundleRoundTripsWithoutDroppingRefreshToken(t *testing.T) {
 	}
 }
 
+func TestParseCredentialBundleRejectsTrailingDocuments(t *testing.T) {
+	bundle := CredentialBundle{
+		Schema:          CredentialBundleSchemaV1,
+		AccessToken:     "access",
+		TokenType:       "Bearer",
+		ProviderSubject: "subject",
+	}
+	raw, err := bundle.Marshal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ParseCredentialBundle(raw + `{"accessToken":"replacement"}`); err == nil {
+		t.Fatal("ParseCredentialBundle() accepted a trailing JSON document")
+	}
+}
+
 func TestParseOIDCClaimsAcceptsBothDocumentedGoogleIssuers(t *testing.T) {
 	now := time.Date(2026, 7, 29, 10, 0, 0, 0, time.UTC)
 	for _, issuer := range []string{"https://accounts.google.com", "accounts.google.com"} {

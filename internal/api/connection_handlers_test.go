@@ -35,6 +35,36 @@ func TestOAuthConnectionDisconnectRequiresPasswordStepUp(t *testing.T) {
 	}
 }
 
+func TestCredentialRotationIsLimitedToOfficialAPIKeys(t *testing.T) {
+	for _, method := range []string{"api_key", "api_key_guided"} {
+		if !supportsAIConnectionCredentialRotation(method) {
+			t.Fatalf("%s connection could not rotate its official API key", method)
+		}
+	}
+	for _, method := range []string{"", "oauth", "codex_oauth", "deepseek_web_token"} {
+		if supportsAIConnectionCredentialRotation(method) {
+			t.Fatalf("%s managed connection accepted raw API key rotation", method)
+		}
+	}
+}
+
+func TestAuthorizationCallbackPagePreventsOneTimeCodeReferrerLeakage(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	(&Server{}).writeAuthorizationCallbackPage(recorder, "completed", "authz_test", "授权完成")
+
+	response := recorder.Result()
+	defer response.Body.Close()
+	if got := response.Header.Get("Referrer-Policy"); got != "no-referrer" {
+		t.Fatalf("Referrer-Policy = %q, want no-referrer", got)
+	}
+	if got := response.Header.Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", got)
+	}
+	if got := response.Header.Get("Content-Security-Policy"); !strings.Contains(got, "default-src 'none'") {
+		t.Fatalf("Content-Security-Policy = %q", got)
+	}
+}
+
 func TestAuthorizationStartStepUpPolicySkipsOnlyDeepSeekSessionImport(t *testing.T) {
 	if requiresAIConnectionAuthorizationStartStepUp("deepseek_web_token") {
 		t.Fatal("DeepSeek browser session import required a TokHub password before login-state detection")

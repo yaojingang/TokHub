@@ -1,4 +1,4 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router";
 import { useEffect, useState } from "react";
 import { currentUser, siteConfig } from "../lib/api";
 import type { SiteConfig, User } from "../lib/api";
