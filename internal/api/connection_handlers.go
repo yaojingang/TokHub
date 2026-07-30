@@ -69,6 +69,15 @@ func (s *Server) meAIConnectionProviders(w http.ResponseWriter, r *http.Request)
 			DocsURL:     items[index].DocsURL,
 		}}
 		items[index].AuthMethods = append(items[index].AuthMethods, s.authRegistry.Methods(items[index].Code)...)
+		if s.openCLIBrowserProviderEnabled(items[index].Code) {
+			items[index].AuthMethods = append(items[index].AuthMethods, connections.AuthMethodManifest{
+				Code: "opencli_browser", Label: "连接本机已登录网页", Release: "experimental",
+				SharingScope: "personal", CompletionMode: "local_browser_connector", Enabled: true,
+				Description: "通过本机连接器调用 OpenCLI 已连接 Chrome Profile 中的网页账号，登录态始终留在本机。",
+				RiskNotice:  "仅限本人低频使用。网页结构、平台规则或登录状态变化都可能导致任务中断。",
+				DocsURL:     "https://github.com/jackwener/OpenCLI",
+			})
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items":         items,
@@ -79,6 +88,7 @@ func (s *Server) meAIConnectionProviders(w http.ResponseWriter, r *http.Request)
 				"official OAuth grants",
 				"explicitly enabled Codex OAuth grants",
 				"explicitly enabled DeepSeek userToken grants",
+				"explicitly enabled local browser connector references",
 			},
 			"rejected": []string{"provider passwords", "one-time codes", "browser cookies", "unrelated local storage", "cf_clearance"},
 		},
@@ -264,11 +274,24 @@ func (s *Server) validateAIConnection(w http.ResponseWriter, r *http.Request) {
 		writeError(w, r, http.StatusBadRequest, "invalid_json", "Invalid JSON body")
 		return
 	}
+	connectionID := chi.URLParam(r, "connectionID")
+	stored, storedErr := s.repo.AIConnectionForOwnerOrg(r.Context(), user.ID, orgID, connectionID)
+	if errors.Is(storedErr, pgx.ErrNoRows) {
+		writeError(w, r, http.StatusNotFound, "ai_connection_not_found", "AI service connection was not found")
+		return
+	}
+	if storedErr != nil {
+		writeError(w, r, http.StatusInternalServerError, "ai_connection_unavailable", "Could not load AI service connection")
+		return
+	}
+	if stored.AuthMethod == "opencli_browser" {
+		s.validateAIBrowserConnection(w, r, user.ID, orgID, stored)
+		return
+	}
 	if !req.ConfirmBillable {
 		writeError(w, r, http.StatusUnprocessableEntity, "billable_validation_confirmation_required", "Confirm the provider may charge for minimal model validation")
 		return
 	}
-	connectionID := chi.URLParam(r, "connectionID")
 	item, secret, resolved, apiKey, ok := s.loadAIConnectionCredential(w, r, user.ID, orgID, connectionID)
 	if !ok {
 		return
@@ -505,7 +528,7 @@ func requiresAIConnectionDisconnectStepUp(authMethod string) bool {
 
 func isManagedAuthorizationMethod(authMethod string) bool {
 	switch strings.ToLower(strings.TrimSpace(authMethod)) {
-	case "oauth", "codex_oauth", "deepseek_web_token":
+	case "oauth", "codex_oauth", "deepseek_web_token", "opencli_browser":
 		return true
 	default:
 		return false
@@ -554,7 +577,7 @@ func (s *Server) quickCreateAIConnectionRelay(w http.ResponseWriter, r *http.Req
 		writeError(w, r, http.StatusConflict, "ai_connection_reauthorization_required", "Reauthorize this AI service connection before creating a relay")
 		return
 	}
-	if item.AuthMethod == "codex_oauth" || item.AuthMethod == "deepseek_web_token" {
+	if item.AuthMethod == "codex_oauth" || item.AuthMethod == "deepseek_web_token" || item.AuthMethod == "opencli_browser" {
 		req.QPSLimit = 1
 	}
 	if len(req.ModelIDs) == 0 {

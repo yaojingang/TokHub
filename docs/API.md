@@ -102,6 +102,12 @@ curl -b cookies.txt -c cookies.txt -X POST http://localhost:8080/api/auth/login 
 - `POST /api/me/ai-connections/{connectionID}/validate`
 - `POST /api/me/ai-connections/{connectionID}/rotate`
 - `POST /api/me/ai-connections/{connectionID}/quick-relay`
+- `GET/POST /api/me/ai-browser-connectors`
+- `DELETE /api/me/ai-browser-connectors/{connectorID}`
+- `POST /api/me/ai-browser-connections`
+- `GET /api/me/ai-connections/{connectionID}/browser-risk`
+- `POST /api/me/ai-connections/{connectionID}/browser-risk/pause`
+- `POST /api/me/ai-connections/{connectionID}/browser-risk/resume`
 - `POST /api/me/ai-auth/step-up`
 - `POST /api/me/ai-authorizations`
 - `GET /api/me/ai-authorizations/google/callback`
@@ -123,9 +129,34 @@ AI 连接中心支持 OpenAI、Gemini、Kimi、DeepSeek、豆包、Claude 和千
 | DeepSeek | 官方开放平台引导 + API Key | stable，随全局开关生效 | TokHub 打开官方密钥页面，用户返回后粘贴开发者 API Key |
 | DeepSeek | 网页账号 userToken | experimental，默认关闭 | 用户登录 DeepSeek 网页版后导入 `userToken.value`，通过独立 DS2API 桥接为个人中转提供 OpenAI 兼容接口 |
 | ChatGPT | Codex OAuth | experimental，默认关闭 | 自托管实验功能，固定消费者接口、个人范围、每秒 1 次、最多 2 并发、单连接 1 个中转 |
+| ChatGPT、Gemini、DeepSeek | OpenCLI 本机浏览器 | experimental，默认关闭 | 网页登录态留在用户电脑，通过受限任务队列提供纯文本非流式个人中转 |
 | 其余平台 | 官方开发者 API Key | stable | 沿用已有连接和安全轮换流程 |
 
 系统不会采集服务商密码、短信验证码、完整浏览器 Cookie、`cf_clearance` 或其他 Local Storage 数据。DeepSeek 实验适配器只接受 `userToken` 中的 `value`，二次验证字段只校验当前 TokHub 登录密码。
+
+OpenCLI 本机模式额外提供设备 API：
+
+- `POST /api/ai-browser-connectors/pair`
+- `POST /api/ai-browser-connectors/heartbeat`
+- `POST /api/ai-browser-connectors/tasks/claim`
+- `POST /api/ai-browser-connectors/tasks/{taskID}/complete`
+
+配对接口使用 10 分钟、单次有效的随机码；其余设备接口使用配对后签发的 Bearer Device Token。Device Token 只返回一次，服务端保存 SHA-256 哈希。服务端任务白名单固定为 `status`、`ask`，服务商白名单固定为 `openai`、`gemini`、`deepseek`。
+
+创建浏览器连接：
+
+```json
+POST /api/me/ai-browser-connections
+{
+  "connectorId": "aibc_...",
+  "provider": "deepseek",
+  "displayName": "我的 DeepSeek 网页",
+  "models": ["deepseek-web"],
+  "termsAckVersion": "opencli-personal-browser-experimental-v1"
+}
+```
+
+创建请求会排入一次 `status` 任务，在线连接器通过 OpenCLI 识别已连接 Chrome Profile 中的当前账号。成功后，TokHub 保存加密的连接器引用、脱敏账号标识和设备令牌派生的账号指纹。每次 `ask` 前，本机连接器都会重新执行 `whoami` 并比对账号指纹；账号已切换时请求会以 `identity_mismatch` 终止，不会发送给模型。
 
 AI 服务连接固定归属当前用户的个人工作区。`X-TokHub-Workspace` 和工作区查询参数不会改变连接归属。团队共享需要独立的授权、接受和撤销流程，当前版本没有开放。
 

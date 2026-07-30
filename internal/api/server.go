@@ -163,13 +163,27 @@ func NewServer(cfg Config, repo *store.Repository, authSvc *auth.Service, probeR
 			mr.Delete("/ai-authorizations/{authorizationID}", s.cancelAIConnectionAuthorization)
 			mr.Get("/ai-connections", s.meAIConnections)
 			mr.Post("/ai-connections", s.createAIConnection)
+			mr.Get("/ai-browser-connectors", s.meAIBrowserConnectors)
+			mr.Post("/ai-browser-connectors", s.createAIBrowserConnector)
+			mr.Delete("/ai-browser-connectors/{connectorID}", s.revokeAIBrowserConnector)
+			mr.Post("/ai-browser-connections", s.createAIBrowserConnection)
 			mr.Get("/ai-connections/{connectionID}", s.meAIConnection)
 			mr.Post("/ai-connections/{connectionID}/validate", s.validateAIConnection)
+			mr.Get("/ai-connections/{connectionID}/browser-risk", s.meAIBrowserConnectionRisk)
+			mr.Post("/ai-connections/{connectionID}/browser-risk/pause", s.pauseAIBrowserConnection)
+			mr.Post("/ai-connections/{connectionID}/browser-risk/resume", s.resumeAIBrowserConnection)
 			mr.Post("/ai-connections/{connectionID}/rotate", s.rotateAIConnectionCredential)
 			mr.Post("/ai-connections/{connectionID}/quick-relay", s.quickCreateAIConnectionRelay)
 			mr.Post("/ai-connections/{connectionID}/reauthorize", s.startAIConnectionAuthorization)
 			mr.Post("/ai-connections/{connectionID}/disconnect", s.disconnectAIConnection)
 			mr.Delete("/ai-connections/{connectionID}", s.deleteAIConnection)
+		})
+		api.Route("/ai-browser-connectors", func(br chi.Router) {
+			br.Use(s.browserConnectorRateLimit)
+			br.Post("/pair", s.pairAIBrowserConnector)
+			br.Post("/heartbeat", s.heartbeatAIBrowserConnector)
+			br.Post("/tasks/claim", s.claimAIBrowserConnectorTask)
+			br.Post("/tasks/{taskID}/complete", s.completeAIBrowserConnectorTask)
 		})
 		api.Route("/public", func(pr chi.Router) {
 			pr.Use(s.publicRateLimit)
@@ -420,7 +434,8 @@ func requestOrigin(r *http.Request) string {
 func (s *Server) csrf(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		publicRecommendClick := r.Method == http.MethodPost && r.URL.Path == "/api/public/recommend/click"
-		if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions || !strings.HasPrefix(r.URL.Path, "/api/") || publicRecommendClick {
+		localBrowserConnector := strings.HasPrefix(r.URL.Path, "/api/ai-browser-connectors/")
+		if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions || !strings.HasPrefix(r.URL.Path, "/api/") || publicRecommendClick || localBrowserConnector {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -445,6 +460,16 @@ func (s *Server) authRateLimit(next http.Handler) http.Handler {
 		}
 		if !s.allowRate(s.authLimiter, clientIP(r), 30, time.Minute) {
 			writeError(w, r, http.StatusTooManyRequests, "rate_limited", "Too many auth requests")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) browserConnectorRateLimit(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.allowRate(s.authLimiter, "browser-connector-device:"+clientIP(r), 600, time.Minute) {
+			writeError(w, r, http.StatusTooManyRequests, "rate_limited", "Too many local browser connector requests")
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -569,6 +594,17 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(&out, "# HELP tokhub_ai_connection_validations_total AI connection validation attempts\n# TYPE tokhub_ai_connection_validations_total counter\ntokhub_ai_connection_validations_total %d\n", snapshot.AIConnectionValidations)
 	fmt.Fprintf(&out, "# HELP tokhub_ai_connection_validation_failures_total Failed AI connection validation attempts\n# TYPE tokhub_ai_connection_validation_failures_total counter\ntokhub_ai_connection_validation_failures_total %d\n", snapshot.AIConnectionValidationFailure)
 	fmt.Fprintf(&out, "# HELP tokhub_ai_quick_relays_total Completed personal relays created from AI connections\n# TYPE tokhub_ai_quick_relays_total counter\ntokhub_ai_quick_relays_total %d\n", snapshot.AIQuickRelays)
+	fmt.Fprintf(&out, "# HELP tokhub_ai_browser_connectors_online Local browser connectors seen in the last 45 seconds\n# TYPE tokhub_ai_browser_connectors_online gauge\ntokhub_ai_browser_connectors_online %d\n", snapshot.AIBrowserConnectorsOnline)
+	fmt.Fprintf(&out, "# HELP tokhub_ai_browser_tasks_completed_total Completed local browser tasks\n# TYPE tokhub_ai_browser_tasks_completed_total counter\ntokhub_ai_browser_tasks_completed_total %d\n", snapshot.AIBrowserTasksCompleted)
+	fmt.Fprintf(&out, "# HELP tokhub_ai_browser_tasks_failed_total Failed local browser tasks\n# TYPE tokhub_ai_browser_tasks_failed_total counter\ntokhub_ai_browser_tasks_failed_total %d\n", snapshot.AIBrowserTasksFailed)
+	fmt.Fprintf(&out, "# HELP tokhub_ai_browser_tasks_expired_total Expired local browser tasks\n# TYPE tokhub_ai_browser_tasks_expired_total counter\ntokhub_ai_browser_tasks_expired_total %d\n", snapshot.AIBrowserTasksExpired)
+	fmt.Fprintf(&out, "# HELP tokhub_ai_browser_security_challenges_total Local browser tasks stopped by a security challenge\n# TYPE tokhub_ai_browser_security_challenges_total counter\ntokhub_ai_browser_security_challenges_total %d\n", snapshot.AIBrowserSecurityChallenges)
+	fmt.Fprintf(&out, "# HELP tokhub_ai_browser_accounts_cooling Local browser accounts in cooldown\n# TYPE tokhub_ai_browser_accounts_cooling gauge\ntokhub_ai_browser_accounts_cooling %d\n", snapshot.AIBrowserAccountsCooling)
+	fmt.Fprintf(&out, "# HELP tokhub_ai_browser_accounts_locked Local browser accounts locked by a security challenge\n# TYPE tokhub_ai_browser_accounts_locked gauge\ntokhub_ai_browser_accounts_locked %d\n", snapshot.AIBrowserAccountsLocked)
+	fmt.Fprintf(&out, "# HELP tokhub_ai_browser_accounts_reauth Local browser accounts requiring login recognition\n# TYPE tokhub_ai_browser_accounts_reauth gauge\ntokhub_ai_browser_accounts_reauth %d\n", snapshot.AIBrowserAccountsReauth)
+	fmt.Fprintf(&out, "# HELP tokhub_ai_browser_accounts_paused Local browser accounts paused by their owner\n# TYPE tokhub_ai_browser_accounts_paused gauge\ntokhub_ai_browser_accounts_paused %d\n", snapshot.AIBrowserAccountsPaused)
+	fmt.Fprintf(&out, "# HELP tokhub_ai_browser_adapters_blocked Local browser accounts blocked by adapter incompatibility\n# TYPE tokhub_ai_browser_adapters_blocked gauge\ntokhub_ai_browser_adapters_blocked %d\n", snapshot.AIBrowserAdaptersBlocked)
+	fmt.Fprintf(&out, "# HELP tokhub_ai_browser_rate_limit_events_current Provider rate-limit events in current account safety windows\n# TYPE tokhub_ai_browser_rate_limit_events_current gauge\ntokhub_ai_browser_rate_limit_events_current %d\n", snapshot.AIBrowserRateLimitEvents)
 	out.WriteString("# HELP tokhub_ai_authorization_attempts AI account authorization attempts by current state\n# TYPE tokhub_ai_authorization_attempts gauge\n")
 	for _, item := range authSnapshot.Attempts {
 		fmt.Fprintf(&out, "tokhub_ai_authorization_attempts{provider=%q,method=%q,status=%q} %d\n", item.Provider, item.Method, item.Status, item.Count)

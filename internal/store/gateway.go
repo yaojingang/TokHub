@@ -177,23 +177,24 @@ type GatewayRequestEvent struct {
 }
 
 type GatewayChannelCredential struct {
-	ChannelID        string
-	ConnectionID     string
-	OwnerUserID      string
-	Provider         string
-	Ciphertext       string
-	Nonce            string
-	Mask             string
-	Fingerprint      string
-	EncryptionKeyID  string
-	FingerprintKeyID string
-	Algorithm        string
-	AuthMethod       string
-	AuthStatus       string
-	SecretType       string
-	PayloadFormat    string
-	ExpiresAt        *time.Time
-	Version          int
+	ChannelID          string
+	ConnectionID       string
+	OwnerUserID        string
+	Provider           string
+	Ciphertext         string
+	Nonce              string
+	Mask               string
+	Fingerprint        string
+	EncryptionKeyID    string
+	FingerprintKeyID   string
+	Algorithm          string
+	AuthMethod         string
+	AuthStatus         string
+	SecretType         string
+	PayloadFormat      string
+	SubjectFingerprint string
+	ExpiresAt          *time.Time
+	Version            int
 }
 
 type GatewayUsageSummary struct {
@@ -1471,7 +1472,8 @@ func (r *Repository) GatewayChannelCredential(ctx context.Context, orgID string,
 			coalesce(acs.encryption_key_id,''),coalesce(acs.fingerprint_key_id,''),
 			coalesce(acs.algorithm,'aes-256-gcm'),coalesce(ac.auth_method,'api_key'),
 			coalesce(ac.auth_status,'active'),coalesce(acs.secret_type,'api_key'),
-			coalesce(acs.payload_format,'opaque'),acs.expires_at,coalesce(acs.version,1)
+			coalesce(acs.payload_format,'opaque'),coalesce(acs.subject_fingerprint,''),
+			acs.expires_at,coalesce(acs.version,1)
 		from channels c
 			left join channel_credentials cc on cc.channel_id=c.id
 			left join ai_connections ac on ac.id=c.ai_connection_id
@@ -1520,7 +1522,7 @@ func (r *Repository) GatewayChannelCredential(ctx context.Context, orgID string,
 		&cred.Ciphertext, &cred.Nonce, &cred.Mask, &cred.Fingerprint,
 		&cred.EncryptionKeyID, &cred.FingerprintKeyID, &cred.Algorithm,
 		&cred.AuthMethod, &cred.AuthStatus, &cred.SecretType, &cred.PayloadFormat,
-		nullableTimePtr(&cred.ExpiresAt), &cred.Version,
+		&cred.SubjectFingerprint, nullableTimePtr(&cred.ExpiresAt), &cred.Version,
 	)
 	return cred, err
 }

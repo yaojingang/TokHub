@@ -962,6 +962,50 @@ export type AIQuickRelayResult = {
   replay: boolean;
 };
 
+export type AIBrowserConnector = {
+  id: string;
+  orgId: string;
+  displayName: string;
+  status: "pending" | "active" | "revoked" | string;
+  online: boolean;
+  tokenPrefix?: string;
+  opencliVersion?: string;
+  extensionVersion?: string;
+  capabilities: string[];
+  pairingExpiresAt?: string;
+  lastSeenAt?: string;
+  pairedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AIBrowserConnectorCreateResult = {
+  connector: AIBrowserConnector;
+  pairingCode: string;
+  pairCommand: string;
+};
+
+export type AIBrowserRiskState = {
+  provider: string;
+  state: "normal" | "cooldown" | "reauth_required" | "security_locked" | "adapter_blocked" | "paused" | string;
+  requestsHour: number;
+  requestsDay: number;
+  rateLimitEvents: number;
+  consecutiveFailures: number;
+  hourWindowStartedAt: string;
+  dayWindowStartedAt: string;
+  cooldownUntil?: string;
+  lastRequestAt?: string;
+  lastSuccessAt?: string;
+  lastErrorAt?: string;
+  lastErrorCode?: string;
+  lastChallengeAt?: string;
+  updatedAt: string;
+  hourlyLimit: number;
+  dailyLimit: number;
+  minimumIntervalSeconds: number;
+};
+
 export type GatewayDebugResult = {
   ok: boolean;
   gatewayId: string;
@@ -1562,6 +1606,49 @@ export async function aiConnectionProviders(): Promise<AIConnectionProviderCatal
 
 export async function aiConnections(): Promise<{ items: AIConnection[] }> {
   return readJSON<{ items: AIConnection[] }>("/api/me/ai-connections", { credentials: "include" });
+}
+
+export async function aiBrowserConnectors(): Promise<{ items: AIBrowserConnector[] }> {
+  return readJSON<{ items: AIBrowserConnector[] }>("/api/me/ai-browser-connectors", { credentials: "include" });
+}
+
+export async function createAIBrowserConnector(displayName: string): Promise<AIBrowserConnectorCreateResult> {
+  return writeJSONRequest<AIBrowserConnectorCreateResult>("/api/me/ai-browser-connectors", { displayName });
+}
+
+export async function revokeAIBrowserConnector(connectorID: string): Promise<void> {
+  await writeJSONRequest(`/api/me/ai-browser-connectors/${connectorID}`, {}, { method: "DELETE" });
+}
+
+export async function createAIBrowserConnection(input: {
+  connectorId: string;
+  provider: string;
+  displayName: string;
+  models: string[];
+  termsAckVersion: string;
+}): Promise<{ connection: AIConnection }> {
+  return writeJSONRequest<{ connection: AIConnection }>("/api/me/ai-browser-connections", input);
+}
+
+export async function aiBrowserConnectionRisk(connectionID: string): Promise<{ risk: AIBrowserRiskState }> {
+  return readJSON<{ risk: AIBrowserRiskState }>(
+    `/api/me/ai-connections/${connectionID}/browser-risk`,
+    { credentials: "include", cache: "no-store" }
+  );
+}
+
+export async function pauseAIBrowserConnection(connectionID: string): Promise<{ risk: AIBrowserRiskState }> {
+  return writeJSONRequest<{ risk: AIBrowserRiskState }>(
+    `/api/me/ai-connections/${connectionID}/browser-risk/pause`,
+    {}
+  );
+}
+
+export async function resumeAIBrowserConnection(connectionID: string): Promise<{ risk: AIBrowserRiskState }> {
+  return writeJSONRequest<{ risk: AIBrowserRiskState }>(
+    `/api/me/ai-connections/${connectionID}/browser-risk/resume`,
+    {}
+  );
 }
 
 export async function createAIConnection(input: {

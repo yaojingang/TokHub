@@ -14,3 +14,16 @@ func TestAIQuickRelayRevealExpiryRunsOnlyOnAllOrWorkerRoles(t *testing.T) {
 		}
 	}
 }
+
+func TestAIBrowserTaskMaintenanceRunsOnlyOnAllOrWorkerRoles(t *testing.T) {
+	for _, role := range []string{"all", "worker"} {
+		if !shouldMaintainAIBrowserTasks(role) {
+			t.Fatalf("role %q did not own browser task maintenance", role)
+		}
+	}
+	for _, role := range []string{"api", "gateway", "prober", "migrate", "seed"} {
+		if shouldMaintainAIBrowserTasks(role) {
+			t.Fatalf("role %q unexpectedly owned browser task maintenance", role)
+		}
+	}
+}

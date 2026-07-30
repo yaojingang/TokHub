@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+const openCLIBrowserDeploymentAcknowledgement = "I_ACCEPT_OPENCLI_PERSONAL_BROWSER_EXPERIMENTAL_RISK"
+
 type Config struct {
 	Env                              string
 	Role                             string
@@ -41,6 +43,21 @@ type Config struct {
 	AIDeepSeekWebExperimental        bool
 	AIDeepSeekWebBridgeURL           string
 	AIDeepSeekWebBridgeAck           string
+	AIOpenCLIBrowserEnabled          bool
+	AIOpenCLIBrowserAck              string
+	AIOpenCLIBrowserTaskTimeout      time.Duration
+	AIOpenCLIChatGPTEnabled          bool
+	AIOpenCLIGeminiEnabled           bool
+	AIOpenCLIDeepSeekEnabled         bool
+	AIOpenCLIChatGPTMinInterval      time.Duration
+	AIOpenCLIGeminiMinInterval       time.Duration
+	AIOpenCLIDeepSeekMinInterval     time.Duration
+	AIOpenCLIChatGPTHourlyLimit      int
+	AIOpenCLIGeminiHourlyLimit       int
+	AIOpenCLIDeepSeekHourlyLimit     int
+	AIOpenCLIChatGPTDailyLimit       int
+	AIOpenCLIGeminiDailyLimit        int
+	AIOpenCLIDeepSeekDailyLimit      int
 	AIOAuthTTL                       time.Duration
 	AIOAuthRefreshSkew               time.Duration
 	AIOAuthRefreshWorkers            int
@@ -67,6 +84,9 @@ func LoadConfig() Config {
 	if len(credentialFingerprintKeys) == 0 && !strings.EqualFold(env, "production") {
 		credentialFingerprintKeys[credentialActiveFingerprintKeyID] = secretKey + ":credential-fingerprint"
 	}
+	opencliBrowserAck := getEnv("TOKHUB_AI_OPENCLI_BROWSER_ACK", "")
+	opencliBrowserEnabled := envBool("TOKHUB_AI_OPENCLI_BROWSER_EXPERIMENTAL", false) &&
+		opencliBrowserAck == openCLIBrowserDeploymentAcknowledgement
 	return Config{
 		Env:                              env,
 		Role:                             getEnv("TOKHUB_ROLE", "all"),
@@ -100,6 +120,21 @@ func LoadConfig() Config {
 		AIDeepSeekWebExperimental:        envBool("TOKHUB_AI_DEEPSEEK_WEB_EXPERIMENTAL", false),
 		AIDeepSeekWebBridgeURL:           getEnv("TOKHUB_AI_DEEPSEEK_WEB_BRIDGE_URL", "http://deepseek-web-bridge:5001"),
 		AIDeepSeekWebBridgeAck:           getEnv("TOKHUB_AI_DEEPSEEK_WEB_ACK", ""),
+		AIOpenCLIBrowserEnabled:          opencliBrowserEnabled,
+		AIOpenCLIBrowserAck:              opencliBrowserAck,
+		AIOpenCLIBrowserTaskTimeout:      envDuration("TOKHUB_AI_OPENCLI_BROWSER_TASK_TIMEOUT", 2*time.Minute, 2*time.Minute, 5*time.Minute),
+		AIOpenCLIChatGPTEnabled:          envBool("TOKHUB_AI_OPENCLI_CHATGPT_ENABLED", true),
+		AIOpenCLIGeminiEnabled:           envBool("TOKHUB_AI_OPENCLI_GEMINI_ENABLED", true),
+		AIOpenCLIDeepSeekEnabled:         envBool("TOKHUB_AI_OPENCLI_DEEPSEEK_ENABLED", true),
+		AIOpenCLIChatGPTMinInterval:      envDuration("TOKHUB_AI_OPENCLI_CHATGPT_MIN_INTERVAL", 10*time.Second, 5*time.Second, 5*time.Minute),
+		AIOpenCLIGeminiMinInterval:       envDuration("TOKHUB_AI_OPENCLI_GEMINI_MIN_INTERVAL", 10*time.Second, 5*time.Second, 5*time.Minute),
+		AIOpenCLIDeepSeekMinInterval:     envDuration("TOKHUB_AI_OPENCLI_DEEPSEEK_MIN_INTERVAL", 15*time.Second, 5*time.Second, 5*time.Minute),
+		AIOpenCLIChatGPTHourlyLimit:      envInt("TOKHUB_AI_OPENCLI_CHATGPT_HOURLY_LIMIT", 30, 1, 1000),
+		AIOpenCLIGeminiHourlyLimit:       envInt("TOKHUB_AI_OPENCLI_GEMINI_HOURLY_LIMIT", 30, 1, 1000),
+		AIOpenCLIDeepSeekHourlyLimit:     envInt("TOKHUB_AI_OPENCLI_DEEPSEEK_HOURLY_LIMIT", 20, 1, 1000),
+		AIOpenCLIChatGPTDailyLimit:       envInt("TOKHUB_AI_OPENCLI_CHATGPT_DAILY_LIMIT", 120, 1, 10000),
+		AIOpenCLIGeminiDailyLimit:        envInt("TOKHUB_AI_OPENCLI_GEMINI_DAILY_LIMIT", 120, 1, 10000),
+		AIOpenCLIDeepSeekDailyLimit:      envInt("TOKHUB_AI_OPENCLI_DEEPSEEK_DAILY_LIMIT", 80, 1, 10000),
 		AIOAuthTTL:                       envDuration("TOKHUB_AI_OAUTH_TTL", 10*time.Minute, time.Minute, 30*time.Minute),
 		AIOAuthRefreshSkew:               envDuration("TOKHUB_AI_OAUTH_REFRESH_SKEW", 5*time.Minute, time.Minute, 30*time.Minute),
 		AIOAuthRefreshWorkers:            envInt("TOKHUB_AI_OAUTH_REFRESH_WORKERS", 8, 1, 64),

@@ -20,7 +20,7 @@ func TestAIConnectionSecretRotationOnlyAcceptsOfficialAPIKeyMethods(t *testing.T
 			t.Fatalf("%s connection could not rotate its official API key", method)
 		}
 	}
-	for _, method := range []string{"", "oauth", "codex_oauth", "deepseek_web_token"} {
+	for _, method := range []string{"", "oauth", "codex_oauth", "deepseek_web_token", "opencli_browser"} {
 		if supportsAIConnectionSecretRotation(method) {
 			t.Fatalf("%s managed connection accepted raw API key rotation", method)
 		}

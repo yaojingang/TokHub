@@ -453,6 +453,202 @@ test("OAuth disconnect asks for the current TokHub password", async ({ page }) =
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(375);
 });
 
+test("OpenCLI browser entry guides pairing and creates a personal DeepSeek connection", async ({ page }) => {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const now = new Date().toISOString();
+  let connectionRequest: Record<string, unknown> | null = null;
+  let browserRiskState = "normal";
+  const providers = ["openai", "gemini", "deepseek"].map((code) => provider(
+    code,
+    code === "openai" ? "ChatGPT" : code === "gemini" ? "Gemini" : "DeepSeek",
+    [
+      authMethod("api_key", "官方 API Key", "stable"),
+      authMethod(
+        "opencli_browser",
+        "连接本机已登录网页",
+        "experimental",
+        "local_connector",
+        true,
+        undefined,
+        "网页登录态保留在本机，连接仅限本人低频使用。"
+      )
+    ]
+  ));
+  const connector = {
+    id: "aibc_test",
+    orgId: "org_test",
+    displayName: "我的 Chrome",
+    status: "active",
+    online: true,
+    opencliVersion: "1.8.6",
+    extensionVersion: "1.8.6",
+    capabilities: ["openai", "gemini", "deepseek"],
+    lastSeenAt: now,
+    pairedAt: now,
+    createdAt: now,
+    updatedAt: now
+  };
+  await page.route("**/api/me/ai-connection-providers", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: providers,
+        policyVersion: "ai-authorization-v2",
+        credentialPolicy: { accepted: [], rejected: [] }
+      })
+    });
+  });
+  await page.route("**/api/me/ai-browser-connectors", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ items: [connector] }) });
+      return;
+    }
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        connector: { ...connector, id: "aibc_pending", status: "pending", online: false },
+        pairingCode: "review-pairing-code",
+        pairCommand: "tokhub-opencli-connector pair --server 'https://tokhub.example.test' --code 'review-pairing-code'"
+      })
+    });
+  });
+  await page.route("**/api/me/ai-connections", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ items: [] }) });
+  });
+  await page.route("**/api/me/ai-browser-connections", async (route) => {
+    connectionRequest = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        connection: {
+          id: "aic_browser_test",
+          orgId: "org_test",
+          provider: "deepseek",
+          productLine: "DeepSeek Web",
+          region: "global",
+          authMethod: "opencli_browser",
+          protocol: "openai_compatible",
+          adapterType: "openai-compatible",
+          endpoint: "browser+opencli://aibc_test/deepseek",
+          providerConfig: { connectorId: "aibc_test" },
+          displayName: "我的 DeepSeek 网页",
+          status: "active",
+          authStatus: "active",
+          sharingScope: "personal",
+          riskLevel: "experimental",
+          providerAdapterVersion: "opencli-browser-v1",
+          accountMask: "d***@example.test",
+          validationStage: "browser_login",
+          validationLatencyMs: 80,
+          modelCount: 1,
+          policyVersion: "ai-authorization-v2",
+          secretMask: "Local Browser · d***@example.test",
+          models: [{
+            id: "aicm_browser_test",
+            connectionId: "aic_browser_test",
+            providerModelId: "deepseek-web",
+            displayName: "deepseek-web",
+            enabled: true,
+            verificationStatus: "verified",
+            validationLatencyMs: 80,
+            capabilities: {},
+            createdAt: now,
+            updatedAt: now
+          }],
+          createdAt: now,
+          updatedAt: now
+        }
+      })
+    });
+  });
+  await page.route("**/api/me/ai-connections/aic_browser_test/browser-risk**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/pause")) browserRiskState = "paused";
+    if (path.endsWith("/resume")) browserRiskState = "normal";
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        risk: {
+          provider: "deepseek",
+          state: browserRiskState,
+          requestsHour: 2,
+          requestsDay: 7,
+          rateLimitEvents: 0,
+          consecutiveFailures: 0,
+          hourWindowStartedAt: now,
+          dayWindowStartedAt: now,
+          lastSuccessAt: now,
+          updatedAt: now,
+          hourlyLimit: 20,
+          dailyLimit: 80,
+          minimumIntervalSeconds: 15
+        }
+      })
+    });
+  });
+
+  await page.goto("/login?next=%2Fconsole%2Fconnections");
+  await page.getByRole("button", { name: "注册新账号", exact: true }).click();
+  await page.getByLabel("邮箱").fill(`ai-opencli-${suffix}@example.test`);
+  await page.getByLabel("设置密码").fill(`AIOpenCLI-${suffix}!`);
+  await page.getByRole("button", { name: "创建账号并进入控制台 →", exact: true }).click();
+  await page.waitForURL((url) => url.pathname === "/console/connections");
+
+  const connectorPanel = page.getByRole("region", { name: "连接本机已登录的 AI 网页" });
+  await expect(connectorPanel).toBeVisible();
+  await expect(connectorPanel).toContainText("我的 Chrome");
+  await expect(connectorPanel.getByText("OpenCLI 1.8.6")).toBeVisible();
+  await connectorPanel.getByRole("button", { name: "＋ 添加本机连接器", exact: true }).click();
+  await expect(connectorPanel.getByText("一次性配对命令")).toBeVisible();
+  await expect(connectorPanel.getByRole("link", { name: "安装 OpenCLI ↗", exact: true }))
+    .toHaveAttribute("href", "https://github.com/jackwener/OpenCLI");
+
+  await page.getByRole("button", { name: /ChatGPT/ }).click();
+  await page.getByRole("radio", { name: /连接本机已登录网页/ }).click();
+  await expect(page.getByRole("link", { name: "1. 打开 ChatGPT 登录 ↗", exact: true }))
+    .toHaveAttribute("href", "https://auth.openai.com/log-in");
+  await expect(page.getByLabel("本机连接器")).toHaveValue("aibc_test");
+  await expect(page.locator(".ai-model-input")).toHaveValue("chatgpt-web");
+
+  await page.getByRole("button", { name: /Gemini/ }).click();
+  await page.getByRole("radio", { name: /连接本机已登录网页/ }).click();
+  await expect(page.getByRole("link", { name: "1. 打开 Gemini 登录 ↗", exact: true }))
+    .toHaveAttribute("href", "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fgemini.google.com%2F");
+  await expect(page.getByLabel("本机连接器")).toHaveValue("aibc_test");
+  await expect(page.locator(".ai-model-input")).toHaveValue("gemini-web");
+
+  await page.getByRole("button", { name: /DeepSeek/ }).click();
+  await page.getByRole("radio", { name: /连接本机已登录网页/ }).click();
+  await expect(page.getByRole("link", { name: "1. 打开 DeepSeek 登录 ↗", exact: true }))
+    .toHaveAttribute("href", "https://chat.deepseek.com/sign_in");
+  await expect(page.getByLabel("本机连接器")).toHaveValue("aibc_test");
+  await page.locator(".ai-experimental-confirm input").check();
+  await page.getByRole("button", { name: "2. 已登录，识别并连接", exact: true }).click();
+  await expect(page.getByText(/已通过本机浏览器识别账号/)).toBeVisible();
+  expect(connectionRequest).toEqual({
+    connectorId: "aibc_test",
+    provider: "deepseek",
+    displayName: "我的 DeepSeek",
+    models: ["deepseek-web"],
+    termsAckVersion: "opencli-personal-browser-experimental-v1"
+  });
+  const safetyGovernor = page.getByRole("region", { name: "个人浏览器账号保护状态" });
+  await expect(safetyGovernor).toContainText("账号保护正常");
+  await expect(safetyGovernor).toContainText("2 / 20");
+  await expect(safetyGovernor).toContainText("7 / 80");
+  page.once("dialog", (dialog) => void dialog.accept());
+  await safetyGovernor.getByRole("button", { name: "立即暂停", exact: true }).click();
+  await expect(safetyGovernor).toContainText("已手动暂停");
+  page.once("dialog", (dialog) => void dialog.accept());
+  await safetyGovernor.getByRole("button", { name: "恢复中转", exact: true }).click();
+  await expect(safetyGovernor).toContainText("账号保护正常");
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(375);
+});
+
 function authMethod(
   code: string,
   label: string,

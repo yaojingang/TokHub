@@ -2,6 +2,9 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { ConsoleShell } from "../components/ConsoleShell";
 import {
   AIAuthorizationStart,
+  AIBrowserConnector,
+  AIBrowserConnectorCreateResult,
+  AIBrowserRiskState,
   AIConnection,
   AIConnectionAuthMethod,
   AIConnectionProvider,
@@ -9,13 +12,20 @@ import {
   aiConnectionAuthorization,
   aiConnectionProviders,
   aiConnections,
+  aiBrowserConnectionRisk,
+  aiBrowserConnectors,
   cancelAIConnectionAuthorization,
+  createAIBrowserConnection,
+  createAIBrowserConnector,
   completeAIConnectionAuthorization,
   createAIConnection,
   deleteAIConnection,
   disconnectAIConnection,
   quickCreateAIConnectionRelay,
+  pauseAIBrowserConnection,
+  revokeAIBrowserConnector,
   rotateAIConnectionCredential,
+  resumeAIBrowserConnection,
   startAIConnectionAuthorization,
   stepUpAIConnectionAuthorization,
   validateAIConnection
@@ -40,6 +50,7 @@ type ConnectionDraft = {
   deepSeekToken: string;
   confirmBillable: boolean;
   confirmExperimental: boolean;
+  connectorId: string;
 };
 
 type RelayDraft = {
@@ -67,6 +78,9 @@ const aiLoginExtensionDownloadURL = "/downloads/tokhub-ai-login-helper.zip";
 export function AIConnectionsPage() {
   const [providers, setProviders] = useState<AIConnectionProvider[]>([]);
   const [items, setItems] = useState<AIConnection[]>([]);
+  const [browserConnectors, setBrowserConnectors] = useState<AIBrowserConnector[]>([]);
+  const [browserPairing, setBrowserPairing] = useState<AIBrowserConnectorCreateResult | null>(null);
+  const [browserRisk, setBrowserRisk] = useState<AIBrowserRiskState | null>(null);
   const [selectedProviderCode, setSelectedProviderCode] = useState("");
   const [selectedConnectionId, setSelectedConnectionId] = useState("");
   const [draft, setDraft] = useState<ConnectionDraft>(emptyConnectionDraft);
@@ -107,16 +121,26 @@ export function AIConnectionsPage() {
       : null,
     [selectedProvider]
   );
+  const browserConnectorEnabled = useMemo(
+    () => providers.some((provider) => provider.authMethods.some((method) => method.code === "opencli_browser" && method.enabled)),
+    [providers]
+  );
   const usesInteractiveAuthorization = ["oauth", "codex_oauth", "deepseek_web_token"].includes(draft.authMethod);
   const usesGuidedAPIKey = draft.authMethod === "api_key_guided";
+  const usesBrowserConnector = draft.authMethod === "opencli_browser";
 
   useEffect(() => {
     let active = true;
-    Promise.all([aiConnectionProviders(), aiConnections()])
-      .then(([catalog, connections]) => {
+    Promise.all([
+      aiConnectionProviders(),
+      aiConnections(),
+      aiBrowserConnectors().catch(() => ({ items: [] as AIBrowserConnector[] }))
+    ])
+      .then(([catalog, connections, connectors]) => {
         if (!active) return;
         setProviders(catalog.items);
         setItems(connections.items);
+        setBrowserConnectors(connectors.items);
         if (connections.items[0]) setSelectedConnectionId(connections.items[0].id);
       })
       .catch((err) => active && setError(errorMessage(err)))
@@ -154,6 +178,26 @@ export function AIConnectionsPage() {
     setRelayResult(null);
     setRelayAttempt(null);
   }, [selectedConnectionId]);
+
+  useEffect(() => {
+    let active = true;
+    setBrowserRisk(null);
+    if (!selectedConnection || selectedConnection.authMethod !== "opencli_browser") {
+      return () => {
+        active = false;
+      };
+    }
+    aiBrowserConnectionRisk(selectedConnection.id)
+      .then((payload) => {
+        if (active) setBrowserRisk(payload.risk);
+      })
+      .catch(() => {
+        if (active) setBrowserRisk(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [selectedConnection?.id, selectedConnection?.authMethod]);
 
   useEffect(() => {
     if (!authorization || ["guided_api_key", "paste_token"].includes(authorization.completionMode)) return;
@@ -220,7 +264,12 @@ export function AIConnectionsPage() {
 
   function chooseAuthMethod(method: AIConnectionAuthMethod) {
     if (!selectedProvider || !method.enabled || authorization) return;
-    setDraft(connectionDraftForProvider(selectedProvider, method.code));
+    const next = connectionDraftForProvider(selectedProvider, method.code);
+    if (method.code === "opencli_browser") {
+      next.connectorId = browserConnectors.find((item) => item.online)?.id || browserConnectors[0]?.id || "";
+      next.models = `${selectedProvider.code === "openai" ? "chatgpt" : selectedProvider.code}-web`;
+    }
+    setDraft(next);
     setError("");
     setDeepSeekExtensionStatus("");
     setChatGPTCallbackStatus("");
@@ -229,6 +278,30 @@ export function AIConnectionsPage() {
   async function submitConnection(event: FormEvent) {
     event.preventDefault();
     if (!selectedProvider) return;
+    if (usesBrowserConnector) {
+      setWorking("create");
+      setError("");
+      setNotice("");
+      try {
+        const payload = await createAIBrowserConnection({
+          connectorId: draft.connectorId,
+          provider: selectedProvider.code,
+          displayName: draft.displayName.trim(),
+          models: splitModels(draft.models),
+          termsAckVersion: "opencli-personal-browser-experimental-v1"
+        });
+        setItems((current) => [payload.connection, ...current]);
+        setSelectedConnectionId(payload.connection.id);
+        setSetupOpen(false);
+        setDraft(emptyConnectionDraft);
+        setNotice(`${payload.connection.displayName} 已通过本机浏览器识别账号，可继续创建个人中转。`);
+      } catch (err) {
+        setError(errorMessage(err));
+      } finally {
+        setWorking("");
+      }
+      return;
+    }
     if (usesInteractiveAuthorization || (usesGuidedAPIKey && !authorization)) {
       await beginAuthorization();
       return;
@@ -260,6 +333,63 @@ export function AIConnectionsPage() {
       setError(errorMessage(err));
     } finally {
       setWorking("");
+    }
+  }
+
+  async function createBrowserConnector() {
+    setWorking("connector-create");
+    setError("");
+    setNotice("");
+    try {
+      const result = await createAIBrowserConnector("我的 Chrome");
+      setBrowserPairing(result);
+      setBrowserConnectors((current) => [result.connector, ...current]);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setWorking("");
+    }
+  }
+
+  async function refreshBrowserConnectors() {
+    setWorking("connector-refresh");
+    setError("");
+    try {
+      const result = await aiBrowserConnectors();
+      setBrowserConnectors(result.items);
+      setNotice(result.items.some((item) => item.online)
+        ? "本地连接器在线，可以识别 ChatGPT、Gemini 或 DeepSeek 账号。"
+        : "暂未检测到在线连接器，请确认本机程序正在运行。");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setWorking("");
+    }
+  }
+
+  async function removeBrowserConnector(connectorID: string) {
+    if (!globalThis.confirm("撤销后，关联的本地浏览器连接会停用。确认继续？")) return;
+    setWorking(`connector-revoke:${connectorID}`);
+    setError("");
+    try {
+      await revokeAIBrowserConnector(connectorID);
+      setBrowserConnectors((current) => current.filter((item) => item.id !== connectorID));
+      setBrowserPairing((current) => current?.connector.id === connectorID ? null : current);
+      setNotice("本地连接器已撤销，设备令牌和关联任务已停用。");
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setWorking("");
+    }
+  }
+
+  async function copyPairCommand() {
+    if (!browserPairing?.pairCommand) return;
+    try {
+      await navigator.clipboard.writeText(browserPairing.pairCommand);
+      setNotice("配对命令已复制。请在本机终端运行，然后启动连接器。");
+    } catch {
+      setError("复制失败，请手动选择并复制配对命令。");
     }
   }
 
@@ -418,9 +548,11 @@ export function AIConnectionsPage() {
 
   async function runValidation() {
     if (!selectedConnection) return;
-    const validationMessage = selectedConnection.authMethod === "deepseek_web_token"
-      ? "重新验证会通过当前 DeepSeek 网页登录态发送最小生成请求，并占用消费者账号的使用额度。确认继续？"
-      : "重新验证会为每个已配置模型发送最小生成请求，并可能产生少量官方费用。确认继续？";
+    const validationMessage = selectedConnection.authMethod === "opencli_browser"
+      ? "重新识别会通过本机连接器检查当前网页账号登录状态。请保持 Chrome 和连接器运行。确认继续？"
+      : selectedConnection.authMethod === "deepseek_web_token"
+        ? "重新验证会通过当前 DeepSeek 网页登录态发送最小生成请求，并占用消费者账号的使用额度。确认继续？"
+        : "重新验证会为每个已配置模型发送最小生成请求，并可能产生少量官方费用。确认继续？";
     if (!globalThis.confirm(validationMessage)) return;
     setWorking("validate");
     setError("");
@@ -428,7 +560,41 @@ export function AIConnectionsPage() {
     try {
       const payload = await validateAIConnection(selectedConnection.id);
       replaceConnection(payload.connection);
+      if (selectedConnection.authMethod === "opencli_browser") {
+        const riskPayload = await aiBrowserConnectionRisk(selectedConnection.id);
+        setBrowserRisk(riskPayload.risk);
+      }
       setNotice(payload.validation.ok ? "重新验证通过，连接已恢复可用。" : payload.validation.message);
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setWorking("");
+    }
+  }
+
+  async function toggleBrowserPause(paused: boolean) {
+    if (!selectedConnection || selectedConnection.authMethod !== "opencli_browser") return;
+    const prompt = paused
+      ? "暂停后，所有使用该网页登录账号的个人中转都会停止。确认暂停？"
+      : "恢复后仍会执行账号级限流和登录身份核验。确认恢复？";
+    if (!globalThis.confirm(prompt)) return;
+    setWorking(paused ? "browser-pause" : "browser-resume");
+    setError("");
+    setNotice("");
+    try {
+      const payload = paused
+        ? await pauseAIBrowserConnection(selectedConnection.id)
+        : await resumeAIBrowserConnection(selectedConnection.id);
+      setBrowserRisk(payload.risk);
+      setItems((current) => current.map((item) => item.id === selectedConnection.id
+        ? {
+            ...item,
+            status: paused ? "attention" : "active",
+            authStatus: paused ? "attention" : "active",
+            lastErrorMessage: paused ? "个人浏览器中转已由账号所有者暂停" : ""
+          }
+        : item));
+      setNotice(paused ? "个人浏览器中转已暂停。" : "个人浏览器中转已恢复，后续请求仍受账号保护策略约束。");
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -556,10 +722,72 @@ export function AIConnectionsPage() {
           <span className="ai-safety-icon">⌁</span>
           <div>
             <b>凭证保护已开启</b>
-            <p>连接固定保存在个人空间。系统接受官方 API Key、官方 OAuth，以及管理员显式开启的 ChatGPT Codex 和 DeepSeek userToken 实验授权。服务商密码、验证码、完整 Cookie、cf_clearance 与其他浏览器数据均不采集。</p>
+            <p>连接固定保存在个人空间。官方 API Key 与 OAuth 由 TokHub 加密保护；服务商密码、验证码、完整 Cookie、cf_clearance 与其他浏览器数据均不采集。本地浏览器连接只保存设备引用，Session 和网页 Token 始终留在用户电脑。</p>
           </div>
           <span className="ai-safety-meta">AES-256-GCM · 单次授权 · 个人隔离</span>
         </section>
+
+        {browserConnectorEnabled ? (
+          <section className="ai-browser-connector-panel" aria-labelledby="browser-connector-title">
+            <div className="ai-browser-connector-head">
+              <div>
+                <span className="ai-connect-eyebrow">LOCAL BROWSER CONNECTOR · EXPERIMENTAL</span>
+                <h2 id="browser-connector-title">连接本机已登录的 AI 网页</h2>
+                <p>适用于 ChatGPT、Gemini 和 DeepSeek。TokHub 发送受限文本任务到本机，OpenCLI 在已连接的 Chrome Profile 中完成操作。</p>
+              </div>
+              <div className="ai-browser-connector-actions">
+                <button className="btn btn-ghost btn-sm" type="button" disabled={!!working} onClick={() => void refreshBrowserConnectors()}>
+                  {working === "connector-refresh" ? "检测中…" : "检测状态"}
+                </button>
+                <button className="btn btn-primary btn-sm" type="button" disabled={!!working} onClick={() => void createBrowserConnector()}>
+                  {working === "connector-create" ? "创建中…" : "＋ 添加本机连接器"}
+                </button>
+              </div>
+            </div>
+            {browserPairing ? (
+              <div className="ai-browser-pairing">
+                <div>
+                  <b>一次性配对命令</b>
+                  <p>先安装 OpenCLI 1.8.6 或更高版本并连接 Chrome 扩展，再在本机终端运行此命令。配对码 10 分钟后失效。</p>
+                  <p>
+                    <a href="https://github.com/jackwener/OpenCLI" target="_blank" rel="noreferrer">安装 OpenCLI ↗</a>
+                    {" · "}
+                    <a href="https://github.com/yaojingang/TokHub#opencli-本机浏览器连接" target="_blank" rel="noreferrer">查看连接器使用说明 ↗</a>
+                  </p>
+                </div>
+                <code>{browserPairing.pairCommand}</code>
+                <button className="btn btn-ghost btn-sm" type="button" onClick={() => void copyPairCommand()}>复制命令</button>
+              </div>
+            ) : null}
+            <div className="ai-browser-connector-list">
+              {browserConnectors.map((connector) => (
+                <div className="ai-browser-connector-item" key={connector.id}>
+                  <span className={`ai-browser-status ${connector.online ? "online" : ""}`} />
+                  <div>
+                    <b>{connector.displayName}</b>
+                    <small>
+                      {connector.online ? "在线" : connector.status === "pending" ? "等待配对" : "离线"}
+                      {connector.opencliVersion ? ` · OpenCLI ${connector.opencliVersion}` : ""}
+                      {connector.capabilities.length ? ` · ${connector.capabilities.map(browserProviderLabel).join(" / ")}` : ""}
+                    </small>
+                  </div>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    type="button"
+                    disabled={working === `connector-revoke:${connector.id}`}
+                    onClick={() => void removeBrowserConnector(connector.id)}
+                  >
+                    {working === `connector-revoke:${connector.id}` ? "撤销中…" : "撤销"}
+                  </button>
+                </div>
+              ))}
+              {!browserConnectors.length ? (
+                <div className="ai-browser-connector-empty">尚未添加本机连接器。完成一次配对后，可在三家服务的连接方式中选择“连接本机已登录网页”。</div>
+              ) : null}
+            </div>
+            <p className="ai-browser-risk">个人实验能力 · 默认单中转、单并发、每秒 1 次 · 暂不支持流式、工具调用、图片和团队共享 · 遇到验证码会立即停止</p>
+          </section>
+        ) : null}
 
         {error && !setupOpen ? <div className="form-error ai-live-message" role="alert">{error}</div> : null}
         {notice ? <div className="form-notice ai-live-message" role="status">{notice}</div> : null}
@@ -575,7 +803,7 @@ export function AIConnectionsPage() {
           <div className="ai-provider-grid" aria-busy={loading}>
             {providers.map((provider) => {
               const enabledMethods = provider.authMethods.filter((method) => method.enabled);
-              const oauthEnabled = enabledMethods.some((method) => ["oauth", "codex_oauth", "deepseek_web_token"].includes(method.code));
+              const oauthEnabled = enabledMethods.some((method) => ["oauth", "codex_oauth", "deepseek_web_token", "opencli_browser"].includes(method.code));
               const guidedEnabled = enabledMethods.some((method) => method.code === "api_key_guided");
               const unavailableInteractive = unavailableInteractiveAuthMethods(provider);
               const methodLabels = enabledMethods.map((method) => method.label);
@@ -660,7 +888,7 @@ export function AIConnectionsPage() {
               </label>
               <label>
                 <span>地域 / API 产品区</span>
-                <select className="input" value={draft.region} disabled={usesInteractiveAuthorization} onChange={(event) => setDraft({ ...draft, region: event.target.value, workspaceId: "" })}>
+                <select className="input" value={draft.region} disabled={usesInteractiveAuthorization || usesBrowserConnector} onChange={(event) => setDraft({ ...draft, region: event.target.value, workspaceId: "" })}>
                   {selectedProvider.regions.map((region) => <option value={region.code} key={region.code}>{region.name}</option>)}
                 </select>
               </label>
@@ -669,6 +897,41 @@ export function AIConnectionsPage() {
                   <span>Workspace ID <em>选填，用于专属接入点</em></span>
                   <input className="input" value={draft.workspaceId} onChange={(event) => setDraft({ ...draft, workspaceId: event.target.value })} placeholder="例如 workspace-id" />
                 </label>
+              ) : null}
+              {usesBrowserConnector ? (
+                <>
+                  <section className="ai-browser-login-guide ai-form-wide" aria-label={`${selectedProvider.name} 网页登录引导`}>
+                    <div>
+                      <b>先登录，再识别当前账号</b>
+                      <p>第 1 步会在新标签页打开 {selectedProvider.name}。请确认它属于 OpenCLI 已连接或已选定的 Chrome Profile；登录完成后返回这里执行第 2 步。</p>
+                    </div>
+                    <a
+                      className="btn btn-ghost"
+                      href={browserProviderLoginURL(selectedProvider.code)}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      1. 打开 {selectedProvider.name} 登录 ↗
+                    </a>
+                  </section>
+                  <label>
+                    <span>本机连接器</span>
+                    <select
+                      className="input"
+                      required
+                      value={draft.connectorId}
+                      onChange={(event) => setDraft({ ...draft, connectorId: event.target.value })}
+                    >
+                      <option value="">请选择在线连接器</option>
+                      {browserConnectors.map((connector) => (
+                        <option value={connector.id} disabled={!connector.online} key={connector.id}>
+                          {connector.displayName} · {connector.online ? "在线" : connector.status === "pending" ? "等待配对" : "离线"}
+                        </option>
+                      ))}
+                    </select>
+                    <small>识别期间请保持本机程序、Chrome 和对应 AI 网页运行。</small>
+                  </label>
+                </>
               ) : null}
               {draft.authMethod === "oauth" ? (
                 <label>
@@ -690,6 +953,7 @@ export function AIConnectionsPage() {
               <label className="ai-form-wide">
                 <span>模型 ID <em>每行或逗号分隔，最多 16 个</em></span>
                 <textarea className="input ai-model-input" required value={draft.models} onChange={(event) => setDraft({ ...draft, models: event.target.value })} />
+                {usesBrowserConnector ? <small>本机模式把这里作为 API 路由别名，实际网页模型由 OpenCLI 已连接的 Chrome Profile 和适配器决定。</small> : null}
               </label>
 
               {draft.authMethod === "api_key" || (usesGuidedAPIKey && authorization) ? (
@@ -726,6 +990,16 @@ export function AIConnectionsPage() {
                       </span>
                     </label>
                   ) : null}
+                  {selectedAuthMethod?.riskNotice ? <p className="ai-risk-notice ai-form-wide">{selectedAuthMethod.riskNotice}</p> : null}
+                </>
+              ) : null}
+
+              {usesBrowserConnector ? (
+                <>
+                  <label className="ai-experimental-confirm ai-form-wide">
+                    <input type="checkbox" required checked={draft.confirmExperimental} onChange={(event) => setDraft({ ...draft, confirmExperimental: event.target.checked })} />
+                    <span>我了解该能力通过本机 Chrome 自动执行网页任务，仅限本人低频使用。网页结构、平台规则或登录状态变化可能造成中断；系统执行单中转、单并发和每秒 1 次请求限制。</span>
+                  </label>
                   {selectedAuthMethod?.riskNotice ? <p className="ai-risk-notice ai-form-wide">{selectedAuthMethod.riskNotice}</p> : null}
                 </>
               ) : null}
@@ -818,7 +1092,7 @@ export function AIConnectionsPage() {
               {!authorization && draft.authMethod === "deepseek_web_token" ? (
                 <section className="ai-deepseek-entry ai-form-wide" aria-label="DeepSeek 网页登录步骤">
                   <div className="ai-deepseek-entry-copy">
-                    <b>登录后，一键读取当前 Chrome 账号</b>
+                    <b>登录后，识别 OpenCLI 已连接的 Chrome 账号</b>
                     <p>先下载 ZIP 并解压，在 Chrome 扩展程序页开启开发者模式并加载文件夹；刷新 TokHub 后打开 DeepSeek 完成登录。</p>
                     <small>点击读取时，扩展只获取当前账号的 userToken.value，不读取 Cookie、密码或其他 Local Storage，也不会持久化 Token。</small>
                   </div>
@@ -892,6 +1166,44 @@ export function AIConnectionsPage() {
                   <Metric label="最后验证" value={formatDate(selectedConnection.lastValidatedAt)} />
                 </div>
 
+                {selectedConnection.authMethod === "opencli_browser" && browserRisk ? (
+                  <section className={`ai-browser-risk-card state-${browserRisk.state}`} aria-label="个人浏览器账号保护状态">
+                    <div className="ai-browser-risk-card-head">
+                      <div>
+                        <span>ACCOUNT SAFETY GOVERNOR</span>
+                        <b>{browserRiskStateLabel(browserRisk.state)}</b>
+                        <p>{browserRiskStateDescription(browserRisk)}</p>
+                      </div>
+                      <div className="ai-browser-risk-actions">
+                        <button className="btn btn-ghost btn-sm" type="button" disabled={!!working} onClick={() => void runValidation()}>
+                          重新识别账号
+                        </button>
+                        {["normal", "paused"].includes(browserRisk.state) ? (
+                          <button
+                            className={`btn btn-sm ${browserRisk.state === "paused" ? "btn-primary" : "danger-lite"}`}
+                            type="button"
+                            disabled={!!working}
+                            onClick={() => void toggleBrowserPause(browserRisk.state !== "paused")}
+                          >
+                            {browserRisk.state === "paused" ? "恢复中转" : "立即暂停"}
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="ai-browser-risk-stats">
+                      <Metric label="本小时" value={`${browserRisk.requestsHour} / ${browserRisk.hourlyLimit}`} />
+                      <Metric label="近 24 小时" value={`${browserRisk.requestsDay} / ${browserRisk.dailyLimit}`} />
+                      <Metric label="最小间隔" value={`${browserRisk.minimumIntervalSeconds} 秒`} />
+                      <Metric label="连续失败" value={`${browserRisk.consecutiveFailures} 次`} />
+                    </div>
+                    <small>
+                      {browserRisk.cooldownUntil ? `预计恢复：${formatDate(browserRisk.cooldownUntil)} · ` : ""}
+                      最近成功：{formatDate(browserRisk.lastSuccessAt)}
+                      {browserRisk.lastChallengeAt ? ` · 最近安全验证：${formatDate(browserRisk.lastChallengeAt)}` : ""}
+                    </small>
+                  </section>
+                ) : null}
+
                 {selectedConnection.riskLevel === "experimental" ? (
                   <div className="ai-experimental-box">
                     <b>实验连接已启用保护</b>
@@ -929,7 +1241,7 @@ export function AIConnectionsPage() {
                   <button className="btn btn-ghost" type="button" disabled={!!working} onClick={() => void runValidation()}>
                     {working === "validate" ? "正在验证…" : "重新验证"}
                   </button>
-                  {isManagedAuthorization(selectedConnection.authMethod) ? (
+                  {selectedConnection.authMethod === "opencli_browser" ? null : isManagedAuthorization(selectedConnection.authMethod) ? (
                     <button className="btn btn-ghost" type="button" disabled={!!working} onClick={() => openReauthorization(selectedConnection)}>重新授权</button>
                   ) : (
                     <button className="btn btn-ghost" type="button" disabled={!!working} onClick={() => setRotateOpen((open) => !open)}>轮换凭证</button>
@@ -1214,6 +1526,7 @@ function authMethodLabel(method: string) {
     case "oauth": return "官方 OAuth";
     case "codex_oauth": return "Codex OAuth";
     case "deepseek_web_token": return "DeepSeek 网页账号";
+    case "opencli_browser": return "本机浏览器";
     case "api_key_guided": return "开放平台密钥";
     default: return "官方 API Key";
   }
@@ -1247,6 +1560,7 @@ function submitLabel(method: string, hasAuthorization: boolean, working: string)
   if (working === "create") return "正在连接并验证…";
   if (method === "api_key_guided" && !hasAuthorization) return "前往开放平台";
   if (method === "deepseek_web_token") return "一键读取当前登录态";
+  if (method === "opencli_browser") return "2. 已登录，识别并连接";
   if (method === "oauth" || method === "codex_oauth") return "打开登录授权";
   return "连接并验证";
 }
@@ -1292,21 +1606,73 @@ function chatGPTCallbackStatusMessage(status: ChatGPTCallbackStatus | "checking"
 function authorizationTermsVersion(method: string): string | undefined {
   if (method === "codex_oauth") return "chatgpt-codex-experimental-v1";
   if (method === "deepseek_web_token") return "deepseek-web-session-experimental-v1";
+  if (method === "opencli_browser") return "opencli-personal-browser-experimental-v1";
   return undefined;
 }
 
 function isManagedAuthorization(method: string): boolean {
-  return ["oauth", "codex_oauth", "deepseek_web_token"].includes(method);
+  return ["oauth", "codex_oauth", "deepseek_web_token", "opencli_browser"].includes(method);
 }
 
 function isExperimentalAuthorization(method: string): boolean {
-  return method === "codex_oauth" || method === "deepseek_web_token";
+  return method === "codex_oauth" || method === "deepseek_web_token" || method === "opencli_browser";
 }
 
 function connectionEndpointLabel(connection: AIConnection): string {
-  return connection.authMethod === "deepseek_web_token"
-    ? "DeepSeek 网页版 · TokHub 受管协议桥"
-    : connection.endpoint;
+  if (connection.authMethod === "deepseek_web_token") return "DeepSeek 网页版 · TokHub 受管协议桥";
+  if (connection.authMethod === "opencli_browser") return "本机 Chrome · OpenCLI 受限任务连接";
+  return connection.endpoint;
+}
+
+function browserProviderLabel(provider: string): string {
+  switch (provider) {
+    case "openai": return "ChatGPT";
+    case "gemini": return "Gemini";
+    case "deepseek": return "DeepSeek";
+    default: return provider;
+  }
+}
+
+function browserProviderLoginURL(provider: string): string {
+  switch (provider) {
+    case "openai": return "https://auth.openai.com/log-in";
+    case "gemini": return "https://accounts.google.com/ServiceLogin?continue=https%3A%2F%2Fgemini.google.com%2F";
+    case "deepseek": return "https://chat.deepseek.com/sign_in";
+    default: return "#";
+  }
+}
+
+function browserRiskStateLabel(state: string): string {
+  switch (state) {
+    case "normal": return "账号保护正常";
+    case "cooldown": return "账号正在冷却";
+    case "reauth_required": return "需要重新识别";
+    case "security_locked": return "安全验证锁定";
+    case "adapter_blocked": return "适配器暂停";
+    case "paused": return "已手动暂停";
+    default: return "状态待确认";
+  }
+}
+
+function browserRiskStateDescription(risk: AIBrowserRiskState): string {
+  switch (risk.state) {
+    case "normal":
+      return "请求会经过账号身份核验、固定间隔、小时额度和每日额度保护。";
+    case "cooldown":
+      return "近期调用出现异常或服务商限流，系统正在等待安全恢复窗口。";
+    case "reauth_required":
+      return "浏览器登录已失效或账号发生变化，请重新登录并识别当前账号。";
+    case "security_locked":
+      return risk.cooldownUntil
+        ? `服务商拒绝访问，账号保护会持续到 ${formatDate(risk.cooldownUntil)}，届时请重新识别。`
+        : "检测到验证码或安全验证，完成网页处理后再执行重新识别。";
+    case "adapter_blocked":
+      return "OpenCLI 与当前网页结构不兼容，请更新 OpenCLI 后重新识别。";
+    case "paused":
+      return "账号所有者已暂停该账号的全部个人网页中转。";
+    default:
+      return "当前账号保护状态需要重新检测。";
+  }
 }
 
 function splitModels(value: string) {
@@ -1348,7 +1714,8 @@ const emptyConnectionDraft: ConnectionDraft = {
   callbackUrl: "",
   deepSeekToken: "",
   confirmBillable: false,
-  confirmExperimental: false
+  confirmExperimental: false,
+  connectorId: ""
 };
 
 const emptyRelayDraft: RelayDraft = {

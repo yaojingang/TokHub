@@ -9,6 +9,7 @@
     "preview": "vite preview --host 0.0.0.0",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
+    "test": "go test -count=1 ./...",
     "test:e2e": "playwright test --reporter=line",
     "test:visual": "playwright test tests/*visual*.spec.ts --reporter=line",
     "test:security": "bash deploy/scripts/security-scan.sh",

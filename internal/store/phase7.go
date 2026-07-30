@@ -225,6 +225,17 @@ type MetricsSnapshot struct {
 	AIConnectionValidations       int
 	AIConnectionValidationFailure int
 	AIQuickRelays                 int
+	AIBrowserConnectorsOnline     int
+	AIBrowserTasksCompleted       int
+	AIBrowserTasksFailed          int
+	AIBrowserTasksExpired         int
+	AIBrowserSecurityChallenges   int
+	AIBrowserAccountsCooling      int
+	AIBrowserAccountsLocked       int
+	AIBrowserAccountsReauth       int
+	AIBrowserAccountsPaused       int
+	AIBrowserAdaptersBlocked      int
+	AIBrowserRateLimitEvents      int
 }
 
 func (r *Repository) RecomputeUsageDailyRollups(ctx context.Context, orgID string) error {
@@ -1597,12 +1608,30 @@ func (r *Repository) MetricsSnapshot(ctx context.Context) (MetricsSnapshot, erro
 				'ai_connection.credential_rotated',
 				'ai_connection.credential_rotation_rejected'
 			) and result='failed'),
-			(select count(*) from audit_events where action='ai_connection.quick_relay_created' and result='success')
+			(select count(*) from audit_events where action='ai_connection.quick_relay_created' and result='success'),
+			(select count(*) from ai_browser_connectors
+				where status='active' and last_seen_at>now()-interval '45 seconds'),
+			(select count(*) from ai_browser_tasks where status='completed'),
+			(select count(*) from ai_browser_tasks where status='failed'),
+			(select count(*) from ai_browser_tasks where status='expired'),
+			(select count(*) from ai_browser_tasks where error_code='security_challenge'),
+			(select count(*) from ai_browser_account_risk
+				where state='cooldown' and cooldown_until>now()),
+			(select count(*) from ai_browser_account_risk where state='security_locked'),
+			(select count(*) from ai_browser_account_risk where state='reauth_required'),
+			(select count(*) from ai_browser_account_risk where state='paused'),
+			(select count(*) from ai_browser_account_risk where state='adapter_blocked'),
+			(select coalesce(sum(rate_limit_events),0) from ai_browser_account_risk
+				where rate_limit_window_started_at>now()-interval '24 hours')
 	`).Scan(
 		&m.GatewayRequests, &m.GatewayErrors, &m.ProbeRuns, &m.OpenIncidents,
 		&m.AlertDeliveries, &m.AuditEvents, &m.UsageRollups, &m.AIConnectionsActive,
 		&m.AIConnectionsAttention, &m.AIConnectionValidations,
 		&m.AIConnectionValidationFailure, &m.AIQuickRelays,
+		&m.AIBrowserConnectorsOnline, &m.AIBrowserTasksCompleted, &m.AIBrowserTasksFailed,
+		&m.AIBrowserTasksExpired, &m.AIBrowserSecurityChallenges,
+		&m.AIBrowserAccountsCooling, &m.AIBrowserAccountsLocked, &m.AIBrowserAccountsReauth,
+		&m.AIBrowserAccountsPaused, &m.AIBrowserAdaptersBlocked, &m.AIBrowserRateLimitEvents,
 	)
 	return m, err
 }

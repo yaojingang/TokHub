@@ -91,6 +91,31 @@ func main() {
 			}
 		}()
 	}
+	if shouldMaintainAIBrowserTasks(cfg.Role) {
+		go func() {
+			maintain := func() {
+				changed, err := repo.MaintainAIBrowserTasks(ctx, 10*time.Minute)
+				if err != nil {
+					logger.Warn("maintain local browser tasks", "error", err)
+					return
+				}
+				if changed > 0 {
+					logger.Info("maintained local browser task payloads", "count", changed)
+				}
+			}
+			maintain()
+			ticker := time.NewTicker(time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					maintain()
+				}
+			}
+		}()
+	}
 	authSvc := auth.NewService(repo, cfg.SecretKey, cfg.SessionSecure, logger)
 	var credentialRefreshRuntime *events.CredentialRefreshRuntime
 	if cfg.AIWebAuthEnabled && shouldRunCredentialRefresh(cfg.Role) {
@@ -184,6 +209,10 @@ func main() {
 }
 
 func shouldExpireAIQuickRelayReveals(role string) bool {
+	return role == "all" || role == "worker"
+}
+
+func shouldMaintainAIBrowserTasks(role string) bool {
 	return role == "all" || role == "worker"
 }
 

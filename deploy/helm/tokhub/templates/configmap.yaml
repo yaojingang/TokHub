@@ -1,3 +1,6 @@
+{{- if and .Values.aiAuthorization.opencliBrowser.enabled (ne .Values.aiAuthorization.opencliBrowser.riskAcknowledgement "I_ACCEPT_OPENCLI_PERSONAL_BROWSER_EXPERIMENTAL_RISK") }}
+{{- fail "aiAuthorization.opencliBrowser.riskAcknowledgement must contain the exact OpenCLI browser experimental acknowledgement" }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -18,6 +21,21 @@ data:
   TOKHUB_AI_DEEPSEEK_WEB_ACK: {{ .Values.aiAuthorization.deepseekWeb.riskAcknowledgement | quote }}
   TOKHUB_AI_CHATGPT_CODEX_EXPERIMENTAL: {{ .Values.aiAuthorization.chatgptCodexExperimental | quote }}
   TOKHUB_AI_EXPERIMENTAL_BRIDGE_ACK: {{ .Values.aiAuthorization.chatgptRiskAcknowledgement | quote }}
+  TOKHUB_AI_OPENCLI_BROWSER_EXPERIMENTAL: {{ .Values.aiAuthorization.opencliBrowser.enabled | quote }}
+  TOKHUB_AI_OPENCLI_BROWSER_ACK: {{ .Values.aiAuthorization.opencliBrowser.riskAcknowledgement | quote }}
+  TOKHUB_AI_OPENCLI_BROWSER_TASK_TIMEOUT: {{ .Values.aiAuthorization.opencliBrowser.taskTimeout | quote }}
+  TOKHUB_AI_OPENCLI_CHATGPT_ENABLED: {{ .Values.aiAuthorization.opencliBrowser.chatgpt.enabled | quote }}
+  TOKHUB_AI_OPENCLI_GEMINI_ENABLED: {{ .Values.aiAuthorization.opencliBrowser.gemini.enabled | quote }}
+  TOKHUB_AI_OPENCLI_DEEPSEEK_ENABLED: {{ .Values.aiAuthorization.opencliBrowser.deepseek.enabled | quote }}
+  TOKHUB_AI_OPENCLI_CHATGPT_MIN_INTERVAL: {{ .Values.aiAuthorization.opencliBrowser.chatgpt.minimumInterval | quote }}
+  TOKHUB_AI_OPENCLI_GEMINI_MIN_INTERVAL: {{ .Values.aiAuthorization.opencliBrowser.gemini.minimumInterval | quote }}
+  TOKHUB_AI_OPENCLI_DEEPSEEK_MIN_INTERVAL: {{ .Values.aiAuthorization.opencliBrowser.deepseek.minimumInterval | quote }}
+  TOKHUB_AI_OPENCLI_CHATGPT_HOURLY_LIMIT: {{ .Values.aiAuthorization.opencliBrowser.chatgpt.hourlyLimit | quote }}
+  TOKHUB_AI_OPENCLI_GEMINI_HOURLY_LIMIT: {{ .Values.aiAuthorization.opencliBrowser.gemini.hourlyLimit | quote }}
+  TOKHUB_AI_OPENCLI_DEEPSEEK_HOURLY_LIMIT: {{ .Values.aiAuthorization.opencliBrowser.deepseek.hourlyLimit | quote }}
+  TOKHUB_AI_OPENCLI_CHATGPT_DAILY_LIMIT: {{ .Values.aiAuthorization.opencliBrowser.chatgpt.dailyLimit | quote }}
+  TOKHUB_AI_OPENCLI_GEMINI_DAILY_LIMIT: {{ .Values.aiAuthorization.opencliBrowser.gemini.dailyLimit | quote }}
+  TOKHUB_AI_OPENCLI_DEEPSEEK_DAILY_LIMIT: {{ .Values.aiAuthorization.opencliBrowser.deepseek.dailyLimit | quote }}
   TOKHUB_AI_OAUTH_TTL: {{ .Values.aiAuthorization.oauthTtl | quote }}
   TOKHUB_AI_OAUTH_REFRESH_SKEW: {{ .Values.aiAuthorization.oauthRefreshSkew | quote }}
   TOKHUB_AI_OAUTH_REFRESH_WORKERS: {{ .Values.aiAuthorization.oauthRefreshWorkers | quote }}

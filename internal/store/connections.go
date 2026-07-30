@@ -205,16 +205,23 @@ func (r *Repository) CreateAIConnection(ctx context.Context, input AIConnectionC
 	if connectionCount >= 32 {
 		return AIConnection{}, ErrAIConnectionLimit
 	}
+	authMethod := strings.TrimSpace(input.AuthMethod)
+	if authMethod == "" {
+		authMethod = "api_key"
+	}
 	if err := rejectDuplicateAIConnectionCredentialTx(ctx, tx, input.OwnerUserID, input.OrgID, input.Provider, input.Endpoint, input.Credential, ""); err != nil {
 		return AIConnection{}, err
+	}
+	if authMethod == "opencli_browser" {
+		if err := rejectDuplicateOpenCLIBrowserProviderTx(
+			ctx, tx, input.OwnerUserID, input.OrgID, input.Provider, "",
+		); err != nil {
+			return AIConnection{}, err
+		}
 	}
 	status := "active"
 	if !input.Validation.OK {
 		status = "attention"
-	}
-	authMethod := strings.TrimSpace(input.AuthMethod)
-	if authMethod == "" {
-		authMethod = "api_key"
 	}
 	authStatus := strings.TrimSpace(input.AuthStatus)
 	if authStatus == "" {
@@ -657,7 +664,7 @@ func (r *Repository) CreateQuickRelay(ctx context.Context, input QuickRelayInput
 		return QuickRelayResult{}, err
 	}
 	connection.ProviderConfig = decodeMap(providerConfigRaw)
-	if connection.AuthMethod == "codex_oauth" || connection.AuthMethod == "deepseek_web_token" {
+	if connection.AuthMethod == "codex_oauth" || connection.AuthMethod == "deepseek_web_token" || connection.AuthMethod == "opencli_browser" {
 		var relayExists bool
 		if err := tx.QueryRow(ctx, `
 			select exists(
@@ -1033,6 +1040,39 @@ func rejectDuplicateAIConnectionCredentialTx(ctx context.Context, tx pgx.Tx, own
 		)
 	`, ownerUserID, orgID, provider, endpoint, excludeConnectionID,
 		credential.FingerprintKeyID, credential.Fingerprint).Scan(&duplicate); err != nil {
+		return err
+	}
+	if duplicate {
+		return ErrAIConnectionDuplicate
+	}
+	return nil
+}
+
+func rejectDuplicateOpenCLIBrowserProviderTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	ownerUserID string,
+	orgID string,
+	provider string,
+	excludeConnectionID string,
+) error {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	lockKey := strings.Join([]string{
+		"opencli-browser-provider", ownerUserID, orgID, provider,
+	}, "\x1f")
+	if _, err := tx.Exec(ctx, `select pg_advisory_xact_lock(hashtextextended($1,0))`, lockKey); err != nil {
+		return err
+	}
+	var duplicate bool
+	if err := tx.QueryRow(ctx, `
+		select exists(
+			select 1
+			from ai_connections
+			where owner_user_id=$1 and org_id=$2 and provider=$3
+				and auth_method='opencli_browser' and id <> $4
+				and status <> 'deleted' and deleted_at is null
+		)
+	`, ownerUserID, orgID, provider, excludeConnectionID).Scan(&duplicate); err != nil {
 		return err
 	}
 	if duplicate {

@@ -51,6 +51,54 @@ func TestLoadConfigReadsSMTPURL(t *testing.T) {
 	}
 }
 
+func TestOpenCLIBrowserConnectorIsExplicitlyEnabled(t *testing.T) {
+	t.Setenv("TOKHUB_AI_OPENCLI_BROWSER_EXPERIMENTAL", "")
+	t.Setenv("TOKHUB_AI_OPENCLI_BROWSER_ACK", "")
+	cfg := LoadConfig()
+	if cfg.AIOpenCLIBrowserEnabled {
+		t.Fatal("personal browser connector was enabled without explicit configuration")
+	}
+
+	t.Setenv("TOKHUB_AI_OPENCLI_BROWSER_EXPERIMENTAL", "true")
+	t.Setenv("TOKHUB_AI_OPENCLI_BROWSER_ACK", "I_ACCEPT_OPENCLI_PERSONAL_BROWSER_EXPERIMENTAL_RISK")
+	cfg = LoadConfig()
+	if !cfg.AIOpenCLIBrowserEnabled || cfg.AIOpenCLIBrowserTaskTimeout != 2*time.Minute {
+		t.Fatalf("personal browser connector config was not loaded: %#v", cfg)
+	}
+	if !cfg.AIOpenCLIChatGPTEnabled || !cfg.AIOpenCLIGeminiEnabled || !cfg.AIOpenCLIDeepSeekEnabled {
+		t.Fatalf("OpenCLI provider switches should default to enabled behind the global gate: %#v", cfg)
+	}
+	if cfg.AIOpenCLIChatGPTMinInterval != 10*time.Second ||
+		cfg.AIOpenCLIGeminiMinInterval != 10*time.Second ||
+		cfg.AIOpenCLIDeepSeekMinInterval != 15*time.Second {
+		t.Fatalf("OpenCLI safety intervals = (%v,%v,%v)",
+			cfg.AIOpenCLIChatGPTMinInterval, cfg.AIOpenCLIGeminiMinInterval, cfg.AIOpenCLIDeepSeekMinInterval)
+	}
+	if cfg.AIOpenCLIChatGPTHourlyLimit != 30 || cfg.AIOpenCLIGeminiHourlyLimit != 30 ||
+		cfg.AIOpenCLIDeepSeekHourlyLimit != 20 || cfg.AIOpenCLIChatGPTDailyLimit != 120 ||
+		cfg.AIOpenCLIGeminiDailyLimit != 120 || cfg.AIOpenCLIDeepSeekDailyLimit != 80 {
+		t.Fatalf("OpenCLI safety quotas were not loaded: %#v", cfg)
+	}
+
+	t.Setenv("TOKHUB_AI_OPENCLI_BROWSER_TASK_TIMEOUT", "30s")
+	cfg = LoadConfig()
+	if cfg.AIOpenCLIBrowserTaskTimeout != 2*time.Minute {
+		t.Fatalf("OpenCLI browser timeout below the command contract should fall back to 2m: %v", cfg.AIOpenCLIBrowserTaskTimeout)
+	}
+}
+
+func TestOpenCLIBrowserProviderSwitchesAndLimitsAreConfigurable(t *testing.T) {
+	t.Setenv("TOKHUB_AI_OPENCLI_DEEPSEEK_ENABLED", "false")
+	t.Setenv("TOKHUB_AI_OPENCLI_DEEPSEEK_MIN_INTERVAL", "25s")
+	t.Setenv("TOKHUB_AI_OPENCLI_DEEPSEEK_HOURLY_LIMIT", "8")
+	t.Setenv("TOKHUB_AI_OPENCLI_DEEPSEEK_DAILY_LIMIT", "24")
+	cfg := LoadConfig()
+	if cfg.AIOpenCLIDeepSeekEnabled || cfg.AIOpenCLIDeepSeekMinInterval != 25*time.Second ||
+		cfg.AIOpenCLIDeepSeekHourlyLimit != 8 || cfg.AIOpenCLIDeepSeekDailyLimit != 24 {
+		t.Fatalf("DeepSeek OpenCLI safety config = %#v", cfg)
+	}
+}
+
 func TestAdminAgentEnabledDefaultsByEnvironment(t *testing.T) {
 	t.Setenv("TOKHUB_ADMIN_AGENT_ENABLED", "")
 	if !adminAgentEnabled("development") {

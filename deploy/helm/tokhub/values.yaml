@@ -20,6 +20,25 @@ aiAuthorization:
   deepseekGuidedEnabled: true
   chatgptCodexExperimental: false
   chatgptRiskAcknowledgement: ""
+  opencliBrowser:
+    enabled: false
+    riskAcknowledgement: ""
+    taskTimeout: 2m
+    chatgpt:
+      enabled: true
+      minimumInterval: 10s
+      hourlyLimit: 30
+      dailyLimit: 120
+    gemini:
+      enabled: true
+      minimumInterval: 10s
+      hourlyLimit: 30
+      dailyLimit: 120
+    deepseek:
+      enabled: true
+      minimumInterval: 15s
+      hourlyLimit: 20
+      dailyLimit: 80
   oauthTtl: 10m
   oauthRefreshSkew: 5m
   oauthRefreshWorkers: 8

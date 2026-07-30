@@ -23,7 +23,7 @@ func TestNormalizeConnectionModelsRejectsURLShapedModelIDs(t *testing.T) {
 }
 
 func TestOAuthConnectionDisconnectRequiresPasswordStepUp(t *testing.T) {
-	for _, method := range []string{"oauth", "codex_oauth", "deepseek_web_token"} {
+	for _, method := range []string{"oauth", "codex_oauth", "deepseek_web_token", "opencli_browser"} {
 		if !requiresAIConnectionDisconnectStepUp(method) {
 			t.Fatalf("%s disconnect did not require password step-up", method)
 		}
@@ -41,7 +41,7 @@ func TestCredentialRotationIsLimitedToOfficialAPIKeys(t *testing.T) {
 			t.Fatalf("%s connection could not rotate its official API key", method)
 		}
 	}
-	for _, method := range []string{"", "oauth", "codex_oauth", "deepseek_web_token"} {
+	for _, method := range []string{"", "oauth", "codex_oauth", "deepseek_web_token", "opencli_browser"} {
 		if supportsAIConnectionCredentialRotation(method) {
 			t.Fatalf("%s managed connection accepted raw API key rotation", method)
 		}
@@ -285,6 +285,12 @@ func TestExperimentalGatewayLimitsRemainPinnedAfterMutableGatewayEdits(t *testin
 			wantOK:      true,
 		},
 		{
+			name:        "local browser connector",
+			authMethods: []string{"opencli_browser"},
+			want:        experimentalGatewayPolicy{QPS: 1, Concurrency: 1},
+			wantOK:      true,
+		},
+		{
 			name:        "codex oauth",
 			authMethods: []string{"codex_oauth"},
 			want:        experimentalGatewayPolicy{QPS: 1, Concurrency: 2},
@@ -316,6 +322,24 @@ func TestExperimentalGatewayLimitsRemainPinnedAfterMutableGatewayEdits(t *testin
 				t.Fatalf("experimentalGatewayLimits() = (%#v, %t), want (%#v, %t)", got, ok, test.want, test.wantOK)
 			}
 		})
+	}
+}
+
+func TestBrowserGatewayResponseMatchesOpenAIContracts(t *testing.T) {
+	usage := gatewayUsage{PromptTokens: 5, CompletionTokens: 7, TotalTokens: 12, Estimated: true}
+	chat := browserGatewayJSON("chat", "model-a", "浏览器回答", usage, "DeepSeek Web")
+	choices, ok := chat["choices"].([]map[string]any)
+	if !ok || len(choices) != 1 {
+		t.Fatalf("chat response choices = %#v", chat["choices"])
+	}
+	message, _ := choices[0]["message"].(map[string]any)
+	if message["content"] != "浏览器回答" {
+		t.Fatalf("chat response = %#v", chat)
+	}
+
+	responses := browserGatewayJSON("responses", "model-b", "浏览器回答", usage, "Gemini Web")
+	if responses["status"] != "completed" || responses["output"] == nil {
+		t.Fatalf("responses response = %#v", responses)
 	}
 }
 
@@ -396,5 +420,13 @@ func TestNormalizeQuickRelayRequestRejectsUnsafeLimits(t *testing.T) {
 	}
 	if request.Policy != "latency" || request.QPSLimit != 20 || request.QuotaMonth != 100000 {
 		t.Fatalf("quick relay defaults = %#v", request)
+	}
+}
+
+func TestShellQuoteBrowserConnectorArgumentKeepsOneShellArgument(t *testing.T) {
+	got := shellQuoteBrowserConnectorArgument("https://example.test/a'; touch /tmp/unsafe; '")
+	want := `'https://example.test/a'"'"'; touch /tmp/unsafe; '"'"''`
+	if got != want {
+		t.Fatalf("quoted argument = %q, want %q", got, want)
 	}
 }
