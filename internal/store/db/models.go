@@ -51,6 +51,71 @@ type AiAuthorizationAttempt struct {
 	UpdatedAt      time.Time
 }
 
+type AiBrowserAccountRisk struct {
+	OwnerUserID              string
+	OrgID                    string
+	Provider                 string
+	AccountKey               string
+	State                    string
+	CooldownUntil            sql.NullTime
+	HourWindowStartedAt      time.Time
+	DayWindowStartedAt       time.Time
+	RateLimitWindowStartedAt time.Time
+	RequestsHour             int32
+	RequestsDay              int32
+	RateLimitEvents          int32
+	ConsecutiveFailures      int32
+	LastRequestAt            sql.NullTime
+	LastSuccessAt            sql.NullTime
+	LastErrorAt              sql.NullTime
+	LastErrorCode            string
+	LastChallengeAt          sql.NullTime
+	CreatedAt                time.Time
+	UpdatedAt                time.Time
+}
+
+type AiBrowserConnector struct {
+	ID               string
+	OwnerUserID      string
+	OrgID            string
+	DisplayName      string
+	Status           string
+	PairingHash      string
+	PairingExpiresAt sql.NullTime
+	TokenHash        string
+	TokenPrefix      string
+	OpencliVersion   string
+	ExtensionVersion string
+	CapabilitiesJson json.RawMessage
+	LastSeenAt       sql.NullTime
+	PairedAt         sql.NullTime
+	RevokedAt        sql.NullTime
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+type AiBrowserTask struct {
+	ID             string
+	ConnectorID    string
+	OwnerUserID    string
+	OrgID          string
+	ConnectionID   sql.NullString
+	Provider       string
+	Action         string
+	RequestJson    json.RawMessage
+	ResponseJson   json.RawMessage
+	Status         string
+	LeaseHash      string
+	LeaseExpiresAt sql.NullTime
+	ErrorCode      string
+	ErrorMessage   string
+	ExpiresAt      time.Time
+	ClaimedAt      sql.NullTime
+	CompletedAt    sql.NullTime
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
 type AiConnection struct {
 	ID                     string
 	OwnerUserID            string
