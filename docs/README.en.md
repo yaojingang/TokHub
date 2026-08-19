@@ -8,16 +8,17 @@ TokHub is an open-source monitoring, recommendation, and OpenAI-compatible gatew
 
 Simplified Chinese: [README.md](../README.md)
 
-Current release: `v2.0.0-rc.1`. [Read the release notes](https://github.com/yaojingang/TokHub/releases/tag/v2.0.0-rc.1).
+Current release: `v2.0.0-rc.2`. [Read the release notes](https://github.com/yaojingang/TokHub/releases/tag/v2.0.0-rc.2).
 
-TokHub 2.0 gives regular users their own AI service connection entry. After signing in, a user can connect an official API key or use a deployment-enabled ChatGPT, Gemini, or DeepSeek authorization flow. An optional local OpenCLI connector can reuse the session in its connected Chrome profile while keeping browser credentials on that computer. A verified connection can create a personal OpenAI-compatible relay and a dedicated Gateway Key.
+TokHub 2.0 RC2 organizes personal AI connectivity into official developer APIs, official local account clients, and a local lab. ChatGPT delegates to the official Codex `app-server`; Grok delegates to the official Grok Build ACP. Both clients run inside a dedicated read-only container on the user's device. Gemini retains API key and Google Cloud OAuth support. DeepSeek production connections accept the official API key only.
 
-> ChatGPT Codex OAuth and the DeepSeek web account flow are self-hosted experimental features and remain disabled by default. Gemini uses the official Google OAuth flow. Official API keys remain the stable connection method.
+> OpenCLI, DeepSeek web sessions, and legacy ChatGPT Codex OAuth are lab-only. Lab connections cannot create production Gateway Keys. The RC2 safety migration disables legacy connections, erases their consumer token ciphertext, and disables managed channels backed by them.
 
 ## Quick Navigation
 
 - [What Changed In TokHub 2.0](#what-changed-in-tokhub-20)
-- [Three Ways To Connect An AI Service](#three-ways-to-connect-an-ai-service)
+- [Three Connection Tiers](#three-connection-tiers)
+- [Official Client Connector](#official-client-connector)
 - [Provider Support Matrix](#provider-support-matrix)
 - [Regular User Flow](#regular-user-flow)
 - [Use Cases](#use-cases)
@@ -32,67 +33,54 @@ Earlier TokHub releases focused on platform operators and enterprise workspaces 
 
 | Area | Before 2.0 | 2.0 RC |
 | --- | --- | --- |
-| Entry points | Platform admin, public pages, and enterprise workspaces | Adds an AI Service Connections page for regular users |
-| Upstream credentials | API keys configured by a platform or workspace | Adds user-owned API keys, official OAuth, controlled experimental authorization, and local browser references |
-| Providers | OpenAI-compatible upstreams and platform channels | Manages OpenAI, Gemini, Kimi, DeepSeek, Doubao, Claude, and Qwen |
-| Relay creation | Admins or workspace owners create gateways manually | A verified connection can create a personal relay |
-| Protocol adapters | OpenAI-compatible gateway and standard provider adapters | Adds Gemini SSE, ChatGPT Responses, and a DeepSeek web protocol bridge |
-| Credential lifecycle | Encrypted API key storage, rotation, and deletion | Adds OAuth refresh, expiry detection, account consistency checks, and reauthorization |
-| Risk controls | Gateway QPS, monthly quotas, circuit breakers, and audit logs | Adds personal scope, one-relay limits, low QPS, and concurrency limits for experimental connections |
-| Monitoring | Channel probes, gateway requests, and cost | Adds authorization outcomes, refresh failures, connections requiring attention, and personal relay metrics |
+| Personal account path | Consumer OAuth, web sessions, and OpenCLI experiments | Official Codex and Grok Build local delegation |
+| Production policy | Experimental connection types could reach a personal relay | API keys, Gemini OAuth, and ChatGPT/Grok official clients only |
+| Local isolation | Browser tools shared the user environment | Non-root read-only container with named volumes and no home-directory mount |
+| Device trust | Device token and task lease | Ed25519 request signatures, 60-second timestamp window, nonce replay protection, and HTTPS |
+| Conversation state | Caller resubmitted the full conversation | `/v1/responses` can restore an official client session with `previous_response_id` |
+| Account protection | Adapter-specific low-volume limits | One device, one connection, concurrency 1, 15-second interval, 20/hour, 80/day, zero retry |
+| Governance | Feature switches | Compiled Provider Policy, 90-day review, terms digest, and kill switch |
 
 ```mermaid
 flowchart LR
     A["Regular user signs in"] --> B["AI Service Connections"]
-    B --> C1["Official API key"]
-    B --> C2["Gemini Google OAuth"]
-    B --> C3["ChatGPT Codex OAuth"]
-    B --> C4["DeepSeek Login Helper"]
-    B --> C5["Local OpenCLI Browser Connector"]
-    C1 --> D["Method-specific account and availability check"]
-    C2 --> D
-    C3 --> D
-    C4 --> D
-    C5 --> D
-    D --> E["AES-256-GCM credential vault"]
-    E --> F["Personal OpenAI-compatible relay"]
-    F --> G["Dedicated Gateway Key"]
-    G --> H["AI client, script, or application"]
+    B --> C["Gateway policy layer"]
+    C --> D["Encrypted temporary task queue"]
+    D --> E["Signed local connector"]
+    E --> F["Codex app-server"]
+    E --> G["Grok Build ACP"]
+    F --> H["Official provider path"]
+    G --> H
 ```
 
-## Three Ways To Connect An AI Service
+## Three Connection Tiers
 
-| Method | What TokHub receives | Providers | Renewal | Recommended use |
+| Tier | What TokHub stores | Providers | Production Gateway | Recommended use |
 | --- | --- | --- | --- | --- |
-| Official API key | An API key issued by the developer platform | All seven providers | The user rotates the key | Production workloads, team sharing, and stable relays |
-| Official OAuth | OAuth access token, refresh token, and account identity | Gemini Google OAuth | Background refresh with reauthorization after expiry | Users with a Google Cloud Project who want less manual key management |
-| Controlled experimental authorization | A one-time ChatGPT OAuth callback or DeepSeek `userToken.value` | ChatGPT and DeepSeek | Provider-specific refresh or a prompt to sign in again | Personal self-hosting, low-volume use, and protocol evaluation |
-| Local OpenCLI browser | A device reference, device-bound account fingerprint, masked account identity, plain-text prompt, and model answer | ChatGPT, Gemini, and DeepSeek | Reuses the login in the connected Chrome profile and asks the user to sign in again after expiry | Personal, non-streaming, low-volume text requests |
+| Official API | Encrypted API key or Gemini OAuth bundle | OpenAI, Gemini, Kimi, DeepSeek, Doubao, Claude, Qwen, Grok | Yes | Production applications and team quotas |
+| Official local account client | Encrypted device reference, account fingerprint, and risk state | ChatGPT Codex, Grok Build | Yes, personal scope | Low-volume text use with a personal membership |
+| Local lab | Device reference and experimental state | OpenCLI, DeepSeek web session, legacy Codex OAuth | No | Protocol research and self-hosted adapter validation |
 
-The TokHub AI Login Helper has a fixed read scope:
+## Official Client Connector
 
-- ChatGPT support reads the one-time `code` and `state` from `http://localhost:1455/auth/callback`.
-- Gemini opens the official Google authorization page and validates Cloud Project permissions, the OIDC signature, nonce, and account identity.
-- DeepSeek support reads `localStorage.userToken.value` from `https://chat.deepseek.com` after a user click.
-- The helper skips provider passwords, verification codes, full cookies, `cf_clearance`, and other Local Storage values. It keeps each result in memory for the active action.
-- API key and managed authorization paths store a connection after a real minimal generation check. Local browser mode runs `whoami` during creation and exercises generation on the first relay request.
-- The OpenCLI connector runs on the user's computer. TokHub sends only allowlisted `whoami` and `ask` tasks, and clears task prompts and answers after consumption.
-- The local connector hashes the stable `whoami` identity before upload and binds it to the connection. Every `ask` rechecks that fingerprint and stops before generation when the Chrome account changed.
-- The connector checks Chrome Bridge health every 15 seconds and maintains the TokHub heartbeat independently, so a long browser generation does not make a healthy connector appear offline.
-- Local browser limits are shared by provider and account fingerprint, so additional relays or Gateway Keys cannot bypass the minimum interval, hourly quota, or daily quota.
-- Provider rate limits, security challenges, login changes, and adapter drift enter durable cooldown or lock states. The connection detail shows usage and recovery state and lets the owner pause the relay.
+`tokhub-client-connector` supports `doctor`, `pair`, `login`, `run`, `logout`, and `sessions clean`. Pairing creates an Ed25519 key inside the container. Every request signs the method, path, body hash, timestamp, and nonce.
+
+The image pins `@openai/codex@0.148.0` and the official Grok Build `1.0.5` binary. xAI does not currently publish a verifiable `@xai-official/grok@0.1.4` package to the public npm registry, so RC2 uses xAI's official binary release and verifies its SHA256.
+
+The container runs as non-root with a read-only root filesystem, all Linux capabilities removed, and no host directory mounts. Codex runs in an empty read-only workspace with approvals disabled. A root-owned Grok requirements policy denies every tool. Tool, file, or command events interrupt the task and move the connection to `policy_locked`.
 
 ## Provider Support Matrix
 
 | Provider | Official API key | Account authorization | Current level | Notes |
 | --- | --- | --- | --- | --- |
-| ChatGPT / OpenAI | Supported | Codex OAuth and local OpenCLI browser | Experimental | Personal scope, one relay, and a server-enforced low QPS limit |
-| Gemini | Supported | Official Google OAuth and local OpenCLI browser | OAuth after configuration, local browser experimental | OAuth requires a client, Cloud Project, HTTPS callback, and Redis |
+| ChatGPT / OpenAI | Supported | Codex `app-server` | Production personal client | Text only, one device, one connection, concurrency 1 |
+| Gemini | Supported | Official Google OAuth | Production after configuration | Requires a Cloud Project, HTTPS callback, and Redis |
 | Kimi | Supported | Unavailable | Stable | Supports mainland China and international endpoints |
-| DeepSeek | Supported | Open Platform guide, web account session, and local OpenCLI browser | Stable API key, experimental web flows | OpenCLI uses the connected Chrome profile; the managed session path uses an isolated DS2API bridge |
+| DeepSeek | Supported | Unavailable in production | Stable API key | OpenCLI and web sessions remain in the lab profile |
 | Doubao | Supported | Unavailable | Stable | Uses a Volcano Ark API key |
 | Claude | Supported | Unavailable | Stable | Uses an Anthropic API key |
 | Qwen | Supported | Unavailable | Stable | Supports multiple regions and optional workspace endpoints |
+| Grok | Supported | Grok Build ACP | Production personal client | Device-level identity is used when ACP exposes no stable account subject |
 
 Deployment administrators enable each authorization entry separately. All web authorization switches remain disabled by default. See [AI account authorization and personal relay operations](AI_WEB_AUTH_OPERATIONS.md) for configuration and rollout checks.
 
@@ -100,9 +88,9 @@ Deployment administrators enable each authorization entry separately. All web au
 
 1. Sign in to TokHub and open **Personal Space > AI Service Connections**.
 2. Select ChatGPT, Gemini, Kimi, DeepSeek, Doubao, Claude, or Qwen.
-3. Choose an official API key, official OAuth, a deployment-enabled experimental method, or **Connect the signed-in local browser**.
-4. For local browser mode, pair the computer once, open the provider login page if needed, and then identify the current account.
-5. TokHub verifies account identity and availability according to the selected method. Local browser mode runs `whoami` during creation and completes the generation check on the first relay request.
+3. Choose **Official API**, **Official local account**, or **Local lab**.
+4. For ChatGPT or Grok, create a connector, pair it with a ten-minute code, and complete device authentication inside the dedicated container.
+5. TokHub verifies the official client identity, current model catalog, device capability, and safety policy.
 6. Create a personal relay from the verified connection and select its models, name, and quota.
 7. Create a Gateway Key and set the client Base URL to `https://<your-domain>/gateway/v1`.
 8. Use that Base URL and Gateway Key in an OpenAI-compatible client, script, or application.
@@ -119,9 +107,10 @@ When authorization expires, the account identity changes, or an upstream returns
 | Roommate or small-team access | Small groups that need per-member quotas | Official developer credentials, workspace members, member Gateway Keys, QPS, and monthly quotas |
 | Relay service operations | Teams that operate AI API services | Channel governance, recommendation configuration, cost estimates, usage reports, alerts, and audits |
 | Self-hosted authorization lab | Developers evaluating OAuth or consumer protocol adapters | Feature flags, isolated bridges, low-volume limits, Prometheus metrics, and emergency shutdown |
-| Local browser account experiment | Individuals already signed in to ChatGPT, Gemini, or DeepSeek in Chrome | OpenCLI connector, text-only relay, one concurrent request, account-scoped hourly/daily quotas, and durable safety cooldowns |
+| Official personal account relay | ChatGPT Codex or Grok Build users | Dedicated connector container, fixed personal model alias, one concurrent request, and durable risk controls |
+| Local protocol lab | Self-hosted adapter researchers | OpenCLI or DeepSeek session adapters with production Gateway isolation |
 
-ChatGPT Codex and DeepSeek web sessions are limited to the connection owner. Roommate and team access should use official developer credentials and follow the provider's account terms and usage limits.
+Official client connections are limited to their owner. Roommate and team access should use official developer credentials and follow provider account terms and usage limits.
 
 ## Core Features
 
@@ -142,11 +131,11 @@ ChatGPT Codex and DeepSeek web sessions are limited to the connection owner. Roo
 
 ### Personal AI Accounts And Dedicated Relays
 
-- A shared Provider Manifest defines region, endpoint, protocol, model, and validation behavior for all seven providers.
-- API key, OAuth, and managed experimental connections require a real minimal generation check. Local browser connections run `whoami` during creation and validate generation on first use.
+- A shared Provider Manifest defines region, endpoint, protocol, model, and validation behavior for all eight providers.
+- API key, OAuth, and official client connections perform method-specific availability and identity checks.
 - OAuth credentials support background refresh, backoff, expiry detection, account consistency checks, reauthorization, revocation, and auditing.
-- ChatGPT and DeepSeek experimental connections enforce personal scope, one relay, low QPS, and concurrency protection.
-- The OpenCLI connector supports ChatGPT, Gemini, and DeepSeek text-only requests with local login-state reuse, one relay, concurrency 1, and account-scoped safety limits.
+- ChatGPT Codex and Grok Build official client connections enforce personal scope, one device, one connection, low frequency, and concurrency 1.
+- Local lab connections are isolated from production Gateways, and the RC2 migration erases legacy consumer credential ciphertext.
 - A verified connection can create a personal OpenAI-compatible relay with its own Gateway Key.
 
 ### Platform Admin Console

@@ -91,6 +91,8 @@ node agent-skills/tokhub/scripts/tokhub.mjs admin-agent request GET /api/admin/c
 - `TOKHUB_SESSION_SECURE=true`
 - `TOKHUB_EXPOSE_DEV_TOKENS=false`
 
+启用官方客户端连接器时，TokHub 直接终止 TLS 可保持 `TOKHUB_AI_OFFICIAL_CLIENT_TRUSTED_PROXY_CIDRS` 为空。TLS 由 Caddy、Nginx 或负载均衡器终止时，将该值设置为实际代理的 CIDR 列表，例如 `10.20.0.0/16,fd00:20::/64`。TokHub 仅接受这些网络对端声明的 `X-Forwarded-Proto=https`，不要填写覆盖客户端来源网段的宽泛 CIDR。
+
 上线前必须运行：
 
 ```bash
@@ -197,7 +199,7 @@ Helm 模板位于 `deploy/helm/tokhub`，默认假设 PostgreSQL/TimescaleDB、R
 ```bash
 helm template tokhub deploy/helm/tokhub \
   --set image.repository=your-registry/tokhub \
-  --set image.tag=2.0.0-rc.1 \
+  --set image.tag=2.0.0-rc.2 \
   --set publicUrl=https://tokhub.example.com \
   --set secretKey='replace-with-32-byte-min-secret'
 ```

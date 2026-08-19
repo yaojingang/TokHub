@@ -58,7 +58,7 @@ TOKHUB_BASE_URL="$TOKHUB_PUBLIC_URL" npm run test:no-demo-smoke
 ## 镜像构建
 
 ```bash
-docker build -t tokhub:2.0.0-rc.1 .
+docker build -t tokhub:2.0.0-rc.2 .
 ```
 
 镜像启动后，`/healthz` 会返回当前构建版本。
@@ -127,12 +127,12 @@ TOKHUB_RESTORE_CONFIRM=restore deploy/scripts/restore.sh <dump>
 
 ```bash
 npm run version:check
-git tag -a v2.0.0-rc.1 -m "TokHub 2.0.0-rc.1"
-git push origin v2.0.0-rc.1
-gh release create v2.0.0-rc.1 \
+git tag -a v2.0.0-rc.2 -m "TokHub 2.0.0-rc.2"
+git push origin v2.0.0-rc.2
+gh release create v2.0.0-rc.2 \
   --prerelease \
-  --title "TokHub 2.0.0-rc.1" \
-  --notes-file docs/releases/v2.0.0-rc.1.md
+  --title "TokHub 2.0.0-rc.2" \
+  --notes-file docs/releases/v2.0.0-rc.2.md
 ```
 
 正式版发布前按照 `docs/AI_WEB_AUTH_OPERATIONS.md` 完成 ChatGPT、Gemini 和 DeepSeek 真实测试账号验收。

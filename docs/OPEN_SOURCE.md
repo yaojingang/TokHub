@@ -96,8 +96,8 @@ git push -u origin main
 TokHub 2.0 RC tag:
 
 ```bash
-git tag -a v2.0.0-rc.1 -m "TokHub 2.0.0-rc.1"
-git push origin v2.0.0-rc.1
+git tag -a v2.0.0-rc.2 -m "TokHub 2.0.0-rc.2"
+git push origin v2.0.0-rc.2
 ```
 
 After the first push, enable repository protection before accepting external
