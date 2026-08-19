@@ -5,6 +5,7 @@ image:
 
 publicUrl: http://tokhub.local
 adminEmail: admin@tokhub.local
+adminAgentEnabled: false
 secretKey: dev-only-change-this-secret-key-32b
 credentialActiveKeyId: legacy-v1
 credentialEncryptionKeys: ""

@@ -58,6 +58,7 @@ test("phase 2 public pages support filters and deep links", async ({ page, reque
   const channel = await firstPublicChannel(request);
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /先看可用性，再选择中转站/ })).toBeVisible();
+  await expect(page.getByText("当前严格健康率").first()).toBeVisible();
   await page.goto("/dashboard");
   await expect(page.getByRole("heading", { name: "监控总览" })).toBeVisible();
   await expect(page.getByRole("heading", { name: /通道明细看板/ })).toBeVisible();
@@ -72,8 +73,11 @@ test("phase 2 public pages support filters and deep links", async ({ page, reque
   await page.getByRole("button", { name: "模型" }).click();
   await expect(page.getByRole("columnheader", { name: "模型" })).toBeVisible();
 
+  await page.goto("/recommend");
+  await expect(page.getByRole("columnheader", { name: "24 小时成功率" })).toBeVisible();
+
   await page.goto(`/channels/${channel.id}`);
-  await page.waitForURL(`**/channels/${channel.publicSlug}`);
+  await page.waitForURL((url) => url.pathname === `/channels/${channel.publicSlug}`);
   await expect(page.getByText(channel.introTitle || `${channel.provider} 官方介绍`)).toBeVisible();
   await expect(page.getByText("综合健康指数 · TokHub Index")).toBeVisible();
   await expect(page.getByRole("heading", { name: new RegExp(channel.name) })).toBeVisible();
@@ -155,7 +159,7 @@ test("phase 2 channel row opens preview drawer before full detail", async ({ pag
 
   const detailLink = page.getByRole("link", { name: /查看完整详情/ }).first();
   const detailHref = await detailLink.getAttribute("href");
-  expect(detailHref).toMatch(/^\/channels\/[a-z0-9]+$/);
+  expect(detailHref).toMatch(/^\/channels\/[a-z0-9]+(?:\?range=(?:24|7|30|all))?$/);
   await detailLink.click();
   await page.waitForURL(`**${detailHref}`);
   await expect(page.getByText("综合健康指数 · TokHub Index")).toBeVisible();

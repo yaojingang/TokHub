@@ -11,6 +11,8 @@ type StatusDecision struct {
 	ErrorType string
 }
 
+const l3FailuresBeforeDown = 2
+
 func SynthesizeStatus(l1 LayerSummary, l2 LayerSummary) StatusDecision {
 	return SynthesizeStatusWithL3(l1, l2, LayerSummary{Status: "na"})
 }
@@ -58,6 +60,17 @@ func SynthesizeStatusWithL3(l1 LayerSummary, l2 LayerSummary, l3 LayerSummary) S
 		return StatusDecision{Status: "healthy"}
 	}
 	return StatusDecision{Status: "unknown", ErrorType: firstNonEmpty(l1.ErrorType, l2.ErrorType, "unknown")}
+}
+
+func SynthesizeStableStatusWithL3(l1 LayerSummary, l2 LayerSummary, l3 LayerSummary, consecutiveL3Failures int) StatusDecision {
+	decision := SynthesizeStatusWithL3(l1, l2, l3)
+	if decision.Status != "functional_down" || consecutiveL3Failures >= l3FailuresBeforeDown {
+		return decision
+	}
+	if decision.ErrorType == "model_not_found" || decision.ErrorType == "model_unavailable" {
+		return decision
+	}
+	return StatusDecision{Status: "degraded", ErrorType: decision.ErrorType}
 }
 
 func firstNonEmpty(values ...string) string {

@@ -1079,6 +1079,12 @@ func (r *Repository) publicProbeLayers(ctx context.Context, channelID string) ([
 			join channels c on c.id=p.channel_id
 			where p.channel_id=$1
 				and p.layer in ('l1','l2')
+				and p.status <> 'running'
+				and p.finished_at is not null
+				and exists (
+					select 1 from probe_results completed
+					where completed.probe_run_id=p.id and completed.layer=p.layer
+				)
 				and `+publicChannelWhereClause("c")+`
 			order by p.layer,p.started_at desc
 		)

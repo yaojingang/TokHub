@@ -91,7 +91,7 @@ func TestSanitizeProviderConfigAllowsProbeOverrides(t *testing.T) {
 		"clientVersion":     "2.1.114",
 		"modelsProbeMode":   "l3-only",
 		"l3ProbeMode":       "skip",
-		"l3ProbeMaxTokens":  float64(7),
+		"l3ProbeMaxTokens":  float64(64),
 		"l3ContentPolicy":   "non-empty",
 		"l3ExpectedContent": "K",
 	})
@@ -103,7 +103,7 @@ func TestSanitizeProviderConfigAllowsProbeOverrides(t *testing.T) {
 		"clientVersion":     "2.1.114",
 		"modelsProbeMode":   "skip",
 		"l3ProbeMode":       "l2_only",
-		"l3ProbeMaxTokens":  7,
+		"l3ProbeMaxTokens":  64,
 		"l3ContentPolicy":   "non_empty",
 		"l3ExpectedContent": "K",
 	}

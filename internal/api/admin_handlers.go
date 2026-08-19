@@ -1624,9 +1624,9 @@ func sanitizeProviderConfig(raw map[string]any) (map[string]any, error) {
 				return nil, errors.New("providerConfig.l3ProbeMode must be generate or l2_only")
 			}
 		case "l3ProbeMaxTokens":
-			n, ok := boundedInt(value, 1, 8)
+			n, ok := boundedInt(value, 1, 64)
 			if !ok {
-				return nil, errors.New("providerConfig.l3ProbeMaxTokens must be between 1 and 8")
+				return nil, errors.New("providerConfig.l3ProbeMaxTokens must be between 1 and 64")
 			}
 			out["l3ProbeMaxTokens"] = n
 		case "l3ContentPolicy":

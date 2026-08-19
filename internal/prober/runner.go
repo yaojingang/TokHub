@@ -20,7 +20,11 @@ var (
 	ErrUnsupportedProbeLayer  = errors.New("unsupported probe layer")
 )
 
-const probePersistenceTimeout = 5 * time.Second
+const (
+	probePersistenceTimeout = 5 * time.Second
+	defaultLayerTimeout     = 25 * time.Second
+	l3LayerTimeout          = 75 * time.Second
+)
 
 type Runner struct {
 	repo      *store.Repository
@@ -239,24 +243,33 @@ func (r *Runner) probeCredential(ctx context.Context, target store.ProbeTarget, 
 }
 
 func (r *Runner) ProbeNow(ctx context.Context, channelID string, source string) error {
-	probeCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	if err := r.RunLayer(probeCtx, channelID, "l1", source); err != nil {
+	if err := r.runLayerWithTimeout(ctx, channelID, "l1", source, ""); err != nil {
 		return err
 	}
-	return r.RunLayer(probeCtx, channelID, "l2", source)
+	return r.runLayerWithTimeout(ctx, channelID, "l2", source, "")
 }
 
 func (r *Runner) ProbeNowWithL3(ctx context.Context, channelID string, source string, apiKey string) error {
-	probeCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	if err := r.runLayerWithTimeout(ctx, channelID, "l1", source, apiKey); err != nil {
+		return err
+	}
+	if err := r.runLayerWithTimeout(ctx, channelID, "l2", source, apiKey); err != nil {
+		return err
+	}
+	return r.runLayerWithTimeout(ctx, channelID, "l3", source, apiKey)
+}
+
+func LayerExecutionTimeout(layer string) time.Duration {
+	if layer == "l3" {
+		return l3LayerTimeout
+	}
+	return defaultLayerTimeout
+}
+
+func (r *Runner) runLayerWithTimeout(ctx context.Context, channelID string, layer string, source string, apiKey string) error {
+	probeCtx, cancel := context.WithTimeout(ctx, LayerExecutionTimeout(layer))
 	defer cancel()
-	if err := r.RunLayer(probeCtx, channelID, "l1", source); err != nil {
-		return err
-	}
-	if err := r.RunLayerWithCredential(probeCtx, channelID, "l2", source, apiKey); err != nil {
-		return err
-	}
-	return r.RunLayerWithCredential(probeCtx, channelID, "l3", source, apiKey)
+	return r.RunLayerWithCredential(probeCtx, channelID, layer, source, apiKey)
 }
 
 func (r *Runner) applyCurrentStatus(ctx context.Context, channelID string) error {
@@ -272,10 +285,18 @@ func (r *Runner) applyCurrentStatus(ctx context.Context, channelID string) error
 	if err != nil {
 		return err
 	}
-	decision := SynthesizeStatusWithL3(
+	consecutiveL3Failures := 0
+	if l3.Status == "down" {
+		consecutiveL3Failures, err = r.repo.ConsecutiveProbeFailures(ctx, channelID, "l3", l3FailuresBeforeDown)
+		if err != nil {
+			return err
+		}
+	}
+	decision := SynthesizeStableStatusWithL3(
 		LayerSummary{Status: l1.Status, LatencyMs: l1.LatencyMs, ErrorType: l1.ErrorType},
 		LayerSummary{Status: l2.Status, LatencyMs: l2.LatencyMs, ErrorType: l2.ErrorType},
 		LayerSummary{Status: l3.Status, LatencyMs: l3.LatencyMs, ErrorType: l3.ErrorType},
+		consecutiveL3Failures,
 	)
 	return r.repo.ApplyProbeStatusWithL3(ctx, channelID, decision.Status, decision.ErrorType, l1, l2, l3)
 }

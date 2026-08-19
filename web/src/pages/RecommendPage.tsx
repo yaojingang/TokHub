@@ -215,7 +215,7 @@ export function RecommendPage() {
                   <th>中转站</th>
                   <th>综合状态</th>
                   <th>真实延迟 P95</th>
-                  <th>30 天成功率</th>
+                  <th>24 小时成功率</th>
                   <th>价格 / MTok</th>
                   <th>评分</th>
                   <th className="rank-official-head">官方入口</th>

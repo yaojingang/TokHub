@@ -1098,7 +1098,7 @@ function PlatformEditor({
                 onChange={(event) => setProviderConfigText(event.target.value)}
                 spellCheck={false}
               />
-              <div className="hint">支持 temperature、topP、topK、maxTokens、timeoutMs、stop、authHeader、clientProfile、clientVersion、modelsProbeMode、l2ProbeMode、l3ProbeMode、l3ProbeMaxTokens、l3ContentPolicy、l3ExpectedContent、l3WarnMs；这些值会作为真实网关和探测 profile 默认参数。</div>
+              <div className="hint">支持 temperature、topP、topK、maxTokens、timeoutMs、stop、authHeader、clientProfile、clientVersion、modelsProbeMode、l2ProbeMode、l3ProbeMode、l3ProbeMaxTokens（1–64）、l3ContentPolicy、l3ExpectedContent、l3WarnMs；这些值会作为真实网关和探测 profile 默认参数。</div>
             </div>
             <div className="row col">
               <label>通道策略</label>

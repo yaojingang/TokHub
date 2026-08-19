@@ -64,6 +64,7 @@ run npm run build
 run npm run test:security
 run_compose_config "docker compose config" docker compose config
 run_compose_config "docker compose roles config" docker compose -f docker-compose.yml -f deploy/compose/docker-compose.roles.yml config
+run deploy/scripts/compose-contract-check.sh
 run_production_sample_preflight
 
 if [[ -f .env.production ]]; then

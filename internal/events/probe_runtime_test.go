@@ -69,12 +69,37 @@ func TestProbeTaskAckWaitCoversSerialBacklog(t *testing.T) {
 	}
 }
 
+func TestProbeTaskTimeoutAllowsSlowL3Generation(t *testing.T) {
+	if got := probeTaskTimeout("l3"); got < 60*time.Second {
+		t.Fatalf("l3 probe task timeout = %s, want at least 60s", got)
+	}
+	for _, layer := range []string{"l1", "l2"} {
+		if got := probeTaskTimeout(layer); got != 25*time.Second {
+			t.Fatalf("%s probe task timeout = %s, want 25s", layer, got)
+		}
+	}
+}
+
 func TestProbeSchedulerCadenceCoversCurrentPlatformFleet(t *testing.T) {
 	currentPlatformChannels := 26
 	requiredHealthyL1PerHour := currentPlatformChannels * int(time.Hour/healthyL1Interval)
 	capacityPerHour := int(time.Hour / probeSchedulerInterval)
 	if capacityPerHour < requiredHealthyL1PerHour {
 		t.Fatalf("scheduler capacity = %d/hour, want at least %d/hour for healthy l1 coverage", capacityPerHour, requiredHealthyL1PerHour)
+	}
+}
+
+func TestProbeSchedulerCadenceCoversFullFleetFunctionalRecovery(t *testing.T) {
+	now := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	target := store.ProbeScheduleTarget{ProbeTarget: store.ProbeTarget{Status: "functional_down"}, CreatedAt: now.Add(-48 * time.Hour)}
+	requiredTasksPerChannel := 0
+	for _, layer := range probeLayers {
+		requiredTasksPerChannel += int(time.Hour / probeLayerInterval(target, layer, now))
+	}
+	requiredTasksPerHour := 26 * requiredTasksPerChannel
+	capacityPerHour := int(time.Hour / probeSchedulerInterval)
+	if capacityPerHour < requiredTasksPerHour {
+		t.Fatalf("scheduler capacity = %d/hour, want at least %d/hour for full-fleet functional recovery", capacityPerHour, requiredTasksPerHour)
 	}
 }
 
@@ -94,19 +119,39 @@ func TestProbeLayerDueHealthyL3WaitsTwentyFourHours(t *testing.T) {
 	}
 }
 
-func TestProbeLayerDueUnhealthyL3EverySixHours(t *testing.T) {
+func TestProbeLayerDueDegradedL3RetriesAfterThirtyMinutes(t *testing.T) {
 	now := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
-	for _, status := range []string{"degraded", "connectivity_down", "functional_down"} {
-		t.Run(status, func(t *testing.T) {
-			target := store.ProbeScheduleTarget{
-				ProbeTarget: store.ProbeTarget{Status: status},
-				CreatedAt:   now.Add(-48 * time.Hour),
-				LastL3At:    now.Add(-6 * time.Hour),
-			}
-			if !probeLayerDue(target, "l3", now) {
-				t.Fatalf("%s l3 should be due at 6h", status)
-			}
-		})
+	target := store.ProbeScheduleTarget{
+		ProbeTarget: store.ProbeTarget{Status: "degraded"},
+		CreatedAt:   now.Add(-48 * time.Hour),
+		LastL3At:    now.Add(-30 * time.Minute),
+	}
+	if !probeLayerDue(target, "l3", now) {
+		t.Fatal("degraded l3 should retry after 30m to confirm or clear a transient failure")
+	}
+}
+
+func TestProbeLayerDueConnectivityDownL3EverySixHours(t *testing.T) {
+	now := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	target := store.ProbeScheduleTarget{
+		ProbeTarget: store.ProbeTarget{Status: "connectivity_down"},
+		CreatedAt:   now.Add(-48 * time.Hour),
+		LastL3At:    now.Add(-6 * time.Hour),
+	}
+	if !probeLayerDue(target, "l3", now) {
+		t.Fatal("connectivity_down l3 should be due at 6h")
+	}
+}
+
+func TestProbeLayerDueFunctionalDownL3RetriesAfterThirtyMinutes(t *testing.T) {
+	now := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	target := store.ProbeScheduleTarget{
+		ProbeTarget: store.ProbeTarget{Status: "functional_down"},
+		CreatedAt:   now.Add(-48 * time.Hour),
+		LastL3At:    now.Add(-30 * time.Minute),
+	}
+	if !probeLayerDue(target, "l3", now) {
+		t.Fatal("functional_down l3 should retry after 30m so repaired probe policies recover promptly")
 	}
 }
 
