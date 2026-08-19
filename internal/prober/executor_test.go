@@ -256,8 +256,8 @@ func TestExecutorL3UsesCheapCanaryRequest(t *testing.T) {
 	if results[0].Status != "ok" {
 		t.Fatalf("status=%q error=%q, want ok", results[0].Status, results[0].ErrorType)
 	}
-	if maxTokens != 2 {
-		t.Fatalf("max_tokens=%v, want cheap default 2", maxTokens)
+	if maxTokens != 32 {
+		t.Fatalf("max_tokens=%v, want reasoning-safe default 32", maxTokens)
 	}
 	if hasInput {
 		t.Fatalf("input field should not be sent for chat L3 probe")
@@ -292,17 +292,17 @@ func TestExecutorL3AllowsProbeSpecificMaxTokens(t *testing.T) {
 }
 
 func TestExecutorL3ClampsProbeSpecificMaxTokens(t *testing.T) {
-	if got := l3MaxTokens(ProbeTarget{ProviderConfig: map[string]any{"l3ProbeMaxTokens": 99}}); got != 8 {
-		t.Fatalf("high l3ProbeMaxTokens=%d, want clamp 8", got)
+	if got := l3MaxTokens(ProbeTarget{ProviderConfig: map[string]any{"l3ProbeMaxTokens": 99}}); got != 64 {
+		t.Fatalf("high l3ProbeMaxTokens=%d, want clamp 64", got)
 	}
 	if got := l3MaxTokens(ProbeTarget{ProviderConfig: map[string]any{"l3ProbeMaxTokens": 0}}); got != 1 {
 		t.Fatalf("low l3ProbeMaxTokens=%d, want clamp 1", got)
 	}
 }
 
-func TestExecutorL3DefaultsGPT55ProbeMaxTokensToEight(t *testing.T) {
-	if got := l3MaxTokens(ProbeTarget{Model: "gpt-5.5"}); got != 8 {
-		t.Fatalf("gpt-5.5 default l3 max tokens=%d, want 8", got)
+func TestExecutorL3DefaultsGPT55ProbeMaxTokensToSixtyFour(t *testing.T) {
+	if got := l3MaxTokens(ProbeTarget{Model: "gpt-5.5"}); got != 64 {
+		t.Fatalf("gpt-5.5 default l3 max tokens=%d, want 64", got)
 	}
 	if got := l3MaxTokens(ProbeTarget{Model: "gpt-5-mini"}); got != l3ProbeDefaultTokens {
 		t.Fatalf("gpt-5-mini default l3 max tokens=%d, want %d", got, l3ProbeDefaultTokens)
@@ -328,7 +328,7 @@ func TestProbeUpstreamErrorTypeDetectsModelUnavailableResponse(t *testing.T) {
 	}
 }
 
-func TestExecutorL3RequiresExactCanaryContent(t *testing.T) {
+func TestExecutorL3AcceptsNonEmptyCanaryContentByDefault(t *testing.T) {
 	tests := []struct {
 		name      string
 		body      string
@@ -338,7 +338,7 @@ func TestExecutorL3RequiresExactCanaryContent(t *testing.T) {
 		{name: "exact canary", body: `{"choices":[{"message":{"content":" K \n"}}]}`, want: "ok"},
 		{name: "empty content", body: `{"choices":[{"message":{"content":"   "}}]}`, want: "down", wantError: "empty_content"},
 		{name: "reasoning only", body: `{"choices":[{"message":{"reasoning_content":"We need answer K"}}]}`, want: "down", wantError: "reasoning_only"},
-		{name: "mismatched content", body: `{"choices":[{"message":{"content":"tokhub-ok"}}]}`, want: "down", wantError: "content_mismatch"},
+		{name: "alternate non-empty content", body: `{"choices":[{"message":{"content":"tokhub-ok"}}]}`, want: "ok"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -355,6 +355,27 @@ func TestExecutorL3RequiresExactCanaryContent(t *testing.T) {
 				t.Fatalf("status=%q error=%q, want %q/%q", result.Status, result.ErrorType, tt.want, tt.wantError)
 			}
 		})
+	}
+}
+
+func TestExecutorL3SupportsExplicitExactCanaryContent(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"tokhub-ok"}}]}`))
+	}))
+	defer server.Close()
+
+	executor := NewExecutorWithMockEndpoints(false)
+	target := ProbeTarget{
+		ID:             "ch_exact",
+		Endpoint:       server.URL,
+		Type:           "openai-compatible",
+		Model:          "gpt-5-mini",
+		ProviderConfig: map[string]any{"l3ContentPolicy": "exact"},
+	}
+	result := executor.L3(context.Background(), target, "sk-secret")[0]
+	if result.Status != "down" || result.ErrorType != "content_mismatch" {
+		t.Fatalf("status=%q error=%q, want down/content_mismatch", result.Status, result.ErrorType)
 	}
 }
 

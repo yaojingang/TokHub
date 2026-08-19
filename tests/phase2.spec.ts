@@ -58,6 +58,7 @@ test("phase 2 public pages support filters and deep links", async ({ page, reque
   const channel = await firstPublicChannel(request);
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /先看可用性，再选择中转站/ })).toBeVisible();
+  await expect(page.getByText("当前严格健康率").first()).toBeVisible();
   await page.goto("/dashboard");
   await expect(page.getByRole("heading", { name: "监控总览" })).toBeVisible();
   await expect(page.getByRole("heading", { name: /通道明细看板/ })).toBeVisible();

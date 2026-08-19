@@ -100,3 +100,31 @@ func TestSynthesizeStatusWithL3PreservesModelNotFoundWhenGenerationIsUnavailable
 		t.Fatalf("decision = %+v, want functional_down/model_not_found", got)
 	}
 }
+
+func TestSynthesizeStableStatusWithL3RequiresTwoGenerationFailures(t *testing.T) {
+	l1 := LayerSummary{Status: "ok"}
+	l2 := LayerSummary{Status: "ok"}
+	l3 := LayerSummary{Status: "down", ErrorType: "timeout"}
+
+	first := SynthesizeStableStatusWithL3(l1, l2, l3, 1)
+	if first.Status != "degraded" || first.ErrorType != "timeout" {
+		t.Fatalf("first decision = %+v, want degraded/timeout", first)
+	}
+
+	second := SynthesizeStableStatusWithL3(l1, l2, l3, 2)
+	if second.Status != "functional_down" || second.ErrorType != "timeout" {
+		t.Fatalf("second decision = %+v, want functional_down/timeout", second)
+	}
+}
+
+func TestSynthesizeStableStatusWithL3KeepsStructuralFailuresImmediate(t *testing.T) {
+	got := SynthesizeStableStatusWithL3(
+		LayerSummary{Status: "ok"},
+		LayerSummary{Status: "down", ErrorType: "model_not_found"},
+		LayerSummary{Status: "down", ErrorType: "upstream_unavailable"},
+		1,
+	)
+	if got.Status != "functional_down" || got.ErrorType != "model_not_found" {
+		t.Fatalf("decision = %+v, want functional_down/model_not_found", got)
+	}
+}

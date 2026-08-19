@@ -10,6 +10,7 @@ metadata:
 data:
   TOKHUB_PUBLIC_URL: {{ .Values.publicUrl | quote }}
   TOKHUB_ADMIN_EMAIL: {{ .Values.adminEmail | quote }}
+  TOKHUB_ADMIN_AGENT_ENABLED: {{ .Values.adminAgentEnabled | quote }}
   DATABASE_URL: {{ .Values.databaseUrl | quote }}
   REDIS_URL: {{ .Values.redisUrl | quote }}
   NATS_URL: {{ .Values.natsUrl | quote }}

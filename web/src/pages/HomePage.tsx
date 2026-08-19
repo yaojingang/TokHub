@@ -114,7 +114,7 @@ export function HomePage() {
             </div>
             <div className="home-proof-row" aria-label="TokHub 当前公开监控指标">
               <HomeProof value={overview ? String(totalChannels) : "—"} label="公开通道" loading={overviewLoading} width="4ch" />
-              <HomeProof value={overview ? `${healthRate.toFixed(1)}%` : "—"} label="健康率" loading={overviewLoading} width="6ch" />
+              <HomeProof value={overview ? `${healthRate.toFixed(1)}%` : "—"} label="严格健康率" loading={overviewLoading} width="6ch" />
               <HomeProof value={overview ? `${p95.toFixed(2)}s` : "—"} label="真实延迟" loading={overviewLoading} width="6ch" />
             </div>
           </div>
@@ -126,7 +126,7 @@ export function HomePage() {
             </div>
             <div className="hm-score">
               <div>
-                <span className="hm-score-label">综合健康率</span>
+                <span className="hm-score-label">当前严格健康率</span>
                 <b><MetricValue value={overview ? `${healthRate.toFixed(1)}%` : "—"} loading={overviewLoading} width="6ch" /></b>
               </div>
               <div className={`hm-ring ${overviewLoading ? "is-loading" : ""}`} style={{ "--p": `${overview ? Math.max(0, Math.min(100, healthRate)) : 0}%` } as CSSProperties}>
@@ -152,7 +152,7 @@ export function HomePage() {
 
         <section className="home-stats">
           <HomeStat value={overview ? `${totalChannels}` : "—"} label="公开监控通道" loading={overviewLoading} width="4ch" />
-          <HomeStat value={overview ? `${healthRate.toFixed(1)}%` : "—"} label="综合健康率" loading={overviewLoading} width="6ch" />
+          <HomeStat value={overview ? `${healthRate.toFixed(1)}%` : "—"} label="当前严格健康率" loading={overviewLoading} width="6ch" />
           <HomeStat value={overview ? `${p95.toFixed(2)}s` : "—"} label="真实调用延迟" loading={overviewLoading} width="6ch" />
           <HomeStat value={recommend ? `${recommend.stats.picks}` : "—"} label="精选推荐位" loading={recommendLoading} width="4ch" />
           <HomeStat value={overview ? `${compact(overview.probeRunsToday)}` : "—"} label="今日探测次数" loading={overviewLoading} width="5ch" />

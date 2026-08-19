@@ -35,6 +35,7 @@ const (
 	unhealthyL1Interval      = 5 * time.Minute
 	unhealthyL2Interval      = 30 * time.Minute
 	unhealthyL3Interval      = 6 * time.Hour
+	degradedL3Interval       = 30 * time.Minute
 	authErrorL1Interval      = time.Hour
 	authErrorL2Interval      = 6 * time.Hour
 	authErrorL3Interval      = 24 * time.Hour
@@ -165,7 +166,7 @@ func (r *ProbeRuntime) queueSubscribe(ctx context.Context, subject string, durab
 			_ = msg.Term()
 			return
 		}
-		runCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
+		runCtx, cancel := context.WithTimeout(ctx, probeTaskTimeout(task.Layer))
 		err := r.runner.RunLayerWithID(runCtx, task.RunID, task.ChannelID, task.Layer, task.Source)
 		cancel()
 		if err != nil {
@@ -181,6 +182,10 @@ func (r *ProbeRuntime) queueSubscribe(ctx context.Context, subject string, durab
 		_ = msg.Ack()
 	}, nats.Durable(durable), nats.ManualAck(), nats.AckWait(probeTaskAckWait), nats.MaxAckPending(1))
 	return err
+}
+
+func probeTaskTimeout(layer string) time.Duration {
+	return prober.LayerExecutionTimeout(layer)
 }
 
 func probeConsumerConfigMismatch(err error) bool {
@@ -367,7 +372,9 @@ func probeLayerInterval(target store.ProbeScheduleTarget, layer string, now time
 	switch target.Status {
 	case "healthy":
 		l1, l2, l3 = healthyL1Interval, healthyL2Interval, healthyL3Interval
-	case "degraded", "connectivity_down", "functional_down":
+	case "degraded":
+		l1, l2, l3 = unhealthyL1Interval, unhealthyL2Interval, degradedL3Interval
+	case "connectivity_down", "functional_down":
 		l1, l2, l3 = unhealthyL1Interval, unhealthyL2Interval, unhealthyL3Interval
 	case "auth_error":
 		l1, l2, l3 = authErrorL1Interval, authErrorL2Interval, authErrorL3Interval

@@ -114,6 +114,7 @@ services:
       TOKHUB_SESSION_SECURE: ${TOKHUB_SESSION_SECURE:-false}
       TOKHUB_REGISTRATION_OPEN: ${TOKHUB_REGISTRATION_OPEN:-true}
       TOKHUB_EXPOSE_DEV_TOKENS: ${TOKHUB_EXPOSE_DEV_TOKENS:-}
+      TOKHUB_ADMIN_AGENT_ENABLED: ${TOKHUB_ADMIN_AGENT_ENABLED:-false}
       DATABASE_URL: postgres://tokhub:tokhub@db:5432/tokhub?sslmode=disable
       REDIS_URL: redis://redis:6379/0
       NATS_URL: nats://nats:4222

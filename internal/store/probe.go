@@ -288,6 +288,38 @@ func (r *Repository) LatestLayerSummary(ctx context.Context, channelID string, l
 	return summary, nil
 }
 
+func (r *Repository) ConsecutiveProbeFailures(ctx context.Context, channelID string, layer string, limit int) (int, error) {
+	if limit <= 0 {
+		return 0, nil
+	}
+	rows, err := r.db.Query(ctx, `
+		select status
+		from probe_runs
+		where channel_id=$1 and layer=$2
+			and status <> 'running'
+			and finished_at is not null
+		order by started_at desc
+		limit $3
+	`, channelID, layer, limit)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	failures := 0
+	for rows.Next() {
+		var status string
+		if err := rows.Scan(&status); err != nil {
+			return 0, err
+		}
+		if status != "failed" {
+			break
+		}
+		failures++
+	}
+	return failures, rows.Err()
+}
+
 func (r *Repository) ApplyProbeStatus(ctx context.Context, channelID string, decisionStatus string, errorType string, l1 ProbeLayerSummary, l2 ProbeLayerSummary) error {
 	return r.ApplyProbeStatusWithL3(ctx, channelID, decisionStatus, errorType, l1, l2, ProbeLayerSummary{Status: "na"})
 }

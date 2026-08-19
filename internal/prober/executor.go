@@ -19,7 +19,8 @@ import (
 const (
 	l3ProbePrompt          = "Reply exactly: K"
 	l3ProbeExpectedContent = "K"
-	l3ProbeDefaultTokens   = 2
+	l3ProbeDefaultTokens   = 32
+	l3ProbeMaxTokens       = 64
 )
 
 type ProbeTarget struct {
@@ -479,10 +480,10 @@ func l3WarnThresholdMs(target ProbeTarget) int {
 
 func l3MaxTokens(target ProbeTarget) int {
 	if value, ok := probeConfigInt(target.ProviderConfig, "l3ProbeMaxTokens", -200000, 200000); ok {
-		return clampInt(value, 1, 8)
+		return clampInt(value, 1, l3ProbeMaxTokens)
 	}
 	if strings.EqualFold(strings.TrimSpace(target.Model), "gpt-5.5") {
-		return 8
+		return l3ProbeMaxTokens
 	}
 	return l3ProbeDefaultTokens
 }
@@ -536,6 +537,9 @@ func isClaudeCodeProfile(target ProbeTarget) bool {
 
 func l3ContentStatusForTarget(payload []byte, target ProbeTarget) l3ContentCheck {
 	policy, _ := probeConfigString(target.ProviderConfig, "l3ContentPolicy")
+	if policy == "" {
+		policy = "non_empty"
+	}
 	expected, _ := probeConfigString(target.ProviderConfig, "l3ExpectedContent")
 	if expected == "" {
 		expected = l3ProbeExpectedContent

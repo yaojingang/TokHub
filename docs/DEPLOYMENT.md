@@ -28,6 +28,8 @@ TOKHUB_BASE_URL=http://localhost:8080 npm run test:smoke
 
 管理员 agent 通道由 `TOKHUB_ADMIN_AGENT_ENABLED` 控制：开发默认启用，生产示例默认关闭。创建一次性 token 需要 owner 浏览器会话等价的账号、密码、CSRF 和 Cookie 流程，可用脚本完成：
 
+使用 Docker Compose 时，该变量会传入 `app` 或 `api` 服务；使用 Helm 时设置 `adminAgentEnabled: true`。生产环境需要显式启用，变更后应重新创建 API 容器或 Pod。
+
 ```bash
 TOKHUB_BASE_URL=http://localhost:8080 \
 TOKHUB_ADMIN_EMAIL=admin@tokhub.local \
