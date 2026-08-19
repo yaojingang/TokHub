@@ -89,6 +89,20 @@ func TestProbeSchedulerCadenceCoversCurrentPlatformFleet(t *testing.T) {
 	}
 }
 
+func TestProbeSchedulerCadenceCoversFullFleetFunctionalRecovery(t *testing.T) {
+	now := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	target := store.ProbeScheduleTarget{ProbeTarget: store.ProbeTarget{Status: "functional_down"}, CreatedAt: now.Add(-48 * time.Hour)}
+	requiredTasksPerChannel := 0
+	for _, layer := range probeLayers {
+		requiredTasksPerChannel += int(time.Hour / probeLayerInterval(target, layer, now))
+	}
+	requiredTasksPerHour := 26 * requiredTasksPerChannel
+	capacityPerHour := int(time.Hour / probeSchedulerInterval)
+	if capacityPerHour < requiredTasksPerHour {
+		t.Fatalf("scheduler capacity = %d/hour, want at least %d/hour for full-fleet functional recovery", capacityPerHour, requiredTasksPerHour)
+	}
+}
+
 func TestProbeLayerDueHealthyL3WaitsTwentyFourHours(t *testing.T) {
 	now := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
 	target := store.ProbeScheduleTarget{
@@ -117,19 +131,27 @@ func TestProbeLayerDueDegradedL3RetriesAfterThirtyMinutes(t *testing.T) {
 	}
 }
 
-func TestProbeLayerDueDownL3EverySixHours(t *testing.T) {
+func TestProbeLayerDueConnectivityDownL3EverySixHours(t *testing.T) {
 	now := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
-	for _, status := range []string{"connectivity_down", "functional_down"} {
-		t.Run(status, func(t *testing.T) {
-			target := store.ProbeScheduleTarget{
-				ProbeTarget: store.ProbeTarget{Status: status},
-				CreatedAt:   now.Add(-48 * time.Hour),
-				LastL3At:    now.Add(-6 * time.Hour),
-			}
-			if !probeLayerDue(target, "l3", now) {
-				t.Fatalf("%s l3 should be due at 6h", status)
-			}
-		})
+	target := store.ProbeScheduleTarget{
+		ProbeTarget: store.ProbeTarget{Status: "connectivity_down"},
+		CreatedAt:   now.Add(-48 * time.Hour),
+		LastL3At:    now.Add(-6 * time.Hour),
+	}
+	if !probeLayerDue(target, "l3", now) {
+		t.Fatal("connectivity_down l3 should be due at 6h")
+	}
+}
+
+func TestProbeLayerDueFunctionalDownL3RetriesAfterThirtyMinutes(t *testing.T) {
+	now := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
+	target := store.ProbeScheduleTarget{
+		ProbeTarget: store.ProbeTarget{Status: "functional_down"},
+		CreatedAt:   now.Add(-48 * time.Hour),
+		LastL3At:    now.Add(-30 * time.Minute),
+	}
+	if !probeLayerDue(target, "l3", now) {
+		t.Fatal("functional_down l3 should retry after 30m so repaired probe policies recover promptly")
 	}
 }
 

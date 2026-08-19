@@ -341,6 +341,7 @@ func (r *Repository) ApplyProbeStatusWithL3(ctx context.Context, channelID strin
 	}
 
 	latest := struct {
+		uptime      float64
 		successRate float64
 		l3Status    string
 		l3Latency   int
@@ -351,12 +352,12 @@ func (r *Repository) ApplyProbeStatusWithL3(ctx context.Context, channelID strin
 		l3Status:    "na",
 	}
 	_ = tx.QueryRow(ctx, `
-		select success_rate,l3_status,l3_latency_ms,tokens_used,cost_usd
+		select uptime_24h,success_rate,l3_status,l3_latency_ms,tokens_used,cost_usd
 		from channel_status_snapshots
 		where channel_id=$1
 		order by sampled_at desc
 		limit 1
-	`, channelID).Scan(&latest.successRate, &latest.l3Status, &latest.l3Latency, &latest.tokens, &latest.cost)
+	`, channelID).Scan(&latest.uptime, &latest.successRate, &latest.l3Status, &latest.l3Latency, &latest.tokens, &latest.cost)
 
 	if l3.Status != "" && l3.Status != "na" {
 		latest.l3Status = l3.Status
@@ -364,17 +365,18 @@ func (r *Repository) ApplyProbeStatusWithL3(ctx context.Context, channelID strin
 		tokens, cost := latestL3MetricsTx(ctx, tx, channelID)
 		latest.tokens = tokens
 		latest.cost = cost
-		latest.successRate = successRateForProbeDecision(decisionStatus, latest.successRate)
 	} else if l3.Status == "na" && l3.ErrorType == "l3_probe_skipped" {
 		latest.l3Status = l3.Status
 		latest.l3Latency = 0
 		latest.tokens = 0
 		latest.cost = 0
-		latest.successRate = successRateForProbeDecision(decisionStatus, latest.successRate)
+	}
+	latest.uptime, latest.successRate, err = rolling24HourProbeMetricsTx(ctx, tx, channelID, latest.uptime, latest.successRate)
+	if err != nil {
+		return err
 	}
 
 	score := scoreForStatus(decisionStatus, latest.successRate)
-	uptime := uptimeForStatus(decisionStatus)
 	latency := l2.LatencyMs
 	if latency == 0 {
 		latency = l1.LatencyMs
@@ -398,7 +400,7 @@ func (r *Repository) ApplyProbeStatusWithL3(ctx context.Context, channelID strin
 			tokens_used,cost_usd,error_type,metadata
 		)
 		values($1,$2,now(),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'{"source":"phase3_probe"}'::jsonb)
-	`, fmt.Sprintf("snap_probe_%s_%d", channelID, time.Now().UnixNano()), channelID, decisionStatus, score, uptime, latest.successRate, latency,
+	`, fmt.Sprintf("snap_probe_%s_%d", channelID, time.Now().UnixNano()), channelID, decisionStatus, score, latest.uptime, latest.successRate, latency,
 		l1.Status, l2.Status, latest.l3Status, l1.LatencyMs, l2.LatencyMs, latest.l3Latency, latest.tokens, latest.cost, errValue); err != nil {
 		return err
 	}
@@ -530,6 +532,33 @@ func latestL3MetricsTx(ctx context.Context, q queryer, channelID string) (int, f
 	return tokens, cost
 }
 
+func rolling24HourProbeMetricsTx(ctx context.Context, q queryer, channelID string, fallbackUptime float64, fallbackSuccess float64) (float64, float64, error) {
+	var uptime float64
+	var success float64
+	err := q.QueryRow(ctx, `
+		select
+			coalesce((
+				select avg(case when status='success' then 1.0 else 0.0 end) * 100
+				from probe_runs
+				where channel_id=$1 and layer='l1'
+					and status <> 'running' and finished_at is not null
+					and finished_at >= now() - interval '24 hours'
+			)::float8,$2::float8),
+			coalesce((
+				select avg(case when pr.status='ok' then 1.0 else 0.0 end) * 100
+				from probe_results pr
+				join probe_runs run on run.id=pr.probe_run_id
+				where pr.channel_id=$1 and pr.layer='l3' and pr.status <> 'na'
+					and run.status <> 'running' and run.finished_at is not null
+					and run.finished_at >= now() - interval '24 hours'
+			)::float8,$3::float8)
+	`, channelID, fallbackUptime, fallbackSuccess).Scan(&uptime, &success)
+	if err != nil {
+		return 0, 0, err
+	}
+	return round1(uptime), round1(success), nil
+}
+
 func (r *Repository) ProbeResultCount(ctx context.Context, runID string) (int, error) {
 	var count int
 	err := r.db.QueryRow(ctx, `select count(*) from probe_results where probe_run_id=$1`, runID).Scan(&count)
@@ -553,36 +582,6 @@ func scoreForStatus(status string, fallbackSuccess float64) int {
 		return 35
 	default:
 		return 50
-	}
-}
-
-func successRateForProbeDecision(status string, fallback float64) float64 {
-	switch status {
-	case "healthy":
-		return 100
-	case "degraded", "auth_error":
-		return 75
-	case "functional_down", "connectivity_down":
-		return 0
-	default:
-		return fallback
-	}
-}
-
-func uptimeForStatus(status string) float64 {
-	switch status {
-	case "healthy":
-		return 99.5
-	case "auth_error":
-		return 98.0
-	case "degraded":
-		return 96.0
-	case "functional_down":
-		return 88.0
-	case "connectivity_down":
-		return 55.0
-	default:
-		return 0
 	}
 }
 

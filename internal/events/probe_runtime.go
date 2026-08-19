@@ -25,25 +25,27 @@ const (
 )
 
 const (
-	probeSchedulerInterval   = 30 * time.Second
-	schedulerTaskMaxAge      = 2 * time.Minute
-	newProbeTargetWindow     = 24 * time.Hour
-	newProbeTargetL3Interval = 8 * time.Hour
-	healthyL1Interval        = 15 * time.Minute
-	healthyL2Interval        = 4 * time.Hour
-	healthyL3Interval        = 24 * time.Hour
-	unhealthyL1Interval      = 5 * time.Minute
-	unhealthyL2Interval      = 30 * time.Minute
-	unhealthyL3Interval      = 6 * time.Hour
-	degradedL3Interval       = 30 * time.Minute
-	authErrorL1Interval      = time.Hour
-	authErrorL2Interval      = 6 * time.Hour
-	authErrorL3Interval      = 24 * time.Hour
-	unknownL1Interval        = 5 * time.Minute
-	unknownL2Interval        = 30 * time.Minute
-	unknownL3Interval        = 24 * time.Hour
-	schedulerMaxTasksPerTick = 1
-	probeTaskAckWait         = 5 * time.Minute
+	probeSchedulerInterval     = 15 * time.Second
+	schedulerTaskMaxAge        = 2 * time.Minute
+	newProbeTargetWindow       = 24 * time.Hour
+	newProbeTargetL3Interval   = 8 * time.Hour
+	healthyL1Interval          = 15 * time.Minute
+	healthyL2Interval          = 4 * time.Hour
+	healthyL3Interval          = 24 * time.Hour
+	unhealthyL1Interval        = 5 * time.Minute
+	unhealthyL2Interval        = 30 * time.Minute
+	connectivityDownL3Interval = 6 * time.Hour
+	degradedL3Interval         = 30 * time.Minute
+	functionalDownL1Interval   = 15 * time.Minute
+	functionalDownL3Interval   = 30 * time.Minute
+	authErrorL1Interval        = time.Hour
+	authErrorL2Interval        = 6 * time.Hour
+	authErrorL3Interval        = 24 * time.Hour
+	unknownL1Interval          = 5 * time.Minute
+	unknownL2Interval          = 30 * time.Minute
+	unknownL3Interval          = 24 * time.Hour
+	schedulerMaxTasksPerTick   = 1
+	probeTaskAckWait           = 5 * time.Minute
 )
 
 var probeLayers = []string{"l1", "l2", "l3"}
@@ -374,8 +376,10 @@ func probeLayerInterval(target store.ProbeScheduleTarget, layer string, now time
 		l1, l2, l3 = healthyL1Interval, healthyL2Interval, healthyL3Interval
 	case "degraded":
 		l1, l2, l3 = unhealthyL1Interval, unhealthyL2Interval, degradedL3Interval
-	case "connectivity_down", "functional_down":
-		l1, l2, l3 = unhealthyL1Interval, unhealthyL2Interval, unhealthyL3Interval
+	case "connectivity_down":
+		l1, l2, l3 = unhealthyL1Interval, unhealthyL2Interval, connectivityDownL3Interval
+	case "functional_down":
+		l1, l2, l3 = functionalDownL1Interval, unhealthyL2Interval, functionalDownL3Interval
 	case "auth_error":
 		l1, l2, l3 = authErrorL1Interval, authErrorL2Interval, authErrorL3Interval
 	default:
