@@ -52,6 +52,7 @@ func TestLoadConfigReadsSMTPURL(t *testing.T) {
 }
 
 func TestOpenCLIBrowserConnectorIsExplicitlyEnabled(t *testing.T) {
+	t.Setenv("TOKHUB_AI_LAB_MODE", "")
 	t.Setenv("TOKHUB_AI_OPENCLI_BROWSER_EXPERIMENTAL", "")
 	t.Setenv("TOKHUB_AI_OPENCLI_BROWSER_ACK", "")
 	cfg := LoadConfig()
@@ -61,6 +62,12 @@ func TestOpenCLIBrowserConnectorIsExplicitlyEnabled(t *testing.T) {
 
 	t.Setenv("TOKHUB_AI_OPENCLI_BROWSER_EXPERIMENTAL", "true")
 	t.Setenv("TOKHUB_AI_OPENCLI_BROWSER_ACK", "I_ACCEPT_OPENCLI_PERSONAL_BROWSER_EXPERIMENTAL_RISK")
+	cfg = LoadConfig()
+	if cfg.AIOpenCLIBrowserEnabled {
+		t.Fatal("personal browser connector must remain disabled outside lab mode")
+	}
+
+	t.Setenv("TOKHUB_AI_LAB_MODE", "true")
 	cfg = LoadConfig()
 	if !cfg.AIOpenCLIBrowserEnabled || cfg.AIOpenCLIBrowserTaskTimeout != 2*time.Minute {
 		t.Fatalf("personal browser connector config was not loaded: %#v", cfg)
@@ -84,6 +91,19 @@ func TestOpenCLIBrowserConnectorIsExplicitlyEnabled(t *testing.T) {
 	cfg = LoadConfig()
 	if cfg.AIOpenCLIBrowserTaskTimeout != 2*time.Minute {
 		t.Fatalf("OpenCLI browser timeout below the command contract should fall back to 2m: %v", cfg.AIOpenCLIBrowserTaskTimeout)
+	}
+}
+
+func TestOfficialClientAndProviderKillSwitchesAreExplicit(t *testing.T) {
+	t.Setenv("TOKHUB_AI_OFFICIAL_CLIENT_ENABLED", "true")
+	t.Setenv("TOKHUB_AI_OFFICIAL_CLIENT_TASK_TIMEOUT", "4m")
+	t.Setenv("TOKHUB_AI_GROK_KILL_SWITCH", "true")
+	cfg := LoadConfig()
+	if !cfg.AIOfficialClientEnabled || cfg.AIOfficialClientTaskTimeout != 4*time.Minute {
+		t.Fatalf("official client config = %#v", cfg)
+	}
+	if !cfg.AIProviderKillSwitches["grok"] || cfg.AIProviderKillSwitches["openai"] {
+		t.Fatalf("provider kill switches = %#v", cfg.AIProviderKillSwitches)
 	}
 }
 
@@ -229,6 +249,7 @@ func TestLoadConfigKeepsWebAuthorizationOffByDefaultAndReadsExplicitProviderFlag
 	t.Setenv("TOKHUB_AI_GEMINI_OAUTH_ENABLED", "")
 	t.Setenv("TOKHUB_AI_CHATGPT_CODEX_EXPERIMENTAL", "")
 	t.Setenv("TOKHUB_AI_DEEPSEEK_WEB_EXPERIMENTAL", "")
+	t.Setenv("TOKHUB_AI_LAB_MODE", "")
 	cfg := LoadConfig()
 	if cfg.AIWebAuthEnabled || cfg.AIGeminiOAuthEnabled || cfg.AIChatGPTCodexExperimental || cfg.AIDeepSeekWebExperimental {
 		t.Fatalf("web authorization was enabled by default: %#v", cfg)
@@ -241,6 +262,7 @@ func TestLoadConfigKeepsWebAuthorizationOffByDefaultAndReadsExplicitProviderFlag
 	t.Setenv("TOKHUB_AI_GEMINI_OAUTH_ENABLED", "true")
 	t.Setenv("TOKHUB_AI_CHATGPT_CODEX_EXPERIMENTAL", "true")
 	t.Setenv("TOKHUB_AI_DEEPSEEK_WEB_EXPERIMENTAL", "true")
+	t.Setenv("TOKHUB_AI_LAB_MODE", "true")
 	t.Setenv("TOKHUB_AI_DEEPSEEK_WEB_BRIDGE_URL", "https://bridge.example.test")
 	t.Setenv("TOKHUB_AI_DEEPSEEK_WEB_ACK", "ack")
 	t.Setenv("TOKHUB_AI_OAUTH_TTL", "12m")

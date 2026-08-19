@@ -14,6 +14,18 @@ data:
   REDIS_URL: {{ .Values.redisUrl | quote }}
   NATS_URL: {{ .Values.natsUrl | quote }}
   TOKHUB_AI_WEB_AUTH_ENABLED: {{ .Values.aiAuthorization.enabled | quote }}
+  TOKHUB_AI_LAB_MODE: {{ .Values.aiAuthorization.labMode | quote }}
+  TOKHUB_AI_OFFICIAL_CLIENT_ENABLED: {{ .Values.aiAuthorization.officialClientEnabled | quote }}
+  TOKHUB_AI_OFFICIAL_CLIENT_TASK_TIMEOUT: {{ .Values.aiAuthorization.officialClientTaskTimeout | quote }}
+  TOKHUB_AI_OFFICIAL_CLIENT_TRUSTED_PROXY_CIDRS: {{ join "," .Values.aiAuthorization.officialClientTrustedProxyCidrs | quote }}
+  TOKHUB_AI_OPENAI_KILL_SWITCH: {{ .Values.aiAuthorization.providerPolicy.openai.killSwitch | quote }}
+  TOKHUB_AI_GEMINI_KILL_SWITCH: {{ .Values.aiAuthorization.providerPolicy.gemini.killSwitch | quote }}
+  TOKHUB_AI_DEEPSEEK_KILL_SWITCH: {{ .Values.aiAuthorization.providerPolicy.deepseek.killSwitch | quote }}
+  TOKHUB_AI_GROK_KILL_SWITCH: {{ .Values.aiAuthorization.providerPolicy.grok.killSwitch | quote }}
+  TOKHUB_AI_OPENAI_TERMS_DIGEST: {{ .Values.aiAuthorization.providerPolicy.openai.termsDigest | quote }}
+  TOKHUB_AI_GEMINI_TERMS_DIGEST: {{ .Values.aiAuthorization.providerPolicy.gemini.termsDigest | quote }}
+  TOKHUB_AI_DEEPSEEK_TERMS_DIGEST: {{ .Values.aiAuthorization.providerPolicy.deepseek.termsDigest | quote }}
+  TOKHUB_AI_GROK_TERMS_DIGEST: {{ .Values.aiAuthorization.providerPolicy.grok.termsDigest | quote }}
   TOKHUB_AI_GEMINI_OAUTH_ENABLED: {{ .Values.aiAuthorization.geminiOAuthEnabled | quote }}
   TOKHUB_AI_DEEPSEEK_GUIDED_ENABLED: {{ .Values.aiAuthorization.deepseekGuidedEnabled | quote }}
   TOKHUB_AI_DEEPSEEK_WEB_EXPERIMENTAL: {{ .Values.aiAuthorization.deepseekWeb.enabled | quote }}

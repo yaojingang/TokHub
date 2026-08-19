@@ -180,6 +180,18 @@ if [[ "${TOKHUB_AI_WEB_AUTH_ENABLED:-false}" == "true" ]]; then
   fi
 fi
 
+if [[ "${TOKHUB_AI_LAB_MODE:-false}" != "true" && (
+  "${TOKHUB_AI_OPENCLI_BROWSER_EXPERIMENTAL:-false}" == "true" ||
+  "${TOKHUB_AI_DEEPSEEK_WEB_EXPERIMENTAL:-false}" == "true" ||
+  "${TOKHUB_AI_CHATGPT_CODEX_EXPERIMENTAL:-false}" == "true"
+) ]]; then
+  fail "OpenCLI, DeepSeek web session, and legacy Codex experiments require TOKHUB_AI_LAB_MODE=true"
+fi
+
+if [[ "${TOKHUB_AI_OFFICIAL_CLIENT_TRUSTED_PROXY_CIDRS:-}" =~ (^|,)[[:space:]]*(0\.0\.0\.0/0|::/0)[[:space:]]*(,|$) ]]; then
+  fail "TOKHUB_AI_OFFICIAL_CLIENT_TRUSTED_PROXY_CIDRS must not trust every network peer"
+fi
+
 if [[ "${REQUIRE_SMTP:-0}" == "1" && -z "${SMTP_URL:-}" ]]; then
   fail "SMTP_URL is required when REQUIRE_SMTP=1"
 fi

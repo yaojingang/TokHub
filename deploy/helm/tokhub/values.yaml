@@ -16,6 +16,23 @@ natsUrl: nats://nats:4222
 
 aiAuthorization:
   enabled: false
+  labMode: false
+  officialClientEnabled: false
+  officialClientTaskTimeout: 3m
+  officialClientTrustedProxyCidrs: []
+  providerPolicy:
+    openai:
+      killSwitch: false
+      termsDigest: ""
+    gemini:
+      killSwitch: false
+      termsDigest: ""
+    deepseek:
+      killSwitch: false
+      termsDigest: ""
+    grok:
+      killSwitch: false
+      termsDigest: ""
   geminiOAuthEnabled: false
   deepseekGuidedEnabled: true
   chatgptCodexExperimental: false
@@ -51,7 +68,7 @@ aiAuthorization:
     projectId: ""
   deepseekWeb:
     enabled: false
-    deployBridge: true
+    deployBridge: false
     bridgeUrl: ""
     riskAcknowledgement: ""
     adminKey: ""
