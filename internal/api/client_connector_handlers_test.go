@@ -1,0 +1,85 @@
+package api
+
+import (
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"tokhub/internal/clientconnector"
+)
+
+func TestSanitizeAIClientHeartbeatUsesBoundedLabels(t *testing.T) {
+	heartbeat := clientconnector.Heartbeat{
+		ConnectorVersion: " 2.0.0-rc.2 ",
+		Capabilities:     []string{"chatgpt", "chatgpt", "grok"},
+		Identity: map[string]clientconnector.IdentityStatus{
+			"openai": {LoggedIn: true, AccountMask: "a***@example.com", IdentityAssurance: "account", CheckedAt: time.Now()},
+		},
+	}
+	if err := sanitizeAIClientHeartbeat(&heartbeat); err != nil {
+		t.Fatal(err)
+	}
+	if heartbeat.ConnectorVersion != "2.0.0-rc.2" || len(heartbeat.Capabilities) != 2 {
+		t.Fatalf("unexpected sanitized heartbeat: %#v", heartbeat)
+	}
+	heartbeat.Capabilities = []string{"browser-cookie"}
+	if err := sanitizeAIClientHeartbeat(&heartbeat); err == nil {
+		t.Fatal("expected unknown capability to fail closed")
+	}
+}
+
+func TestOfficialClientTransportTrustsOnlyConfiguredProxy(t *testing.T) {
+	server := &Server{cfg: Config{Env: "production", AIOfficialClientTrustedProxyCIDRs: []string{"10.0.0.0/8"}}}
+
+	request := httptest.NewRequest("POST", "http://tokhub.example/api/ai-client-connectors/heartbeat", nil)
+	request.Header.Set("X-Forwarded-Proto", "https")
+	request.RemoteAddr = "203.0.113.8:41234"
+	recorder := httptest.NewRecorder()
+	if server.requireSecureClientTransport(recorder, request) {
+		t.Fatal("untrusted forwarded HTTPS header must be rejected")
+	}
+	if recorder.Code != 426 {
+		t.Fatalf("unexpected response code: %d", recorder.Code)
+	}
+
+	request = httptest.NewRequest("POST", "http://tokhub.example/api/ai-client-connectors/heartbeat", nil)
+	request.Header.Set("X-Forwarded-Proto", "https")
+	request.RemoteAddr = "10.12.0.4:41234"
+	if !server.requireSecureClientTransport(httptest.NewRecorder(), request) {
+		t.Fatal("configured TLS proxy must be accepted")
+	}
+}
+
+func TestOfficialClientDevelopmentHTTPRequiresLoopbackPeer(t *testing.T) {
+	server := &Server{cfg: Config{Env: "development"}}
+	request := httptest.NewRequest("POST", "http://localhost:8080/api/ai-client-connectors/heartbeat", nil)
+	request.RemoteAddr = "203.0.113.8:41234"
+	if server.requireSecureClientTransport(httptest.NewRecorder(), request) {
+		t.Fatal("loopback Host from a remote peer must be rejected")
+	}
+	request.RemoteAddr = "127.0.0.1:41234"
+	if !server.requireSecureClientTransport(httptest.NewRecorder(), request) {
+		t.Fatal("loopback development request must be accepted")
+	}
+}
+
+func TestSanitizeAIClientResultMasksAccountAndBoundsModels(t *testing.T) {
+	result, err := sanitizeAIClientResult(clientconnector.TaskResult{
+		OK: true, AccountID: "alice@example.com", IdentityAssurance: "account",
+		Models: []string{"gpt-5", "gpt-5"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result.AccountMask = maskAIClientAccount(result.AccountID)
+	if result.AccountMask != "a***@example.com" || len(result.Models) != 1 {
+		t.Fatalf("unexpected sanitized result: %#v", result)
+	}
+	if _, err := sanitizeAIClientResult(clientconnector.TaskResult{OK: true, Models: []string{strings.Repeat("x", 161)}}); err == nil {
+		t.Fatal("expected oversized model label to fail")
+	}
+	if _, err := sanitizeAIClientResult(clientconnector.TaskResult{OK: true, SessionRef: "plaintext-thread"}); err == nil {
+		t.Fatal("expected plaintext session reference to fail")
+	}
+}

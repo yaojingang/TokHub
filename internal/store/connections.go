@@ -219,6 +219,13 @@ func (r *Repository) CreateAIConnection(ctx context.Context, input AIConnectionC
 			return AIConnection{}, err
 		}
 	}
+	if authMethod == "official_client" {
+		if err := rejectDuplicateSingleProviderMethodTx(
+			ctx, tx, input.OwnerUserID, input.OrgID, input.Provider, authMethod, "",
+		); err != nil {
+			return AIConnection{}, err
+		}
+	}
 	status := "active"
 	if !input.Validation.OK {
 		status = "attention"
@@ -1073,6 +1080,37 @@ func rejectDuplicateOpenCLIBrowserProviderTx(
 				and status <> 'deleted' and deleted_at is null
 		)
 	`, ownerUserID, orgID, provider, excludeConnectionID).Scan(&duplicate); err != nil {
+		return err
+	}
+	if duplicate {
+		return ErrAIConnectionDuplicate
+	}
+	return nil
+}
+
+func rejectDuplicateSingleProviderMethodTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	ownerUserID string,
+	orgID string,
+	provider string,
+	authMethod string,
+	excludeConnectionID string,
+) error {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	authMethod = strings.ToLower(strings.TrimSpace(authMethod))
+	lockKey := strings.Join([]string{"single-provider-method", ownerUserID, orgID, provider, authMethod}, "\x1f")
+	if _, err := tx.Exec(ctx, `select pg_advisory_xact_lock(hashtextextended($1,0))`, lockKey); err != nil {
+		return err
+	}
+	var duplicate bool
+	if err := tx.QueryRow(ctx, `
+		select exists(
+			select 1 from ai_connections
+			where owner_user_id=$1 and org_id=$2 and provider=$3 and auth_method=$4 and id <> $5
+			  and status not in ('deleted','disabled') and deleted_at is null
+		)
+	`, ownerUserID, orgID, provider, authMethod, excludeConnectionID).Scan(&duplicate); err != nil {
 		return err
 	}
 	if duplicate {

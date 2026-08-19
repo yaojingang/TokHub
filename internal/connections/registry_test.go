@@ -2,14 +2,14 @@ package connections
 
 import "testing"
 
-func TestProviderRegistryExposesSevenOfficialDeveloperProducts(t *testing.T) {
+func TestProviderRegistryExposesEightOfficialDeveloperProducts(t *testing.T) {
 	items := ProviderRegistry()
-	if len(items) != 7 {
-		t.Fatalf("ProviderRegistry() returned %d providers, want 7", len(items))
+	if len(items) != 8 {
+		t.Fatalf("ProviderRegistry() returned %d providers, want 8", len(items))
 	}
 	want := map[string]bool{
 		"openai": true, "gemini": true, "kimi": true, "deepseek": true,
-		"doubao": true, "claude": true, "qwen": true,
+		"doubao": true, "claude": true, "qwen": true, "grok": true,
 	}
 	for _, item := range items {
 		if !want[item.Code] {
@@ -23,6 +23,19 @@ func TestProviderRegistryExposesSevenOfficialDeveloperProducts(t *testing.T) {
 	if len(want) != 0 {
 		t.Fatalf("missing providers: %#v", want)
 	}
+}
+
+func TestProviderRegistryIncludesGrokPolicy(t *testing.T) {
+	for _, item := range ProviderRegistryWithPolicies() {
+		if item.Code != "grok" {
+			continue
+		}
+		if item.Regions[0].Endpoint != "https://api.x.ai/v1" || item.Policy == nil || item.Policy.Provider != "grok" {
+			t.Fatalf("grok provider is incomplete: %#v", item)
+		}
+		return
+	}
+	t.Fatal("Grok provider is missing")
 }
 
 func TestResolveProviderBuildsQwenWorkspaceEndpointFromAllowlistedRegion(t *testing.T) {

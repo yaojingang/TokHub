@@ -116,6 +116,31 @@ func main() {
 			}
 		}()
 	}
+	if shouldMaintainAIClientState(cfg.Role) {
+		go func() {
+			maintain := func() {
+				changed, err := repo.MaintainAIClientState(ctx)
+				if err != nil {
+					logger.Warn("maintain official client tasks and sessions", "error", err)
+					return
+				}
+				if changed > 0 {
+					logger.Info("maintained official client metadata", "count", changed)
+				}
+			}
+			maintain()
+			ticker := time.NewTicker(time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					maintain()
+				}
+			}
+		}()
+	}
 	authSvc := auth.NewService(repo, cfg.SecretKey, cfg.SessionSecure, logger)
 	var credentialRefreshRuntime *events.CredentialRefreshRuntime
 	if cfg.AIWebAuthEnabled && shouldRunCredentialRefresh(cfg.Role) {
@@ -213,6 +238,10 @@ func shouldExpireAIQuickRelayReveals(role string) bool {
 }
 
 func shouldMaintainAIBrowserTasks(role string) bool {
+	return role == "all" || role == "worker"
+}
+
+func shouldMaintainAIClientState(role string) bool {
 	return role == "all" || role == "worker"
 }
 

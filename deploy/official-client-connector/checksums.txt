@@ -1,0 +1,4 @@
+# Verified from provider-controlled distribution URLs on 2026-08-19.
+@openai/codex@0.148.0 npm sha512 bh5kH9+BMrFaHGmLeoSansPdfRksvr4UXzjQInns/KRO7r8VJ+6AAW+SqUsE8XcG3+OW/mI4EEy8Gpo9UDXGvQ==
+grok-1.0.5-linux-x86_64 sha256 9ba87444e1819e8f6104adbbf4676a870c204380aa5c3e1c38a926c4ea677238
+grok-1.0.5-linux-aarch64 sha256 1c1fe67d7c35497fb09f44a451f57acc3787add4c9aea2c56f5c7c75dc5ffcf1

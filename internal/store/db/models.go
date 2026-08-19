@@ -116,6 +116,99 @@ type AiBrowserTask struct {
 	UpdatedAt      time.Time
 }
 
+type AiClientAccountRisk struct {
+	ConnectionID             string
+	OwnerUserID              string
+	OrgID                    string
+	ConnectorID              string
+	Provider                 string
+	AccountSubject           string
+	IdentityAssurance        string
+	State                    string
+	CooldownUntil            sql.NullTime
+	HourWindowStartedAt      time.Time
+	DayWindowStartedAt       time.Time
+	RateLimitWindowStartedAt time.Time
+	RequestsHour             int32
+	RequestsDay              int32
+	RateLimitEvents          int32
+	IdentityChanges          int32
+	ConsecutiveFailures      int32
+	LastRequestAt            sql.NullTime
+	LastSuccessAt            sql.NullTime
+	LastErrorAt              sql.NullTime
+	LastErrorCode            string
+	LastIdentityChangeAt     sql.NullTime
+	CreatedAt                time.Time
+	UpdatedAt                time.Time
+}
+
+type AiClientConnector struct {
+	ID               string
+	OwnerUserID      string
+	OrgID            string
+	DisplayName      string
+	Status           string
+	PairingHash      string
+	PairingExpiresAt sql.NullTime
+	TokenHash        string
+	TokenPrefix      string
+	PublicKey        string
+	RuntimeKind      string
+	ConnectorVersion string
+	CodexVersion     string
+	GrokVersion      string
+	CapabilitiesJson json.RawMessage
+	IdentityJson     json.RawMessage
+	LastSeenAt       sql.NullTime
+	PairedAt         sql.NullTime
+	RevokedAt        sql.NullTime
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
+}
+
+type AiClientResponse struct {
+	ID                 string
+	OwnerUserID        string
+	OrgID              string
+	GatewayKeyID       string
+	ConnectionID       string
+	ConnectorID        string
+	Provider           string
+	Model              string
+	SessionCiphertext  string
+	SessionNonce       string
+	PreviousResponseID sql.NullString
+	Status             string
+	IdleExpiresAt      time.Time
+	AbsoluteExpiresAt  time.Time
+	LastUsedAt         time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+}
+
+type AiClientTask struct {
+	ID             string
+	ConnectorID    string
+	OwnerUserID    string
+	OrgID          string
+	ConnectionID   sql.NullString
+	Provider       string
+	Action         string
+	PayloadKey     string
+	ResultKey      string
+	Status         string
+	LeaseHash      string
+	LeaseExpiresAt sql.NullTime
+	ErrorCode      string
+	ErrorMessage   string
+	ExpiresAt      time.Time
+	ClaimedAt      sql.NullTime
+	CompletedAt    sql.NullTime
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
 type AiConnection struct {
 	ID                     string
 	OwnerUserID            string

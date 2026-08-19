@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"tokhub/internal/browserconnector"
+	"tokhub/internal/clientconnector"
 	"tokhub/internal/connections"
 	secretcrypto "tokhub/internal/crypto"
 	gatewaycache "tokhub/internal/gateway"
@@ -56,10 +57,11 @@ type patchGatewayKeyRequest struct {
 }
 
 type gatewayPayload struct {
-	Model    string           `json:"model"`
-	Messages []gatewayMessage `json:"messages"`
-	Input    any              `json:"input"`
-	Stream   bool             `json:"stream"`
+	Model              string           `json:"model"`
+	Messages           []gatewayMessage `json:"messages"`
+	Input              any              `json:"input"`
+	Stream             bool             `json:"stream"`
+	PreviousResponseID string           `json:"previous_response_id"`
 }
 
 type gatewayMessage struct {
@@ -1000,7 +1002,7 @@ func (s *Server) handleGatewayGeneration(w http.ResponseWriter, r *http.Request,
 		writeError(w, r, http.StatusBadGateway, "no_upstream", "No healthy upstream is available")
 		return
 	}
-	if s.cfg.UpstreamMode == "real" {
+	if s.cfg.UpstreamMode == "real" || gatewayCandidatesUseLocalConnector(candidates) {
 		s.handleRealGatewayGeneration(w, r, authn, candidates, kind, raw, payload, start)
 		return
 	}
@@ -1069,6 +1071,13 @@ func (s *Server) handleGatewayAnthropicMessages(w http.ResponseWriter, r *http.R
 		writeAnthropicError(w, http.StatusBadGateway, "api_error", "No healthy upstream is available")
 		return
 	}
+	for _, upstream := range candidates {
+		if isOfficialClientUpstream(upstream) {
+			s.recordGatewayFailure(r, authn, upstream.ChannelID, payload.Model, http.StatusUnprocessableEntity, "unsupported_capability", start, payload.Stream)
+			writeAnthropicError(w, http.StatusUnprocessableEntity, "invalid_request_error", "Official client connections support OpenAI chat and responses text requests only")
+			return
+		}
+	}
 	if s.cfg.UpstreamMode == "real" {
 		s.handleRealGatewayAnthropicMessages(w, r, authn, candidates, raw, payload, start)
 		return
@@ -1097,6 +1106,15 @@ func (s *Server) handleGatewayAnthropicMessages(w http.ResponseWriter, r *http.R
 	writeAnthropicError(w, http.StatusBadGateway, "api_error", fmt.Sprintf("All upstreams failed before first byte: %v", lastErr))
 }
 
+func gatewayCandidatesUseLocalConnector(candidates []store.GatewayUpstream) bool {
+	for _, upstream := range candidates {
+		if isOfficialClientUpstream(upstream) || isOpenCLIBrowserUpstream(upstream) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) handleRealGatewayGeneration(w http.ResponseWriter, r *http.Request, authn store.AuthenticatedGatewayKey, candidates []store.GatewayUpstream, kind string, raw []byte, payload gatewayPayload, start time.Time) {
 	estimated := upstreamUsageFromGateway(estimateUsage(payload))
 	raw, err := rawPayloadWithModel(raw, payload.Model)
@@ -1107,6 +1125,10 @@ func (s *Server) handleRealGatewayGeneration(w http.ResponseWriter, r *http.Requ
 	}
 	lastErrType := "upstream_failed"
 	for _, upstream := range candidates {
+		if isOfficialClientUpstream(upstream) {
+			s.handleOfficialClientGatewayGeneration(w, r, authn, upstream, kind, raw, payload, start)
+			return
+		}
 		if isOpenCLIBrowserUpstream(upstream) {
 			s.handleOpenCLIBrowserGatewayGeneration(w, r, authn, upstream, kind, raw, payload, start)
 			return
@@ -1183,6 +1205,11 @@ func (s *Server) handleRealGatewayAnthropicMessages(w http.ResponseWriter, r *ht
 	}
 	lastErrType := "upstream_failed"
 	for _, upstream := range candidates {
+		if isOfficialClientUpstream(upstream) {
+			s.recordGatewayFailure(r, authn, upstream.ChannelID, payload.Model, http.StatusUnprocessableEntity, "unsupported_capability", start, payload.Stream)
+			writeAnthropicError(w, http.StatusUnprocessableEntity, "invalid_request_error", "Official client connections support OpenAI chat and responses text requests only")
+			return
+		}
 		if isOpenCLIBrowserUpstream(upstream) {
 			s.recordGatewayFailure(r, authn, upstream.ChannelID, payload.Model, http.StatusUnprocessableEntity, "browser_protocol_unsupported", start, payload.Stream)
 			writeAnthropicError(w, http.StatusUnprocessableEntity, "invalid_request_error", "Personal browser connections support OpenAI chat and responses requests only")
@@ -1255,9 +1282,9 @@ func (s *Server) authenticateGatewayRequest(w http.ResponseWriter, r *http.Reque
 			writeError(w, r, http.StatusTooManyRequests, "gateway_rate_limited", "Gateway key QPS limit exceeded")
 			return store.AuthenticatedGatewayKey{}, false
 		}
-	} else if gatewayUsesOpenCLIBrowser(authn.Gateway) {
-		s.logger.Warn("redis qps limiter unavailable; local browser gateway closed", "gateway_id", authn.Gateway.ID, "error", err)
-		writeError(w, r, http.StatusServiceUnavailable, "browser_risk_guard_unavailable", "Personal browser protection is temporarily unavailable")
+	} else if gatewayUsesOpenCLIBrowser(authn.Gateway) || gatewayUsesOfficialClient(authn.Gateway) {
+		s.logger.Warn("redis qps limiter unavailable; local delegated gateway closed", "gateway_id", authn.Gateway.ID, "error", err)
+		writeError(w, r, http.StatusServiceUnavailable, "local_risk_guard_unavailable", "Personal gateway protection is temporarily unavailable")
 		return store.AuthenticatedGatewayKey{}, false
 	} else if !errors.Is(err, gatewaycache.ErrUnavailable) {
 		s.logger.Warn("redis qps limiter failed; falling back to memory", "error", err)
@@ -1312,6 +1339,9 @@ func experimentalGatewayLimits(gateway store.Gateway) (experimentalGatewayPolicy
 		case "deepseek_web_token", "opencli_browser":
 			experimental = true
 			policy.Concurrency = 1
+		case "official_client":
+			experimental = true
+			policy.Concurrency = 1
 		}
 	}
 	if !experimental {
@@ -1323,6 +1353,15 @@ func experimentalGatewayLimits(gateway store.Gateway) (experimentalGatewayPolicy
 func gatewayUsesOpenCLIBrowser(gateway store.Gateway) bool {
 	for _, upstream := range gateway.Upstreams {
 		if strings.EqualFold(strings.TrimSpace(stringFromAny(upstream.ProviderConfig["authMethod"])), "opencli_browser") {
+			return true
+		}
+	}
+	return false
+}
+
+func gatewayUsesOfficialClient(gateway store.Gateway) bool {
+	for _, upstream := range gateway.Upstreams {
+		if isOfficialClientUpstream(upstream) {
 			return true
 		}
 	}
@@ -1359,6 +1398,13 @@ func (s *Server) availableGatewayCandidates(ctx context.Context, gateway store.G
 	}
 	out := []store.GatewayUpstream{}
 	for _, upstream := range candidates {
+		authMethod := strings.ToLower(strings.TrimSpace(stringFromAny(upstream.ProviderConfig["authMethod"])))
+		if authMethod == "" {
+			authMethod = "api_key"
+		}
+		if s.providerPolicyAllowsWithLab(upstream.Provider, authMethod, false) != nil {
+			continue
+		}
 		if requestedModel != "" && strings.TrimSpace(upstream.Model) != requestedModel {
 			continue
 		}
@@ -1457,6 +1503,9 @@ func (s *Server) gatewayUpstreamAuthorization(ctx context.Context, authn store.A
 		}
 		if cred.SecretType == "browser_connector" {
 			return gatewayResolvedAuthorization{}, errors.New("browser connector credential requires local task routing")
+		}
+		if cred.SecretType == "client_connector" {
+			return gatewayResolvedAuthorization{}, errors.New("official client connector requires local task routing")
 		}
 		if cred.SecretType != "oauth_bundle" {
 			return gatewayResolvedAuthorization{APIKey: plain}, nil
@@ -1661,6 +1710,329 @@ func (s *Server) circuitOpen(channelID string) bool {
 
 func isOpenCLIBrowserUpstream(upstream store.GatewayUpstream) bool {
 	return strings.EqualFold(strings.TrimSpace(stringFromAny(upstream.ProviderConfig["authMethod"])), "opencli_browser")
+}
+
+func isOfficialClientUpstream(upstream store.GatewayUpstream) bool {
+	return strings.EqualFold(strings.TrimSpace(stringFromAny(upstream.ProviderConfig["authMethod"])), "official_client")
+}
+
+func (s *Server) handleOfficialClientGatewayGeneration(
+	w http.ResponseWriter,
+	r *http.Request,
+	authn store.AuthenticatedGatewayKey,
+	upstream store.GatewayUpstream,
+	kind string,
+	raw []byte,
+	payload gatewayPayload,
+	start time.Time,
+) {
+	fail := func(status int, code, message string) {
+		s.recordGatewayFailure(r, authn, upstream.ChannelID, payload.Model, status, code, start, payload.Stream)
+		writeError(w, r, status, code, message)
+	}
+	if !s.cfg.AIOfficialClientEnabled || s.providerPolicyAllowsWithLab(upstream.Provider, "official_client", false) != nil {
+		fail(http.StatusServiceUnavailable, "official_client_disabled", "Official client connection is disabled by policy")
+		return
+	}
+	var requestMap map[string]any
+	if err := json.Unmarshal(raw, &requestMap); err != nil {
+		fail(http.StatusBadRequest, "invalid_json", "Invalid JSON body")
+		return
+	}
+	prompt, err := browserconnector.PromptFromOfficialClientRequest(kind, requestMap)
+	if err != nil {
+		fail(http.StatusUnprocessableEntity, "unsupported_capability", err.Error())
+		return
+	}
+	credential, err := s.repo.GatewayChannelCredential(r.Context(), authn.Key.OrgID, upstream.ChannelID)
+	if err != nil || credential.AuthMethod != "official_client" || credential.SecretType != "client_connector" {
+		fail(http.StatusServiceUnavailable, "official_client_unavailable", "Official client connection is unavailable")
+		return
+	}
+	connectorID := strings.TrimSpace(stringFromAny(upstream.ProviderConfig["connectorId"]))
+	connector, err := s.repo.AIClientConnectorForOwner(r.Context(), credential.OwnerUserID, authn.Key.OrgID, connectorID)
+	capability := map[string]string{"openai": "chatgpt", "grok": "grok"}[credential.Provider]
+	if err != nil || !connector.Online || !containsClientCapability(connector.Capabilities, capability) {
+		fail(http.StatusServiceUnavailable, "official_client_offline", "Start the official client container and confirm the account is logged in")
+		return
+	}
+	previousSessionRef := ""
+	var previousResponse store.AIClientResponse
+	previousResponseID := strings.TrimSpace(payload.PreviousResponseID)
+	if previousResponseID != "" {
+		if kind != "responses" {
+			fail(http.StatusUnprocessableEntity, "unsupported_capability", "previous_response_id is supported by the Responses API only")
+			return
+		}
+		previousResponse, err = s.repo.AIClientResponseForUse(r.Context(), previousResponseID,
+			credential.OwnerUserID, authn.Key.OrgID, authn.Key.ID, credential.ConnectionID, payload.Model)
+		if errors.Is(err, store.ErrAIClientSessionExpired) {
+			fail(http.StatusConflict, "session_expired", "The referenced official client session has expired")
+			return
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			fail(http.StatusNotFound, "previous_response_not_found", "The referenced response is unavailable for this key, connection, and model")
+			return
+		}
+		if err != nil || s.secretBox == nil {
+			fail(http.StatusServiceUnavailable, "session_store_unavailable", "Official client session storage is unavailable")
+			return
+		}
+		previousSessionRef, err = s.secretBox.Decrypt(previousResponse.SessionCiphertext, previousResponse.SessionNonce)
+		if err != nil {
+			fail(http.StatusConflict, "session_expired", "The referenced official client session cannot be resumed")
+			return
+		}
+	}
+	riskDecision, err := s.repo.ReserveAIClientRequest(r.Context(), credential.OwnerUserID, authn.Key.OrgID, credential.ConnectionID, time.Now())
+	if err != nil {
+		fail(http.StatusServiceUnavailable, "official_client_risk_guard_unavailable", "Official client safety controls are unavailable")
+		return
+	}
+	if !riskDecision.Allowed {
+		status, code, message := officialClientRiskRejection(riskDecision)
+		if riskDecision.RetryAt != nil {
+			seconds := max(1, int(time.Until(*riskDecision.RetryAt).Seconds()))
+			w.Header().Set("Retry-After", strconv.Itoa(seconds))
+		}
+		fail(status, code, message)
+		return
+	}
+	taskTimeout := s.cfg.AIOfficialClientTaskTimeout
+	if taskTimeout <= 0 {
+		taskTimeout = 3 * time.Minute
+	}
+	payloadKey, task, err := s.createEncryptedAIClientTask(r.Context(), store.AIClientTaskInput{
+		ConnectorID: connector.ID, OwnerUserID: credential.OwnerUserID, OrgID: authn.Key.OrgID,
+		ConnectionID: credential.ConnectionID, Provider: credential.Provider,
+		Action: clientconnector.ActionGenerate, ExpiresAt: time.Now().Add(taskTimeout),
+	}, clientconnector.TaskPayload{
+		Provider: credential.Provider, Action: clientconnector.ActionGenerate, Prompt: prompt,
+		Model: payload.Model, PreviousSessionRef: previousSessionRef, Stream: payload.Stream,
+	})
+	if errors.Is(err, store.ErrAIClientConnectorBusy) {
+		fail(http.StatusTooManyRequests, "official_client_busy", "Official client connection is handling another request")
+		return
+	}
+	if err != nil {
+		fail(http.StatusServiceUnavailable, "official_client_task_unavailable", "Could not create an encrypted official client task")
+		return
+	}
+	result, waitErr := s.waitForAIClientTask(r.Context(), credential.OwnerUserID, authn.Key.OrgID, task.ID, taskTimeout)
+	_ = s.gatewayCache.DeleteOfficialClientPayload(context.Background(), payloadKey)
+	if waitErr != nil {
+		_, _ = s.repo.RecordAIClientResult(context.Background(), credential.OwnerUserID, authn.Key.OrgID,
+			credential.ConnectionID, false, "timeout", 0, time.Now())
+		fail(http.StatusGatewayTimeout, "official_client_timeout", "Official client task timed out or was interrupted")
+		return
+	}
+	if result.OK && !s.officialClientIdentityMatches(credential, result.AccountID) {
+		result.OK, result.ErrorCode, result.ErrorMessage = false, "identity_changed", "Official client account identity changed; reconnect the device"
+	}
+	if !result.OK {
+		retryAfter := time.Duration(result.RetryAfterSeconds) * time.Second
+		risk, riskErr := s.repo.RecordAIClientResult(r.Context(), credential.OwnerUserID, authn.Key.OrgID,
+			credential.ConnectionID, false, result.ErrorCode, retryAfter, time.Now())
+		if riskErr == nil {
+			_ = s.repo.SetAIClientConnectionRiskState(r.Context(), credential.OwnerUserID, authn.Key.OrgID,
+				credential.ConnectionID, risk.State, result.ErrorCode, result.ErrorMessage)
+		}
+		status, code, message := officialClientResultError(result)
+		fail(status, code, message)
+		return
+	}
+	content := strings.TrimSpace(result.Content)
+	if content == "" || strings.TrimSpace(result.SessionRef) == "" {
+		_, _ = s.repo.RecordAIClientResult(r.Context(), credential.OwnerUserID, authn.Key.OrgID,
+			credential.ConnectionID, false, "adapter_incompatible", 0, time.Now())
+		fail(http.StatusBadGateway, "official_client_response_invalid", "Official client returned an incomplete text response")
+		return
+	}
+	if _, err := s.repo.RecordAIClientResult(r.Context(), credential.OwnerUserID, authn.Key.OrgID,
+		credential.ConnectionID, true, "", 0, time.Now()); err != nil {
+		fail(http.StatusServiceUnavailable, "official_client_risk_guard_unavailable", "Could not persist official client safety state")
+		return
+	}
+	_ = s.repo.SetAIClientConnectionRiskState(r.Context(), credential.OwnerUserID, authn.Key.OrgID,
+		credential.ConnectionID, "normal", "", "")
+
+	usage := estimateUsage(payload)
+	usage.CompletionTokens = len([]rune(content))/4 + 1
+	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+	usage.Estimated = true
+	responseID := ""
+	if kind == "responses" {
+		if s.secretBox == nil {
+			fail(http.StatusServiceUnavailable, "session_store_unavailable", "Official client session storage is unavailable")
+			return
+		}
+		sealed, sealErr := s.secretBox.Encrypt(result.SessionRef)
+		if sealErr != nil {
+			fail(http.StatusServiceUnavailable, "session_store_unavailable", "Could not seal official client session")
+			return
+		}
+		absoluteExpiresAt := time.Now().Add(7 * 24 * time.Hour)
+		if !previousResponse.AbsoluteExpiresAt.IsZero() {
+			absoluteExpiresAt = previousResponse.AbsoluteExpiresAt
+		}
+		idleExpiresAt := time.Now().Add(24 * time.Hour)
+		if idleExpiresAt.After(absoluteExpiresAt) {
+			idleExpiresAt = absoluteExpiresAt
+		}
+		response, createErr := s.repo.CreateAIClientResponse(r.Context(), store.AIClientResponseInput{
+			OwnerUserID: credential.OwnerUserID, OrgID: authn.Key.OrgID, GatewayKeyID: authn.Key.ID,
+			ConnectionID: credential.ConnectionID, ConnectorID: connector.ID, Provider: credential.Provider,
+			Model: payload.Model, SessionCiphertext: sealed.Ciphertext, SessionNonce: sealed.Nonce,
+			PreviousResponseID: previousResponseID, IdleExpiresAt: idleExpiresAt, AbsoluteExpiresAt: absoluteExpiresAt,
+		})
+		if createErr != nil {
+			fail(http.StatusServiceUnavailable, "session_store_unavailable", "Could not create official client session mapping")
+			return
+		}
+		responseID = response.ID
+	}
+	body := officialClientGatewayJSON(kind, responseID, payload.Model, content, usage, upstream.Name, result.ActualModel)
+	var writeErr error
+	if payload.Stream {
+		writeErr = writeOfficialClientStream(w, kind, body, responseID, payload.Model, content, usage)
+	} else {
+		writeErr = writeOfficialClientJSON(w, body)
+	}
+	if writeErr != nil {
+		if responseID != "" {
+			_, _ = s.repo.DeleteAIClientResponseForOwner(context.Background(), credential.OwnerUserID, authn.Key.OrgID, responseID)
+		}
+		return
+	}
+	s.recordGatewaySuccess(r, authn, upstream, payload.Model, usage, http.StatusOK, start, payload.Stream)
+}
+
+func (s *Server) officialClientIdentityMatches(credential store.GatewayChannelCredential, accountID string) bool {
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" || s.credentialKeys == nil {
+		return false
+	}
+	envelope, err := s.credentialKeys.EncryptWithFingerprint(credential.OwnerUserID, credential.Provider,
+		"identity-comparison", "official-client\x00"+accountID)
+	return err == nil && envelope.Fingerprint == credential.SubjectFingerprint
+}
+
+func officialClientRiskRejection(decision store.AIClientRiskDecision) (int, string, string) {
+	switch decision.Reason {
+	case "minimum_interval":
+		return http.StatusTooManyRequests, "official_client_minimum_interval", "Official client requests require a 15-second interval"
+	case "hourly_limit":
+		return http.StatusTooManyRequests, "official_client_hourly_limit", "Official client connection reached its hourly safety limit"
+	case "daily_limit":
+		return http.StatusTooManyRequests, "official_client_daily_limit", "Official client connection reached its daily safety limit"
+	case "cooldown":
+		return http.StatusTooManyRequests, "official_client_cooling_down", "Official client connection is in a safety cooldown"
+	case "reauth_required":
+		return http.StatusConflict, "official_client_reauth_required", "Official client login must be renewed and manually restored"
+	case "security_locked", "policy_locked", "manual_recovery":
+		return http.StatusLocked, "official_client_locked", "Official client connection is locked for manual review"
+	case "paused":
+		return http.StatusLocked, "official_client_paused", "Official client connection is paused"
+	default:
+		return http.StatusServiceUnavailable, "official_client_risk_rejected", "Official client connection cannot execute this request"
+	}
+}
+
+func officialClientResultError(result clientconnector.TaskResult) (int, string, string) {
+	message := strings.TrimSpace(result.ErrorMessage)
+	if message == "" {
+		message = "Official client task failed"
+	}
+	switch result.ErrorCode {
+	case "unauthorized", "login_required", "401":
+		return http.StatusConflict, "official_client_reauth_required", message
+	case "forbidden", "security_challenge", "403", "identity_changed":
+		return http.StatusLocked, "official_client_security_locked", message
+	case "rate_limited", "429":
+		return http.StatusTooManyRequests, "official_client_rate_limited", message
+	case "tool_event", "tool_call", "policy_violation":
+		return http.StatusLocked, "official_client_policy_locked", message
+	case "timeout", "cancelled":
+		return http.StatusGatewayTimeout, "official_client_timeout", message
+	case "unsupported_capability":
+		return http.StatusUnprocessableEntity, "unsupported_capability", message
+	default:
+		return http.StatusBadGateway, nonEmpty(result.ErrorCode, "official_client_failed"), message
+	}
+}
+
+func officialClientGatewayJSON(kind, responseID, model, content string, usage gatewayUsage, upstreamName, actualModel string) map[string]any {
+	now := time.Now()
+	if kind == "responses" {
+		return map[string]any{
+			"id": responseID, "object": "response", "created_at": now.Unix(), "model": model, "status": "completed",
+			"output": []map[string]any{{"type": "message", "role": "assistant", "content": []map[string]any{{"type": "output_text", "text": content}}}},
+			"usage":  usage, "tokhub": map[string]any{"upstream": upstreamName, "transport": "official_client", "actual_model": actualModel},
+		}
+	}
+	return map[string]any{
+		"id":     "chatcmpl_official_" + strings.ReplaceAll(time.Now().Format("20060102150405.000000000"), ".", ""),
+		"object": "chat.completion", "created": now.Unix(), "model": model,
+		"choices": []map[string]any{{"index": 0, "message": map[string]any{"role": "assistant", "content": content}, "finish_reason": "stop"}},
+		"usage":   usage, "tokhub": map[string]any{"upstream": upstreamName, "transport": "official_client", "actual_model": actualModel},
+	}
+}
+
+func writeOfficialClientJSON(w http.ResponseWriter, body map[string]any) error {
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, err = w.Write(append(encoded, '\n'))
+	return err
+}
+
+func writeOfficialClientStream(w http.ResponseWriter, kind string, body map[string]any, responseID, model, content string, usage gatewayUsage) error {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+	flusher, _ := w.(http.Flusher)
+	writeEvent := func(event string, value any) error {
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		if event != "" {
+			if _, err = fmt.Fprintf(w, "event: %s\n", event); err != nil {
+				return err
+			}
+		}
+		if _, err = fmt.Fprintf(w, "data: %s\n\n", encoded); err != nil {
+			return err
+		}
+		if flusher != nil {
+			flusher.Flush()
+		}
+		return nil
+	}
+	if kind == "responses" {
+		if err := writeEvent("response.created", map[string]any{"type": "response.created", "response": map[string]any{"id": responseID, "object": "response", "status": "in_progress", "model": model}}); err != nil {
+			return err
+		}
+		if err := writeEvent("response.output_text.delta", map[string]any{"type": "response.output_text.delta", "response_id": responseID, "delta": content}); err != nil {
+			return err
+		}
+		return writeEvent("response.completed", map[string]any{"type": "response.completed", "response": body})
+	}
+	id := stringFromAny(body["id"])
+	if err := writeEvent("", map[string]any{"id": id, "object": "chat.completion.chunk", "created": time.Now().Unix(), "model": model, "choices": []map[string]any{{"index": 0, "delta": map[string]any{"role": "assistant", "content": content}, "finish_reason": nil}}}); err != nil {
+		return err
+	}
+	if err := writeEvent("", map[string]any{"id": id, "object": "chat.completion.chunk", "created": time.Now().Unix(), "model": model, "choices": []map[string]any{{"index": 0, "delta": map[string]any{}, "finish_reason": "stop"}}, "usage": usage}); err != nil {
+		return err
+	}
+	_, err := io.WriteString(w, "data: [DONE]\n\n")
+	if flusher != nil {
+		flusher.Flush()
+	}
+	return err
 }
 
 func (s *Server) handleOpenCLIBrowserGatewayGeneration(

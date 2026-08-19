@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"tokhub/internal/buildinfo"
+	"tokhub/internal/clientconnector"
 	"tokhub/internal/connections"
 	gatewaycache "tokhub/internal/gateway"
 	"tokhub/internal/store"
@@ -253,8 +255,8 @@ func TestHealthzExposesReleaseVersion(t *testing.T) {
 	if response["status"] != "ok" {
 		t.Fatalf("healthz status = %q, want ok", response["status"])
 	}
-	if response["version"] != "2.0.0-rc.1" {
-		t.Fatalf("healthz version = %q, want 2.0.0-rc.1", response["version"])
+	if response["version"] != buildinfo.Version {
+		t.Fatalf("healthz version = %q, want %s", response["version"], buildinfo.Version)
 	}
 }
 
@@ -340,6 +342,67 @@ func TestBrowserGatewayResponseMatchesOpenAIContracts(t *testing.T) {
 	responses := browserGatewayJSON("responses", "model-b", "浏览器回答", usage, "Gemini Web")
 	if responses["status"] != "completed" || responses["output"] == nil {
 		t.Fatalf("responses response = %#v", responses)
+	}
+}
+
+func TestOfficialClientGatewayStreamsResponsesAndChatContracts(t *testing.T) {
+	usage := gatewayUsage{PromptTokens: 5, CompletionTokens: 7, TotalTokens: 12, Estimated: true}
+	responsesBody := officialClientGatewayJSON("responses", "resp_test", "chatgpt-personal", "streamed text", usage, "ChatGPT Personal", "gpt-current")
+	responsesRecorder := httptest.NewRecorder()
+	if err := writeOfficialClientStream(responsesRecorder, "responses", responsesBody, "resp_test", "chatgpt-personal", "streamed text", usage); err != nil {
+		t.Fatal(err)
+	}
+	if contentType := responsesRecorder.Header().Get("Content-Type"); contentType != "text/event-stream" {
+		t.Fatalf("responses stream content type=%q", contentType)
+	}
+	responsesText := responsesRecorder.Body.String()
+	for _, expected := range []string{"event: response.created", "event: response.output_text.delta", "event: response.completed", `"response_id":"resp_test"`, "streamed text"} {
+		if !strings.Contains(responsesText, expected) {
+			t.Fatalf("responses stream is missing %q: %s", expected, responsesText)
+		}
+	}
+
+	chatBody := officialClientGatewayJSON("chat", "", "grok-personal", "grok text", usage, "Grok Personal", "grok-current")
+	chatRecorder := httptest.NewRecorder()
+	if err := writeOfficialClientStream(chatRecorder, "chat", chatBody, "", "grok-personal", "grok text", usage); err != nil {
+		t.Fatal(err)
+	}
+	chatText := chatRecorder.Body.String()
+	if !strings.Contains(chatText, `"content":"grok text"`) || !strings.HasSuffix(chatText, "data: [DONE]\n\n") {
+		t.Fatalf("chat stream contract is incomplete: %s", chatText)
+	}
+}
+
+func TestLocalConnectorCandidatesAlwaysBypassMockUpstream(t *testing.T) {
+	if !gatewayCandidatesUseLocalConnector([]store.GatewayUpstream{{ProviderConfig: map[string]any{"authMethod": "official_client"}}}) {
+		t.Fatal("official client candidate did not select the local connector path")
+	}
+	if !gatewayCandidatesUseLocalConnector([]store.GatewayUpstream{{ProviderConfig: map[string]any{"authMethod": "opencli_browser"}}}) {
+		t.Fatal("OpenCLI candidate did not select the local connector path")
+	}
+	if gatewayCandidatesUseLocalConnector([]store.GatewayUpstream{{ProviderConfig: map[string]any{"authMethod": "api_key"}}}) {
+		t.Fatal("official API candidate selected the local connector path")
+	}
+}
+
+func TestOfficialClientErrorStateMappingFailsClosed(t *testing.T) {
+	tests := []struct {
+		result clientconnector.TaskResult
+		status int
+		code   string
+	}{
+		{clientconnector.TaskResult{ErrorCode: "401"}, http.StatusConflict, "official_client_reauth_required"},
+		{clientconnector.TaskResult{ErrorCode: "403"}, http.StatusLocked, "official_client_security_locked"},
+		{clientconnector.TaskResult{ErrorCode: "429"}, http.StatusTooManyRequests, "official_client_rate_limited"},
+		{clientconnector.TaskResult{ErrorCode: "timeout"}, http.StatusGatewayTimeout, "official_client_timeout"},
+		{clientconnector.TaskResult{ErrorCode: "tool_event"}, http.StatusLocked, "official_client_policy_locked"},
+		{clientconnector.TaskResult{ErrorCode: "unsupported_capability"}, http.StatusUnprocessableEntity, "unsupported_capability"},
+	}
+	for _, test := range tests {
+		status, code, _ := officialClientResultError(test.result)
+		if status != test.status || code != test.code {
+			t.Fatalf("error %q mapped to (%d,%q), want (%d,%q)", test.result.ErrorCode, status, code, test.status, test.code)
+		}
 	}
 }
 

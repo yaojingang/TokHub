@@ -107,11 +107,32 @@ func providerCommand(provider string) (string, error) {
 }
 
 func PromptFromOpenAIRequest(kind string, payload map[string]any) (string, error) {
-	if value, _ := payload["stream"].(bool); value {
+	return promptFromOpenAIRequest(kind, payload, false)
+}
+
+// PromptFromOfficialClientRequest accepts the OpenAI stream flag because the
+// official-client gateway emits an SSE response. All non-text capabilities
+// remain rejected by the shared parser.
+func PromptFromOfficialClientRequest(kind string, payload map[string]any) (string, error) {
+	return promptFromOpenAIRequest(kind, payload, true)
+}
+
+func promptFromOpenAIRequest(kind string, payload map[string]any, allowStream bool) (string, error) {
+	if value, _ := payload["stream"].(bool); value && !allowStream {
 		return "", fmt.Errorf("%w: streaming is unavailable for personal browser connections", ErrUnsupportedRequest)
 	}
 	if hasNonEmptyCollection(payload["tools"]) || hasNonEmptyCollection(payload["functions"]) {
 		return "", fmt.Errorf("%w: tools are unavailable for personal browser connections", ErrUnsupportedRequest)
+	}
+	if hasNonEmptyCollection(payload["images"]) || hasNonEmptyCollection(payload["audio"]) || hasNonEmptyCollection(payload["web_search_options"]) {
+		return "", fmt.Errorf("%w: image, audio, and web capabilities are unavailable for this connection", ErrUnsupportedRequest)
+	}
+	if modalities, ok := payload["modalities"].([]any); ok {
+		for _, modality := range modalities {
+			if !strings.EqualFold(strings.TrimSpace(stringValue(modality)), "text") {
+				return "", fmt.Errorf("%w: non-text modalities are unavailable for this connection", ErrUnsupportedRequest)
+			}
+		}
 	}
 	var prompt string
 	var err error

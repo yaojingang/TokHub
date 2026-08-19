@@ -27,3 +27,16 @@ func TestAIBrowserTaskMaintenanceRunsOnlyOnAllOrWorkerRoles(t *testing.T) {
 		}
 	}
 }
+
+func TestAIClientStateMaintenanceRunsOnlyOnAllOrWorkerRoles(t *testing.T) {
+	for _, role := range []string{"all", "worker"} {
+		if !shouldMaintainAIClientState(role) {
+			t.Fatalf("role %q did not own official client maintenance", role)
+		}
+	}
+	for _, role := range []string{"api", "gateway", "prober", "migrate", "seed"} {
+		if shouldMaintainAIClientState(role) {
+			t.Fatalf("role %q unexpectedly owned official client maintenance", role)
+		}
+	}
+}
