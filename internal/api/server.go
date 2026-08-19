@@ -110,6 +110,7 @@ func NewServer(cfg Config, repo *store.Repository, authSvc *auth.Service, probeR
 	s.backfillNotificationChannelTargets()
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
+	r.Use(captureOriginalPeerAddr)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 	r.Use(s.logRequests)

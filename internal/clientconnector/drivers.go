@@ -99,12 +99,16 @@ func (d CodexDriver) Generate(ctx context.Context, payload TaskPayload) TaskResu
 	if err != nil {
 		return driverFailure(err)
 	}
-	if responseFailed(decodeAny(resultRaw)) {
+	resultValue := decodeAny(resultRaw)
+	if forbiddenClientValue(resultValue) {
+		return TaskResult{ErrorCode: "tool_event", ErrorMessage: "Codex attempted a blocked capability", ToolEvent: true}
+	}
+	if responseFailed(resultValue) {
 		return TaskResult{ErrorCode: "client_error", ErrorMessage: "Codex turn failed"}
 	}
-	content := extractText(decodeAny(resultRaw))
+	content := extractText(resultValue)
 	actualModel := firstString(decodeObject(resultRaw), "model", "turn.model", "thread.model")
-	completed := responseCompleted(decodeAny(resultRaw))
+	completed := responseCompleted(resultValue)
 	for !completed {
 		select {
 		case <-ctx.Done():
@@ -255,7 +259,11 @@ func (d GrokDriver) Generate(ctx context.Context, payload TaskPayload) TaskResul
 	if err != nil {
 		return driverFailure(err)
 	}
-	content := extractText(decodeAny(raw))
+	resultValue := decodeAny(raw)
+	if forbiddenClientValue(resultValue) {
+		return TaskResult{ErrorCode: "tool_event", ErrorMessage: "Grok attempted a blocked capability", ToolEvent: true}
+	}
+	content := extractText(resultValue)
 	actualModel := firstString(decodeObject(raw), "model", "modelId", "session.model", "session.modelId")
 	// ACP session/prompt completes after the prompt turn. Drain already-buffered updates.
 	for {
@@ -405,15 +413,74 @@ func collectModelIDs(value any) []string {
 
 func forbiddenClientEvent(event map[string]any) bool {
 	for _, path := range []string{"method", "type", "params.type", "params.item.type", "params.update.sessionUpdate", "params.update.type"} {
-		descriptor := firstString(event, path)
-		normalized := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(descriptor, "-", "_"), "/", "_"))
-		for _, forbidden := range []string{"tool_call", "tool_use", "command_execution", "commandexec", "file_change", "filechange", "mcp", "web_search", "websearch", "subagent", "terminal"} {
-			if strings.Contains(normalized, forbidden) {
-				return true
+		if isForbiddenCapability(normalizeCapabilityDescriptor(firstString(event, path))) {
+			return true
+		}
+	}
+	return forbiddenClientValue(event)
+}
+
+func forbiddenClientValue(value any) bool {
+	var visit func(any) bool
+	visit = func(current any) bool {
+		switch typed := current.(type) {
+		case map[string]any:
+			for key, child := range typed {
+				normalizedKey := normalizeCapabilityDescriptor(key)
+				if isForbiddenCapability(normalizedKey) && capabilityValueEnabled(child) {
+					return true
+				}
+				switch normalizedKey {
+				case "method", "type", "kind", "sessionupdate":
+					if descriptor, ok := child.(string); ok && isForbiddenCapability(normalizeCapabilityDescriptor(descriptor)) {
+						return true
+					}
+				}
+				if visit(child) {
+					return true
+				}
 			}
+		case []any:
+			for _, child := range typed {
+				if visit(child) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return visit(value)
+}
+
+func normalizeCapabilityDescriptor(value string) string {
+	return strings.ToLower(strings.NewReplacer("-", "_", "/", "_", ".", "_").Replace(strings.TrimSpace(value)))
+}
+
+func isForbiddenCapability(value string) bool {
+	for _, forbidden := range []string{"tool_call", "tool_use", "command_execution", "commandexec", "file_change", "filechange", "mcp", "web_search", "websearch", "subagent", "terminal"} {
+		if strings.Contains(value, forbidden) {
+			return true
 		}
 	}
 	return false
+}
+
+func capabilityValueEnabled(value any) bool {
+	switch typed := value.(type) {
+	case nil:
+		return false
+	case bool:
+		return typed
+	case string:
+		normalized := strings.ToLower(strings.TrimSpace(typed))
+		return normalized != "" && normalized != "false" && normalized != "disabled" && normalized != "none"
+	case []any:
+		return len(typed) > 0
+	case map[string]any:
+		return len(typed) > 0
+	default:
+		return true
+	}
 }
 
 func eventText(event map[string]any) string {

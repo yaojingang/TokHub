@@ -27,6 +27,8 @@ const (
 	officialClientTermsVersion      = "official-client-container-v1"
 )
 
+type originalPeerAddrContextKey struct{}
+
 type createClientConnectorRequest struct {
 	DisplayName string `json:"displayName"`
 }
@@ -546,6 +548,10 @@ func (s *Server) setAIClientConnectionPause(w http.ResponseWriter, r *http.Reque
 		writeError(w, r, http.StatusNotFound, "client_connection_not_found", "Official client connection was not found")
 		return
 	}
+	if errors.Is(err, store.ErrAIClientRiskTransitionDenied) {
+		writeError(w, r, http.StatusConflict, "client_risk_transition_denied", "Complete the required login or security review before changing this connection state")
+		return
+	}
 	if err != nil {
 		writeError(w, r, http.StatusInternalServerError, "client_risk_update_failed", "Could not update official client risk state")
 		return
@@ -733,15 +739,33 @@ func (s *Server) requireOfficialClientFeature(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) requireSecureClientTransport(w http.ResponseWriter, r *http.Request) bool {
+	peerAddr := originalPeerAddr(r)
 	secure := r.TLS != nil
 	if !secure && strings.EqualFold(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")), "https") {
-		secure = trustedProxyRemote(r.RemoteAddr, s.cfg.AIOfficialClientTrustedProxyCIDRs)
+		secure = trustedProxyRemote(peerAddr, s.cfg.AIOfficialClientTrustedProxyCIDRs)
 	}
-	if secure || (s.cfg.Env != "production" && loopbackRequestHost(r.Host) && loopbackRemote(r.RemoteAddr)) {
+	if secure || (s.cfg.Env != "production" && loopbackRequestHost(r.Host) && loopbackRemote(peerAddr)) {
 		return true
 	}
 	writeError(w, r, http.StatusUpgradeRequired, "https_required", "Official client connectors require HTTPS; development HTTP is limited to loopback")
 	return false
+}
+
+func captureOriginalPeerAddr(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), originalPeerAddrContextKey{}, r.RemoteAddr)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func originalPeerAddr(r *http.Request) string {
+	if r != nil {
+		if value, ok := r.Context().Value(originalPeerAddrContextKey{}).(string); ok && strings.TrimSpace(value) != "" {
+			return value
+		}
+		return r.RemoteAddr
+	}
+	return ""
 }
 
 func trustedProxyRemote(remoteAddr string, trustedCIDRs []string) bool {

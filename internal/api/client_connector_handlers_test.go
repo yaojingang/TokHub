@@ -1,10 +1,13 @@
 package api
 
 import (
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/go-chi/chi/v5/middleware"
 
 	"tokhub/internal/clientconnector"
 )
@@ -48,6 +51,35 @@ func TestOfficialClientTransportTrustsOnlyConfiguredProxy(t *testing.T) {
 	request.RemoteAddr = "10.12.0.4:41234"
 	if !server.requireSecureClientTransport(httptest.NewRecorder(), request) {
 		t.Fatal("configured TLS proxy must be accepted")
+	}
+}
+
+func TestOfficialClientTransportUsesOriginalPeerBeforeRealIP(t *testing.T) {
+	server := &Server{cfg: Config{Env: "production", AIOfficialClientTrustedProxyCIDRs: []string{"10.0.0.0/8"}}}
+	handler := captureOriginalPeerAddr(middleware.RealIP(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if server.requireSecureClientTransport(w, r) {
+			w.WriteHeader(http.StatusNoContent)
+		}
+	})))
+
+	request := httptest.NewRequest("POST", "http://tokhub.example/api/ai-client-connectors/heartbeat", nil)
+	request.RemoteAddr = "203.0.113.8:41234"
+	request.Header.Set("X-Forwarded-For", "10.12.0.4")
+	request.Header.Set("X-Forwarded-Proto", "https")
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusUpgradeRequired {
+		t.Fatalf("spoofed trusted proxy address bypassed HTTPS enforcement: %d", recorder.Code)
+	}
+
+	request = httptest.NewRequest("POST", "http://tokhub.example/api/ai-client-connectors/heartbeat", nil)
+	request.RemoteAddr = "10.12.0.4:41234"
+	request.Header.Set("X-Forwarded-For", "203.0.113.8")
+	request.Header.Set("X-Forwarded-Proto", "https")
+	recorder = httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("configured TLS proxy was rejected after RealIP processing: %d", recorder.Code)
 	}
 }
 

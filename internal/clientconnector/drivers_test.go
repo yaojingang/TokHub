@@ -115,6 +115,30 @@ func TestCodexDriverRejectsImmediateFailedTurn(t *testing.T) {
 	}
 }
 
+func TestCodexDriverBlocksToolCallReturnedWithTurn(t *testing.T) {
+	rpc := newFakeRPC(map[string][]string{
+		"initialize":   {`{}`},
+		"account/read": {`{"account":{"type":"chatgpt","email":"owner@example.com","planType":"plus"}}`},
+		"thread/start": {`{"thread":{"id":"thr_1"}}`},
+		"turn/start":   {`{"turn":{"id":"turn_1","status":"completed","items":[{"type":"tool_call","name":"shell"}]}}`},
+	})
+	result := (CodexDriver{Factory: &fakeRPCFactory{rpc: rpc}}).Generate(context.Background(), TaskPayload{Prompt: "hello"})
+	if result.OK || !result.ToolEvent || result.ErrorCode != "tool_event" {
+		t.Fatalf("inline Codex tool call was not blocked: %+v", result)
+	}
+}
+
+func TestForbiddenClientValueAllowsExplicitlyDisabledCapabilities(t *testing.T) {
+	value := map[string]any{
+		"web_search": false,
+		"tool_calls": []any{},
+		"config":     map[string]any{"terminal": "disabled"},
+	}
+	if forbiddenClientValue(value) {
+		t.Fatal("disabled capabilities were treated as active")
+	}
+}
+
 func TestCodexDriverStreamsTextAndReturnsResumableThread(t *testing.T) {
 	rpc := newFakeRPC(map[string][]string{
 		"initialize":   {`{}`},
@@ -171,5 +195,19 @@ func TestGrokDriverBlocksToolEvent(t *testing.T) {
 	result := (GrokDriver{Factory: &fakeRPCFactory{rpc: rpc}}).Generate(context.Background(), TaskPayload{Prompt: "hello", Stream: true})
 	if result.OK || !result.ToolEvent || result.ErrorCode != "tool_event" {
 		t.Fatalf("Grok tool event was not blocked: %+v", result)
+	}
+}
+
+func TestGrokDriverBlocksToolCallReturnedWithPrompt(t *testing.T) {
+	t.Setenv("TOKHUB_CLIENT_CONNECTOR_HOME", t.TempDir())
+	rpc := newFakeRPC(map[string][]string{
+		"initialize":     {`{"protocolVersion":1,"authMethods":[{"id":"cached_token"}]}`},
+		"authenticate":   {`{}`},
+		"session/new":    {`{"sessionId":"session_tool"}`},
+		"session/prompt": {`{"updates":[{"sessionUpdate":"tool_call","toolCall":{"name":"web_search"}}]}`},
+	})
+	result := (GrokDriver{Factory: &fakeRPCFactory{rpc: rpc}}).Generate(context.Background(), TaskPayload{Prompt: "hello"})
+	if result.OK || !result.ToolEvent || result.ErrorCode != "tool_event" {
+		t.Fatalf("inline Grok tool call was not blocked: %+v", result)
 	}
 }

@@ -1898,9 +1898,11 @@ function applyConnectorDefaults(
   }
   if (authMethod === "official_client") {
     const capability = provider === "openai" ? "chatgpt" : "grok";
-    draft.connectorId = clientConnectors.find((item) => item.online && item.capabilities.includes(capability))?.id
-      || clientConnectors.find((item) => item.capabilities.includes(capability))?.id
-      || "";
+    draft.connectorId = clientConnectors.find((item) => (
+      item.online
+      && item.capabilities.includes(capability)
+      && item.identity?.[provider]?.loggedIn
+    ))?.id || "";
     draft.models = provider === "openai" ? "chatgpt-personal" : "grok-personal";
   }
 }

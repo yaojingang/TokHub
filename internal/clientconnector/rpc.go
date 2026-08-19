@@ -130,6 +130,10 @@ func (r *stdioRPC) readLoop(stdout io.Reader) {
 					"jsonrpc": "2.0", "id": id,
 					"error": map[string]any{"code": -32601, "message": "TokHub connector denies server-initiated capabilities"},
 				})
+				// Surface every server-initiated request as a blocked capability.
+				// The driver converts this event into policy_locked after the RPC
+				// transport has already denied the request.
+				r.enqueuePolicyViolation()
 				continue
 			}
 			r.mu.Lock()
@@ -161,6 +165,28 @@ func (r *stdioRPC) readLoop(stdout io.Reader) {
 		_ = r.command.Wait()
 		close(r.done)
 	})
+}
+
+func (r *stdioRPC) enqueuePolicyViolation() {
+	violation := map[string]any{
+		"method": "tokhub/blocked_server_capability",
+		"params": map[string]any{"type": "tool_call"},
+	}
+	select {
+	case r.events <- violation:
+		return
+	default:
+	}
+	// A capability request takes precedence over buffered output. Clearing the
+	// backlog guarantees that the driver observes the policy violation next.
+	for {
+		select {
+		case <-r.events:
+		default:
+			r.events <- violation
+			return
+		}
+	}
 }
 
 func (r *stdioRPC) removePending(id int64) {

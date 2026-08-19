@@ -210,6 +210,27 @@ func TestAIClientConnectorTaskSessionAndRiskLifecycle(t *testing.T) {
 	if err != nil || !first.Allowed || first.Risk.RequestsHour != 1 || first.Risk.RequestsDay != 1 {
 		t.Fatalf("first risk reservation failed: decision=%#v err=%v", first, err)
 	}
+	paused, err := repo.SetAIClientConnectionPaused(ctx, userID, orgID, connectionID, true)
+	if err != nil || paused.State != "paused" {
+		t.Fatalf("manual pause failed: risk=%#v err=%v", paused, err)
+	}
+	var connectionStatus string
+	if err := db.QueryRow(ctx, `select status from ai_connections where id=$1`, connectionID).Scan(&connectionStatus); err != nil {
+		t.Fatal(err)
+	}
+	if connectionStatus != "attention" {
+		t.Fatalf("manual pause left connection status %q", connectionStatus)
+	}
+	resumed, err := repo.SetAIClientConnectionPaused(ctx, userID, orgID, connectionID, false)
+	if err != nil || resumed.State != "normal" {
+		t.Fatalf("manual resume failed: risk=%#v err=%v", resumed, err)
+	}
+	if err := db.QueryRow(ctx, `select status from ai_connections where id=$1`, connectionID).Scan(&connectionStatus); err != nil {
+		t.Fatal(err)
+	}
+	if connectionStatus != "active" {
+		t.Fatalf("manual resume left connection status %q", connectionStatus)
+	}
 	tooFast, err := repo.ReserveAIClientRequest(ctx, userID, orgID, connectionID, base.Add(5*time.Second))
 	if err != nil || tooFast.Allowed || tooFast.Reason != "minimum_interval" || tooFast.RetryAt == nil {
 		t.Fatalf("minimum interval was not enforced: decision=%#v err=%v", tooFast, err)
@@ -222,13 +243,16 @@ func TestAIClientConnectorTaskSessionAndRiskLifecycle(t *testing.T) {
 	if err != nil || !matched || confirmed.State != "paused" {
 		t.Fatalf("renewed identity did not require manual resume: risk=%#v matched=%v err=%v", confirmed, matched, err)
 	}
-	resumed, err := repo.SetAIClientConnectionPaused(ctx, userID, orgID, connectionID, false)
+	resumed, err = repo.SetAIClientConnectionPaused(ctx, userID, orgID, connectionID, false)
 	if err != nil || resumed.State != "normal" {
 		t.Fatalf("manual resume failed: risk=%#v err=%v", resumed, err)
 	}
 	locked, err := repo.RecordAIClientResult(ctx, userID, orgID, connectionID, false, "403", 0, base.Add(8*time.Second))
 	if err != nil || locked.State != "security_locked" || locked.CooldownUntil != nil {
 		t.Fatalf("403 did not create an indefinite security lock: risk=%#v err=%v", locked, err)
+	}
+	if _, err := repo.SetAIClientConnectionPaused(ctx, userID, orgID, connectionID, false); !errors.Is(err, ErrAIClientRiskTransitionDenied) {
+		t.Fatalf("manual resume changed a security lock: %v", err)
 	}
 	stillLocked, err := repo.RecordAIClientResult(ctx, userID, orgID, connectionID, true, "", 0, base.Add(9*time.Second))
 	if err != nil || stillLocked.State != "security_locked" {
@@ -305,18 +329,34 @@ func TestAIClientConnectorTaskSessionAndRiskLifecycle(t *testing.T) {
 	if err != nil || len(metrics.Tasks) == 0 || len(metrics.Risks) == 0 {
 		t.Fatalf("bounded official client metrics are unavailable: metrics=%#v err=%v", metrics, err)
 	}
+	activeResponse, err := repo.CreateAIClientResponse(ctx, AIClientResponseInput{
+		OwnerUserID: userID, OrgID: orgID, GatewayKeyID: gatewayKeyID, ConnectionID: connectionID,
+		ConnectorID: created.Connector.ID, Provider: "openai", Model: "chatgpt-personal",
+		SessionCiphertext: "active-session", SessionNonce: "active-nonce",
+		IdleExpiresAt: base.Add(24 * time.Hour), AbsoluteExpiresAt: base.Add(7 * 24 * time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := repo.RevokeAIClientConnector(ctx, userID, orgID, created.Connector.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := repo.AuthenticateAIClientConnector(ctx, paired.DeviceToken); !errors.Is(err, ErrAIClientConnectorUnauthorized) {
 		t.Fatalf("revoked device token remained active: %v", err)
 	}
-	var connectionStatus string
 	if err := db.QueryRow(ctx, `select status from ai_connections where id=$1`, connectionID).Scan(&connectionStatus); err != nil {
 		t.Fatal(err)
 	}
 	if connectionStatus != "disabled" {
 		t.Fatalf("revoking the connector left its connection %q", connectionStatus)
+	}
+	if err := db.QueryRow(ctx, `
+		select status,session_ciphertext,session_nonce from ai_client_responses where id=$1
+	`, activeResponse.ID).Scan(&responseStatus, &sessionCiphertext, &sessionNonce); err != nil {
+		t.Fatal(err)
+	}
+	if responseStatus != "deleted" || sessionCiphertext != "" || sessionNonce != "" {
+		t.Fatalf("revoking the connector retained a session reference: status=%q ciphertext=%q nonce=%q", responseStatus, sessionCiphertext, sessionNonce)
 	}
 }
 

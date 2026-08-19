@@ -25,6 +25,7 @@ var (
 	ErrAIClientConnectorBusy           = errors.New("official client connector already has an active task")
 	ErrAIClientTaskLeaseInvalid        = errors.New("official client task lease is invalid or expired")
 	ErrAIClientSessionExpired          = errors.New("official client session expired")
+	ErrAIClientRiskTransitionDenied    = errors.New("official client risk state cannot be changed by this action")
 )
 
 const (
@@ -356,6 +357,12 @@ func (r *Repository) RevokeAIClientConnector(ctx context.Context, ownerUserID, o
 		where owner_user_id=$1 and org_id=$2 and auth_method='official_client'
 		  and provider_config->>'connectorId'=$3 and deleted_at is null
 	`, ownerUserID, orgID, connectorID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `
+		update ai_client_responses set status='deleted',session_ciphertext='',session_nonce='',updated_at=now()
+		where connector_id=$1 and owner_user_id=$2 and org_id=$3 and status <> 'deleted'
+	`, connectorID, ownerUserID, orgID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -877,6 +884,12 @@ func (r *Repository) SetAIClientConnectionPaused(ctx context.Context, ownerUserI
 	if err != nil {
 		return AIClientRiskState{}, err
 	}
+	if paused && state.State != "normal" && state.State != "paused" {
+		return AIClientRiskState{}, ErrAIClientRiskTransitionDenied
+	}
+	if !paused && state.State != "normal" && state.State != "paused" && state.State != "manual_recovery" {
+		return AIClientRiskState{}, ErrAIClientRiskTransitionDenied
+	}
 	if paused && state.State == "normal" {
 		state.State = "paused"
 	} else if !paused && (state.State == "paused" || state.State == "manual_recovery") {
@@ -886,6 +899,24 @@ func (r *Repository) SetAIClientConnectionPaused(ctx context.Context, ownerUserI
 	state.UpdatedAt = time.Now()
 	if err := updateAIClientRisk(ctx, tx, state); err != nil {
 		return AIClientRiskState{}, err
+	}
+	connectionStatus, authStatus, riskLevel := "attention", "active", "paused"
+	lastErrorCode, lastErrorMessage := "official_client_paused", "Official client connection is paused"
+	if state.State == "normal" {
+		connectionStatus, authStatus, riskLevel = "active", "active", "elevated"
+		lastErrorCode, lastErrorMessage = "", ""
+	}
+	tag, err := tx.Exec(ctx, `
+		update ai_connections set status=$4,auth_status=$5,risk_level=$6,
+			last_error_code=$7,last_error_message=$8,updated_at=now()
+		where id=$1 and owner_user_id=$2 and org_id=$3 and auth_method='official_client'
+		  and status <> 'deleted' and deleted_at is null
+	`, connectionID, ownerUserID, orgID, connectionStatus, authStatus, riskLevel, lastErrorCode, lastErrorMessage)
+	if err != nil {
+		return AIClientRiskState{}, err
+	}
+	if tag.RowsAffected() != 1 {
+		return AIClientRiskState{}, pgx.ErrNoRows
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return AIClientRiskState{}, err

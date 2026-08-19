@@ -53,7 +53,28 @@ run_production_sample_preflight() {
     deploy/scripts/preflight.sh --env-file .env.production.example
 }
 
+check_official_client_config_samples() {
+  echo
+  echo "==> official client config samples"
+  local file name
+  for file in .env.example .env.production.example; do
+    for name in \
+      TOKHUB_AI_OFFICIAL_CLIENT_ENABLED \
+      TOKHUB_AI_OFFICIAL_CLIENT_TASK_TIMEOUT \
+      TOKHUB_AI_OFFICIAL_CLIENT_TRUSTED_PROXY_CIDRS \
+      TOKHUB_AI_LAB_MODE \
+      TOKHUB_AI_OPENAI_KILL_SWITCH \
+      TOKHUB_AI_GROK_KILL_SWITCH; do
+      if ! rg -q "^${name}=" "$file"; then
+        echo "$file is missing $name" >&2
+        exit 1
+      fi
+    done
+  done
+}
+
 run npm run version:check
+check_official_client_config_samples
 run go test ./...
 run go vet ./...
 run sqlc generate
