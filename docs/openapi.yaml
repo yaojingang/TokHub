@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: TokHub External API
-  version: 2.0.0-rc.1
+  version: 2.0.0-rc.2
   summary: Public monitoring, status Open API, and dedicated gateway contracts.
   description: |
     This contract covers stable external integration points only.
@@ -15,6 +15,8 @@ tags:
   - name: Health
   - name: Public Monitoring
   - name: Status Open API
+  - name: Personal AI
+  - name: Official Client Connector
   - name: Gateway
 security: []
 paths:
@@ -43,6 +45,253 @@ paths:
               schema:
                 $ref: "#/components/schemas/ReadyResponse"
         "503":
+          $ref: "#/components/responses/Error"
+  /api/me/ai-client-connectors:
+    get:
+      tags: [Personal AI]
+      summary: List the current user's official client connectors
+      operationId: listAIClientConnectors
+      security:
+        - UserSession: []
+      responses:
+        "200":
+          description: Official client connectors owned by the personal workspace.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AIClientConnector"
+        "401":
+          $ref: "#/components/responses/Error"
+    post:
+      tags: [Personal AI]
+      summary: Create a ten-minute connector pairing code
+      operationId: createAIClientConnector
+      security:
+        - UserSession: []
+          CSRFHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName:
+                  type: string
+                  maxLength: 80
+      responses:
+        "201":
+          description: Pending connector and one-time pairing material.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIClientConnectorPairing"
+        "400":
+          $ref: "#/components/responses/Error"
+  /api/me/ai-client-connectors/{connectorID}:
+    delete:
+      tags: [Personal AI]
+      summary: Revoke an official client connector
+      operationId: revokeAIClientConnector
+      security:
+        - UserSession: []
+          CSRFHeader: []
+      parameters:
+        - $ref: "#/components/parameters/ConnectorID"
+      responses:
+        "200":
+          description: Connector revoked and dependent connections disabled.
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/me/ai-client-connections:
+    post:
+      tags: [Personal AI]
+      summary: Bind an authenticated official client account
+      operationId: createAIClientConnection
+      security:
+        - UserSession: []
+          CSRFHeader: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [connectorId, provider]
+              properties:
+                connectorId:
+                  type: string
+                provider:
+                  type: string
+                  enum: [openai, grok]
+                displayName:
+                  type: string
+      responses:
+        "201":
+          description: Official client connection created after identity validation.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/me/ai-client-connections/{connectionID}/risk:
+    get:
+      tags: [Personal AI]
+      summary: Read account safety state and quotas
+      operationId: getAIClientConnectionRisk
+      security:
+        - UserSession: []
+      parameters:
+        - $ref: "#/components/parameters/ConnectionID"
+      responses:
+        "200":
+          description: Current official client account safety state.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIClientRisk"
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/me/ai-client-connections/{connectionID}/pause:
+    post:
+      tags: [Personal AI]
+      summary: Pause an official client connection
+      operationId: pauseAIClientConnection
+      security:
+        - UserSession: []
+          CSRFHeader: []
+      parameters:
+        - $ref: "#/components/parameters/ConnectionID"
+      responses:
+        "200":
+          description: Connection paused.
+  /api/me/ai-client-connections/{connectionID}/resume:
+    post:
+      tags: [Personal AI]
+      summary: Resume an eligible paused or manually recovered connection
+      operationId: resumeAIClientConnection
+      security:
+        - UserSession: []
+          CSRFHeader: []
+      parameters:
+        - $ref: "#/components/parameters/ConnectionID"
+      responses:
+        "200":
+          description: Connection resumed when its risk state permits recovery.
+        "409":
+          $ref: "#/components/responses/Error"
+  /api/me/ai-client-sessions/{responseID}:
+    delete:
+      tags: [Personal AI]
+      summary: Delete a personal official client response session
+      operationId: deleteAIClientSession
+      security:
+        - UserSession: []
+          CSRFHeader: []
+      parameters:
+        - $ref: "#/components/parameters/ResponseID"
+      responses:
+        "204":
+          description: Session reference erased and connector cleanup queued.
+        "404":
+          $ref: "#/components/responses/Error"
+  /api/ai-client-connectors/pair:
+    post:
+      tags: [Official Client Connector]
+      summary: Pair a connector with a one-time code and Ed25519 public key
+      operationId: pairAIClientConnector
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pairingCode, publicKey]
+              properties:
+                pairingCode:
+                  type: string
+                publicKey:
+                  type: string
+                  description: Base64url raw Ed25519 public key.
+      responses:
+        "200":
+          description: Device token returned once.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Error"
+  /api/ai-client-connectors/heartbeat:
+    post:
+      tags: [Official Client Connector]
+      summary: Report signed connector health, versions, capabilities, and masked identity state
+      operationId: heartbeatAIClientConnector
+      security:
+        - ConnectorBearer: []
+          ConnectorTimestamp: []
+          ConnectorNonce: []
+          ConnectorSignature: []
+      responses:
+        "200":
+          description: Heartbeat accepted.
+        "401":
+          $ref: "#/components/responses/Error"
+  /api/ai-client-connectors/tasks/claim:
+    post:
+      tags: [Official Client Connector]
+      summary: Claim at most one encrypted official client task
+      operationId: claimAIClientTask
+      security:
+        - ConnectorBearer: []
+          ConnectorTimestamp: []
+          ConnectorNonce: []
+          ConnectorSignature: []
+      responses:
+        "200":
+          description: Claimed task with decrypted short-lived payload.
+        "204":
+          description: No task is available.
+  /api/ai-client-connectors/tasks/{taskID}/status:
+    post:
+      tags: [Official Client Connector]
+      summary: Check whether a claimed task lease remains active
+      operationId: getAIClientTaskStatus
+      security:
+        - ConnectorBearer: []
+          ConnectorTimestamp: []
+          ConnectorNonce: []
+          ConnectorSignature: []
+      parameters:
+        - $ref: "#/components/parameters/TaskID"
+      responses:
+        "200":
+          description: Active is false after caller cancellation or lease expiry.
+  /api/ai-client-connectors/tasks/{taskID}/complete:
+    post:
+      tags: [Official Client Connector]
+      summary: Complete a claimed task with a bounded encrypted result
+      operationId: completeAIClientTask
+      security:
+        - ConnectorBearer: []
+          ConnectorTimestamp: []
+          ConnectorNonce: []
+          ConnectorSignature: []
+      parameters:
+        - $ref: "#/components/parameters/TaskID"
+      responses:
+        "200":
+          description: Completion accepted.
+        "409":
           $ref: "#/components/responses/Error"
   /api/public/overview:
     get:
@@ -408,6 +657,12 @@ paths:
                 type: string
         "401":
           $ref: "#/components/responses/Error"
+        "422":
+          description: The request contains a capability unsupported by official client delegation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "429":
           $ref: "#/components/responses/Error"
   /gateway/v1/responses:
@@ -436,10 +691,52 @@ paths:
                 type: string
         "401":
           $ref: "#/components/responses/Error"
+        "404":
+          description: The previous response is outside the caller's ownership scope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: The previous official client session expired.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: The request contains a capability unsupported by official client delegation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "429":
           $ref: "#/components/responses/Error"
 components:
   securitySchemes:
+    UserSession:
+      type: apiKey
+      in: cookie
+      name: tokhub_session
+    CSRFHeader:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+    ConnectorBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: official_client_device_token
+    ConnectorTimestamp:
+      type: apiKey
+      in: header
+      name: X-TokHub-Timestamp
+    ConnectorNonce:
+      type: apiKey
+      in: header
+      name: X-TokHub-Nonce
+    ConnectorSignature:
+      type: apiKey
+      in: header
+      name: X-TokHub-Signature
     SiteKeyHeader:
       type: apiKey
       in: header
@@ -453,6 +750,31 @@ components:
       scheme: bearer
       bearerFormat: gateway_key
   parameters:
+    ConnectorID:
+      name: connectorID
+      in: path
+      required: true
+      schema:
+        type: string
+    ConnectionID:
+      name: connectionID
+      in: path
+      required: true
+      schema:
+        type: string
+    ResponseID:
+      name: responseID
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^resp_'
+    TaskID:
+      name: taskID
+      in: path
+      required: true
+      schema:
+        type: string
     ChannelID:
       name: channelID
       in: path
@@ -513,6 +835,96 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
   schemas:
+    AIClientConnector:
+      type: object
+      required: [id, orgId, displayName, status, online, runtimeKind, capabilities, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        orgId:
+          type: string
+        displayName:
+          type: string
+        status:
+          type: string
+          enum: [pending, active, revoked]
+        online:
+          type: boolean
+        runtimeKind:
+          type: string
+          const: container
+        connectorVersion:
+          type: string
+        codexVersion:
+          type: string
+        grokVersion:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+            enum: [chatgpt, grok]
+        identity:
+          type: object
+          additionalProperties: true
+        lastSeenAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    AIClientConnectorPairing:
+      type: object
+      required: [connector, pairingCode, pairCommand, expiresInSeconds]
+      properties:
+        connector:
+          $ref: "#/components/schemas/AIClientConnector"
+        pairingCode:
+          type: string
+          description: Returned once and valid for ten minutes.
+        pairCommand:
+          type: string
+        expiresInSeconds:
+          type: integer
+          const: 600
+    AIClientRisk:
+      type: object
+      required: [connectionId, provider, identityAssurance, state, requestsHour, requestsDay, hourlyLimit, dailyLimit]
+      properties:
+        connectionId:
+          type: string
+        provider:
+          type: string
+          enum: [openai, grok]
+        identityAssurance:
+          type: string
+          enum: [account, device]
+        state:
+          type: string
+          enum: [normal, cooldown, reauth_required, security_locked, policy_locked, manual_recovery, paused]
+        cooldownUntil:
+          type: string
+          format: date-time
+        requestsHour:
+          type: integer
+        requestsDay:
+          type: integer
+        minimumIntervalSeconds:
+          type: integer
+          const: 15
+        hourlyLimit:
+          type: integer
+          const: 20
+        dailyLimit:
+          type: integer
+          const: 80
+        rateLimitEvents:
+          type: integer
+        identityChanges:
+          type: integer
     HealthResponse:
       type: object
       required: [status]
@@ -911,3 +1323,7 @@ components:
                 additionalProperties: true
         stream:
           type: boolean
+        previous_response_id:
+          type: string
+          pattern: '^resp_'
+          description: Restores an official client session owned by the same user, Gateway Key, connection, and model.

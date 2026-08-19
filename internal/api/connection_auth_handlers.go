@@ -111,6 +111,10 @@ func (s *Server) startAIConnectionAuthorization(w http.ResponseWriter, r *http.R
 	}
 	provider := strings.ToLower(strings.TrimSpace(request.Provider))
 	method := strings.ToLower(strings.TrimSpace(request.Method))
+	if s.providerPolicyAllowsWithLab(provider, method, false) != nil {
+		writeError(w, r, http.StatusForbidden, "provider_policy_denied", "This authorization method is unavailable under the current production policy")
+		return
+	}
 	adapter, ok := s.authRegistry.Adapter(provider, method)
 	if !ok {
 		writeError(w, r, http.StatusNotFound, "authorization_method_unavailable", "This authorization method is disabled")

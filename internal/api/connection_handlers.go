@@ -60,15 +60,34 @@ var (
 const aiConnectionRequestBodyLimit = 64 << 10
 
 func (s *Server) meAIConnectionProviders(w http.ResponseWriter, r *http.Request) {
-	items := connections.ProviderRegistry()
+	items := connections.ProviderRegistryWithPolicies()
 	for index := range items {
+		apiAllowed := s.providerPolicyAllows(items[index].Code, "api_key") == nil
 		items[index].AuthMethods = []connections.AuthMethodManifest{{
 			Code: "api_key", Label: "官方 API Key", Release: "stable",
-			SharingScope: "personal", CompletionMode: "api_key", Enabled: true,
-			Description: "粘贴官方开发者平台创建的 API Key。",
-			DocsURL:     items[index].DocsURL,
+			SharingScope: "personal", CompletionMode: "api_key", Enabled: apiAllowed,
+			Description:       "粘贴官方开发者平台创建的 API Key。",
+			UnavailableReason: map[bool]string{true: "", false: "管理员已暂停该服务商。"}[apiAllowed],
+			DocsURL:           items[index].DocsURL,
 		}}
-		items[index].AuthMethods = append(items[index].AuthMethods, s.authRegistry.Methods(items[index].Code)...)
+		for _, method := range s.authRegistry.Methods(items[index].Code) {
+			if err := s.providerPolicyAllows(items[index].Code, method.Code); err != nil {
+				method.Enabled = false
+				method.UnavailableReason = "当前安全策略仅允许官方 API、官方 OAuth 或官方客户端连接。"
+			}
+			items[index].AuthMethods = append(items[index].AuthMethods, method)
+		}
+		if items[index].Code == "openai" || items[index].Code == "grok" {
+			clientAllowed := s.cfg.AIOfficialClientEnabled && s.providerPolicyAllows(items[index].Code, "official_client") == nil
+			items[index].AuthMethods = append(items[index].AuthMethods, connections.AuthMethodManifest{
+				Code: "official_client", Label: map[string]string{"openai": "Codex 官方客户端", "grok": "Grok Build 官方客户端"}[items[index].Code], Release: "preview",
+				SharingScope: "personal", CompletionMode: "local_official_client", Enabled: clientAllowed,
+				Description:       "通过专用本地容器委托官方客户端，登录凭据保留在用户设备。",
+				RiskNotice:        "仅限本人使用；连接器执行单账号、单并发和严格用量保护。",
+				DocsURL:           map[string]string{"openai": "https://github.com/openai/codex", "grok": "https://docs.x.ai/build/overview"}[items[index].Code],
+				UnavailableReason: map[bool]string{true: "", false: "管理员尚未部署官方客户端连接器服务。"}[clientAllowed],
+			})
+		}
 		if s.openCLIBrowserProviderEnabled(items[index].Code) {
 			items[index].AuthMethods = append(items[index].AuthMethods, connections.AuthMethodManifest{
 				Code: "opencli_browser", Label: "连接本机已登录网页", Release: "experimental",
@@ -81,18 +100,35 @@ func (s *Server) meAIConnectionProviders(w http.ResponseWriter, r *http.Request)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"items":         items,
-		"policyVersion": "ai-authorization-v2",
+		"policyVersion": connections.ProviderPolicyVersion,
 		"credentialPolicy": map[string]any{
 			"accepted": []string{
 				"official developer API keys",
 				"official OAuth grants",
-				"explicitly enabled Codex OAuth grants",
-				"explicitly enabled DeepSeek userToken grants",
-				"explicitly enabled local browser connector references",
+				"official local client references",
+				"lab-only local browser connector references",
 			},
 			"rejected": []string{"provider passwords", "one-time codes", "browser cookies", "unrelated local storage", "cf_clearance"},
 		},
 	})
+}
+
+func (s *Server) providerPolicyAllows(provider string, authMethod string) error {
+	return s.providerPolicyAllowsWithLab(provider, authMethod, s.cfg.AILabModeEnabled)
+}
+
+func (s *Server) providerPolicyAllowsWithLab(provider string, authMethod string, lab bool) error {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	killed := false
+	if s.cfg.AIProviderKillSwitches != nil {
+		killed = s.cfg.AIProviderKillSwitches[provider]
+	}
+	if s.cfg.AIProviderTermsDigests != nil {
+		if err := connections.ValidateProviderTermsDigest(provider, authMethod, s.cfg.AIProviderTermsDigests[provider]); err != nil {
+			return err
+		}
+	}
+	return connections.ProviderModeAllowed(provider, authMethod, lab, time.Now(), killed)
 }
 
 func (s *Server) meAIConnections(w http.ResponseWriter, r *http.Request) {
@@ -156,6 +192,10 @@ func (s *Server) createAIConnection(w http.ResponseWriter, r *http.Request) {
 	authMethod := strings.ToLower(strings.TrimSpace(req.AuthMethod))
 	if authMethod == "" {
 		authMethod = "api_key"
+	}
+	if err := s.providerPolicyAllows(resolved.Manifest.Code, authMethod); err != nil {
+		writeError(w, r, http.StatusForbidden, "provider_policy_denied", "This connection method is disabled by the current provider safety policy")
+		return
 	}
 	var guidedTransaction connections.AuthorizationTransaction
 	if authMethod == "api_key_guided" {
@@ -286,6 +326,10 @@ func (s *Server) validateAIConnection(w http.ResponseWriter, r *http.Request) {
 	}
 	if stored.AuthMethod == "opencli_browser" {
 		s.validateAIBrowserConnection(w, r, user.ID, orgID, stored)
+		return
+	}
+	if stored.AuthMethod == "official_client" {
+		s.validateAIClientConnection(w, r, user.ID, orgID, stored)
 		return
 	}
 	if !req.ConfirmBillable {
@@ -577,7 +621,11 @@ func (s *Server) quickCreateAIConnectionRelay(w http.ResponseWriter, r *http.Req
 		writeError(w, r, http.StatusConflict, "ai_connection_reauthorization_required", "Reauthorize this AI service connection before creating a relay")
 		return
 	}
-	if item.AuthMethod == "codex_oauth" || item.AuthMethod == "deepseek_web_token" || item.AuthMethod == "opencli_browser" {
+	if err := s.providerPolicyAllowsWithLab(item.Provider, item.AuthMethod, false); err != nil {
+		writeError(w, r, http.StatusForbidden, "provider_policy_denied", "This connection cannot create a production personal relay")
+		return
+	}
+	if item.AuthMethod == "official_client" {
 		req.QPSLimit = 1
 	}
 	if len(req.ModelIDs) == 0 {

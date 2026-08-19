@@ -1,0 +1,15 @@
+[cli]
+auto_update = false
+
+[ui]
+disable_bypass_permissions_mode = true
+
+[features]
+support_permission = true
+telemetry = false
+feedback = false
+lsp_tools = false
+codebase_indexing = false
+
+[permission]
+deny = ["*"]

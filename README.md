@@ -8,16 +8,17 @@ TokHub 是面向 AI API 服务的开源监控、推荐运营和 OpenAI 兼容网
 
 English: [README.en.md](docs/README.en.md)
 
-当前版本：`v2.0.0-rc.1`，[查看发布说明](https://github.com/yaojingang/TokHub/releases/tag/v2.0.0-rc.1)
+当前版本：`v2.0.0-rc.2`，[查看发布说明](https://github.com/yaojingang/TokHub/releases/tag/v2.0.0-rc.2)
 
-TokHub 2.0 把 AI 服务连接入口开放给普通用户。用户登录自己的工作区后，可以连接官方 API Key、官方 OAuth，也可以使用部署方显式开启的本机浏览器连接器，在自己的 Chrome 中调用已登录的 ChatGPT、Gemini 和 DeepSeek。连接通过验证后，TokHub 会生成个人 OpenAI 兼容中转和独立 Gateway Key。
+TokHub 2.0 RC2 为普通用户提供三层清晰的 AI 连接能力：官方开发者 API、官方账号本地连接、本机实验室。ChatGPT 使用官方 Codex `app-server`，Grok 使用官方 Grok Build ACP；两者运行在用户设备的专用只读容器中。Gemini 保留 API Key 与 Google Cloud OAuth，DeepSeek 的生产入口只接受官方 API Key。
 
-> 本机浏览器连接、ChatGPT Codex OAuth 和 DeepSeek 网页账号属于自托管实验能力，默认关闭。Gemini Google OAuth 与官方 API Key 提供面向生产的接入路径。
+> OpenCLI、DeepSeek 网页 Session、旧 ChatGPT Codex OAuth 已转入本机实验室。实验连接无法生成生产 Gateway Key。升级迁移会停用旧连接、擦除消费者 Token 密文并禁用对应托管通道。
 
 ## 快速导航
 
-- [TokHub 2.0 的变化](#tokhub-20-的变化)
-- [四种 AI 服务接入方式](#四种-ai-服务接入方式)
+- [TokHub 2.0 RC2 的变化](#tokhub-20-rc2-的变化)
+- [三层 AI 服务连接](#三层-ai-服务连接)
+- [官方客户端连接器](#官方客户端连接器)
 - [服务商支持矩阵](#服务商支持矩阵)
 - [普通用户使用流程](#普通用户使用流程)
 - [应用场景](#应用场景)
@@ -26,170 +27,108 @@ TokHub 2.0 把 AI 服务连接入口开放给普通用户。用户登录自己�
 - [生产部署](#生产部署)
 - [API](#api)
 
-## TokHub 2.0 的变化
+## TokHub 2.0 RC2 的变化
 
-早期 TokHub 主要服务于平台运营者和企业工作区，负责公开监控、推荐运营、私有通道和多上游网关。2.0 增加普通用户的个人 AI 服务连接、授权生命周期和快速中转。
-
-| 维度 | 2.0 之前 | 2.0 RC |
+| 维度 | RC1 | RC2 |
 | --- | --- | --- |
-| 使用入口 | 平台后台、公开前台和企业工作区 | 增加普通用户的“AI 服务连接”入口 |
-| 上游凭据 | 平台或工作区配置 API Key | 增加用户自己的 API Key、官方 OAuth、受控实验授权和本机浏览器引用 |
-| 支持服务 | OpenAI 兼容上游和平台通道 | 统一管理 OpenAI、Gemini、Kimi、DeepSeek、豆包、Claude 和千问 |
-| 中转创建 | 管理员或工作区手动创建网关 | 已验证连接可以快速创建个人中转 |
-| 协议适配 | OpenAI 兼容网关和常规供应商适配 | 增加 Gemini SSE、ChatGPT Responses、DeepSeek 网页协议桥和 OpenCLI 本机任务路由 |
-| 凭据生命周期 | API Key 加密保存、轮换和删除 | 增加 OAuth 刷新、失效检测、账号一致性检查和重新授权 |
-| 风控范围 | 网关 QPS、月配额、熔断和审计 | 实验连接增加个人范围、单中转、低 QPS 和并发限制 |
-| 监控范围 | 通道探测、网关请求和成本 | 增加授权成功率、刷新失败、待重新授权连接和个人中转指标 |
+| 个人账号链路 | 消费者 OAuth、网页 Session、OpenCLI 实验反代 | ChatGPT Codex 与 Grok Build 官方客户端本地委托 |
+| 生产策略 | 多种实验连接可进入个人中转 | 生产只允许 API Key、Gemini OAuth、ChatGPT/Grok 官方客户端 |
+| 本机隔离 | 浏览器与连接器共享用户环境 | 专用非 root 只读容器，只挂载命名卷，不挂载用户目录 |
+| 设备信任 | 设备令牌与任务租约 | Ed25519 请求签名、60 秒时间窗、Nonce 防重放、HTTPS |
+| 数据边界 | 实验任务临时传递输入与结果 | Prompt 与结果只进入加密 Redis 临时载荷，数据库只存元数据 |
+| 多轮能力 | 调用方重复提交完整消息 | `/v1/responses` 使用 `previous_response_id` 恢复官方客户端会话 |
+| 账号保护 | 低频、单并发和错误冷却 | 单设备、单连接、15 秒间隔、20 次/小时、80 次/日、零重试 |
+| 风险处置 | 实验适配器各自处理 | 统一处理 401、403、安全挑战、429、超时、身份变化与工具事件 |
+| 策略治理 | 功能开关 | 代码内置 Provider Policy、90 天复核、条款摘要与 Kill Switch |
 
 ```mermaid
 flowchart LR
-    A["普通用户登录"] --> B["AI 服务连接"]
-    B --> C1["官方 API Key"]
-    B --> C2["Gemini Google OAuth"]
-    B --> C3["ChatGPT Codex OAuth"]
-    B --> C4["DeepSeek 登录助手"]
-    B --> C5["OpenCLI 本机浏览器"]
-    C1 --> D["真实最小生成验证"]
-    C2 --> D
-    C3 --> D
-    C4 --> D
-    C5 --> D
-    D --> E["AES-256-GCM 凭据保险库"]
-    E --> F["个人 OpenAI 兼容中转"]
-    F --> G["独立 Gateway Key"]
-    G --> H["AI 客户端、脚本或应用"]
+    A["OpenAI 兼容客户端"] --> B["TokHub Gateway 与策略层"]
+    B --> C["加密临时任务队列"]
+    C --> D["本机签名连接器"]
+    D --> E["专用只读容器"]
+    E --> F["Codex app-server"]
+    E --> G["Grok Build ACP"]
+    F --> H["服务商官方链路"]
+    G --> H
 ```
 
-## 四种 AI 服务接入方式
+## 三层 AI 服务连接
 
-| 接入方式 | TokHub 获取什么 | 支持范围 | 续期方式 | 推荐场景 |
+| 层级 | TokHub 保存 | 支持范围 | 生产 Gateway | 适用场景 |
 | --- | --- | --- | --- | --- |
-| 官方 API Key | 开发者平台签发的 API Key | 七家服务商 | 用户轮换 Key | 生产调用、团队共享、稳定中转 |
-| 官方 OAuth | OAuth Access Token、Refresh Token 和账号标识 | Gemini Google OAuth | 后台自动刷新，失效后重新授权 | 用户拥有 Google Cloud Project，希望减少手动管理 Key |
-| 受控实验授权 | ChatGPT 一次性 OAuth 回调，或 DeepSeek `userToken.value` | ChatGPT、DeepSeek | 按服务商能力刷新，或提示用户重新登录 | 个人自托管、低频使用和协议验证 |
-| 本机浏览器连接 | 连接器 ID、在线状态和任务结果；网页登录态留在用户电脑 | ChatGPT、Gemini、DeepSeek | 用户在 Chrome 重新登录，TokHub 重新识别 | 个人低频文本调用、网页流程验证、无需开发者 Key 的本机实验 |
+| 官方 API | 加密 API Key 或 Gemini OAuth bundle | OpenAI、Gemini、Kimi、DeepSeek、豆包、Claude、千问、Grok | 支持 | 生产应用、团队配额、稳定自动化 |
+| 官方账号本地连接 | 加密设备引用、账号指纹、风险状态 | ChatGPT Codex、Grok Build | 支持，固定个人范围 | 个人会员账号的低频纯文本调用 |
+| 本机实验室 | 设备引用与实验状态 | OpenCLI、DeepSeek 网页 Session、旧 Codex OAuth | 禁止 | 协议研究、适配验证、自托管实验 |
 
-### OpenCLI 本机浏览器连接
+Provider Policy 会在连接目录、新建连接、快速中转和网关执行四层校验。官方客户端策略复核到期、运维上报的条款摘要与内置摘要不一致、或服务商 Kill Switch 开启时，新任务立即停止；同一平台的官方 API Key 路径继续服务。
 
-本机模式使用独立的 `tokhub-opencli-connector` 进程，链路为：
+## 官方客户端连接器
 
-```text
-个人 Gateway Key → TokHub 受限任务队列 → 本机连接器 → OpenCLI → 已连接的 Chrome Profile
-```
+`tokhub-client-connector` 提供 `doctor`、`pair`、`login`、`run`、`logout` 和 `sessions clean`。配对码 10 分钟有效，首次配对在容器内生成 Ed25519 密钥。每个请求签名覆盖方法、路径、Body Hash、时间戳和随机 Nonce。
 
-安全边界固定为：
+连接器接口要求 HTTPS。TokHub 直接终止 TLS 时无需额外配置；TLS 由反向代理终止时，使用 `TOKHUB_AI_OFFICIAL_CLIENT_TRUSTED_PROXY_CIDRS` 明确填写代理网段。未受信代理发送的 `X-Forwarded-Proto` 会被拒绝，开发环境的明文 HTTP 同时要求请求主机与网络对端均为 loopback。
 
-- TokHub 只允许 `whoami` 和 `ask` 两类任务，支持 ChatGPT、Gemini、DeepSeek 三个固定适配器。
-- 连接器使用参数数组启动 OpenCLI，服务端无法下发通用 JavaScript、Cookie 读取、网络请求、截图或任意命令。
-- Cookie、Session、Local Storage 与消费者 Token 保留在用户电脑，数据库保存经过加密的连接器引用。
-- `whoami` 在本机把账号稳定标识转换为设备密钥派生的 HMAC-SHA-256 指纹；创建连接时完成绑定，每次 `ask` 前再次核对，账号切换会立即停止请求。
-- 每个连接器同一时间只处理一个任务；每位 TokHub 用户对每家服务商最多保留一个本机网页连接，个人中转固定单并发、单中转。
-- 最小间隔、小时额度和每日额度按 TokHub 用户与服务商持久化，重新配对设备或重建连接不会重置保护窗口；该连接的全部 Gateway Key 和中转共享额度。
-- DeepSeek 默认最小间隔 15 秒、每小时 20 次、每日 80 次；ChatGPT 与 Gemini 默认最小间隔 10 秒、每小时 30 次、每日 120 次。
-- 验证码、403、429、登录失效和网页适配器变化会进入持久化锁定或冷却状态，服务重启后保护仍然有效。
-- 首版接受纯文本非流式请求；工具调用、图片、流式响应、Anthropic Messages 与团队共享会被明确拒绝。
-- `chatgpt-web`、`gemini-web`、`deepseek-web` 是个人 API 的路由别名，实际网页模型由 OpenCLI 已连接的 Chrome Profile 与适配器决定。
-- 页面出现验证码或安全挑战时，连接器停止任务并提示用户返回 Chrome 处理。
-
-部署方启用：
+镜像固定安装 `@openai/codex@0.148.0` 与官方 Grok Build `1.0.5` 二进制，并校验锁文件或 SHA256。Grok Build 当前官方分发没有可验证的 `@xai-official/grok@0.1.4` npm 包，RC2 使用 xAI 官方发布渠道中的固定版本。
 
 ```bash
-TOKHUB_AI_OPENCLI_BROWSER_EXPERIMENTAL=true
-TOKHUB_AI_OPENCLI_BROWSER_ACK=I_ACCEPT_OPENCLI_PERSONAL_BROWSER_EXPERIMENTAL_RISK
-TOKHUB_AI_OPENCLI_BROWSER_TASK_TIMEOUT=2m
-TOKHUB_AI_OPENCLI_CHATGPT_ENABLED=true
-TOKHUB_AI_OPENCLI_GEMINI_ENABLED=true
-TOKHUB_AI_OPENCLI_DEEPSEEK_ENABLED=true
+docker build -t tokhub-client-connector:2.0.0-rc.2 \
+  -f deploy/official-client-connector/Dockerfile .
+
+cd deploy/official-client-connector
+docker compose run --rm connector pair --server https://tokhub.example.com --code <pairing-code>
+docker compose run --rm connector login chatgpt
+docker compose run --rm connector login grok
+docker compose up -d connector
 ```
 
-三家服务可以独立关闭。请求间隔与小时、每日额度可以通过 `.env.example` 中的
-`TOKHUB_AI_OPENCLI_<PROVIDER>_*` 变量调整。Redis 限流不可用时，本机浏览器中转会安全关闭。
+容器安全边界：
 
-用户电脑需要安装 [OpenCLI](https://github.com/jackwener/OpenCLI) `1.8.6` 或更高版本，并完成 Chrome 扩展连接。OpenCLI 官方 npm 包可按下面的命令安装或更新：
+- 只读根文件系统、非 root 用户、无特权、删除全部 Linux capabilities。
+- 只挂载 Connector、Codex、Grok 三个命名卷，不挂载 `$HOME`、浏览器目录或项目目录。
+- Codex 使用空工作目录、只读 sandbox、`approval_policy=never`，关闭网络搜索、应用、浏览器、Shell 和统一执行能力。
+- Grok 使用 root 拥有的 requirements policy 拒绝全部工具，关闭 MCP、Subagent、Memory、Web Search、自动更新、遥测和反馈。
+- 发现工具调用、文件操作或命令事件时立即中断任务，并把连接置为 `policy_locked`。
+- 调用方断开连接后，TokHub 取消任务租约，连接器随即终止当前官方客户端进程。
 
-```bash
-npm install -g @jackwener/opencli
-opencli --version
-opencli doctor
-```
-
-在 TokHub 的“AI 服务连接”页面点击“添加本机连接器”，复制页面生成的一次性命令。连接器可从 TokHub 源码构建：
-
-```bash
-go build -o ./bin/tokhub-opencli-connector ./cmd/tokhub-opencli-connector
-./bin/tokhub-opencli-connector pair --server https://tokhub.example.com --code <页面显示的一次性配对码>
-./bin/tokhub-opencli-connector run
-```
-
-选择 ChatGPT、Gemini 或 DeepSeek 的“连接本机已登录网页”后，页面会提供两个连续入口：
-
-1. “打开服务商登录”用于在 Chrome 新标签页完成登录。
-2. “已登录，识别并连接”通过本机 OpenCLI `whoami` 识别当前账号。已经登录的用户可以直接执行这一步。
-
-连接详情会展示本小时用量、近 24 小时用量、冷却时间、安全验证记录和连续失败次数，并提供“重新识别账号”“立即暂停”和“恢复中转”操作。每位 TokHub 用户对每家服务商最多保留一个本机网页连接，该连接的多个 Gateway Key 和中转共享同一保护额度。403 会锁定 24 小时，冷却与锁定期间不能通过暂停、恢复或重新配对提前解除。
-
-`doctor` 可检查 OpenCLI 版本、配置文件和 TokHub 连通性：
-
-```bash
-./bin/tokhub-opencli-connector doctor
-```
-
-连接器运行期间每 15 秒复查 Chrome Bridge，并用独立心跳维持 TokHub 在线状态；网页生成耗时较长时，心跳仍会持续发送。
-
-如果 Chrome 中存在多个 OpenCLI 配置档案，请先用 `opencli profile list` 查看，再用 `opencli profile use <别名或 contextId>` 固定本连接器使用的档案。
-
-`./bin/tokhub-opencli-connector --help` 会显示完整命令说明，`version` 会显示连接器对应的 TokHub 版本。
-
-本机浏览器连接减少了服务端直接持有网页凭据的暴露面。消费者网页协议、服务商规则与账号风控仍然适用，该模式不承诺账号不会受到限制。
-
-TokHub AI 登录助手的读取范围经过固定限制：
-
-- ChatGPT 只识别 `http://localhost:1455/auth/callback` 中的一次性 `code` 和 `state`。
-- Gemini 跳转 Google 官方授权页，并校验 Cloud Project 权限、OIDC 签名、nonce 和账号标识。
-- DeepSeek 只在用户点击后读取 `https://chat.deepseek.com` 的 `localStorage.userToken.value`。
-- 助手不读取服务商密码、验证码、完整 Cookie、`cf_clearance` 或其它 Local Storage 数据，也不持久化识别结果。
-- 服务端完成真实最小生成验证后才保存连接，凭据使用版本化 AES-256-GCM 密钥环加密。
+官方客户端个人中转固定别名为 `chatgpt-personal` 和 `grok-personal`。`/v1/responses` 支持文本流式、非流式和多轮恢复；图片、音频、工具、函数调用与 Anthropic Messages 返回 `422 unsupported_capability`。Response ID 绑定用户、Gateway Key、连接和模型，空闲 24 小时或创建 7 天后失效。上游会话 ID 先由配对设备密封，再进入 TokHub 加密存储；其他设备无法打开该引用。
 
 ## 服务商支持矩阵
 
-| 服务商 | 官方 API Key | 账号授权方式 | 当前级别 | 说明 |
+| 服务商 | 官方 API Key | 生产账号连接 | 本机实验室 | 生产说明 |
 | --- | --- | --- | --- | --- |
-| ChatGPT / OpenAI | 支持 | Codex OAuth、本机 OpenCLI 浏览器 | 实验 | 本机模式保留网页登录态在用户电脑；个人范围、单中转、低 QPS |
-| Gemini | 支持 | Google 官方 OAuth、本机 OpenCLI 浏览器 | OAuth 配置后可用，本机模式实验 | OAuth 需要 Cloud Project；本机模式调用已连接 Chrome Profile 中的 Gemini 网页 |
-| Kimi | 支持 | 暂无 | 稳定 | 支持中国大陆和国际 Endpoint |
-| DeepSeek | 支持 | 开放平台引导、网页账号登录态、本机 OpenCLI 浏览器 | API Key 稳定，网页路径实验 | OpenCLI 模式通过已连接 Chrome Profile 执行文本任务；DS2API 兼容路径继续保留 |
-| 豆包 | 支持 | 暂无 | 稳定 | 使用火山方舟 API Key |
-| Claude | 支持 | 暂无 | 稳定 | 使用 Anthropic API Key |
-| 千问 | 支持 | 暂无 | 稳定 | 支持多地域和可选 Workspace Endpoint |
-
-部署管理员可以通过功能开关逐项开放授权入口。网页登录和实验授权开关默认保持关闭，详细配置和灰度检查见 [AI 账号授权与个人中转运行手册](docs/AI_WEB_AUTH_OPERATIONS.md)。
+| ChatGPT / OpenAI | 支持 | Codex `app-server` | OpenCLI、旧 Codex OAuth | 官方客户端仅个人、纯文本、单并发 |
+| Gemini | 支持 | Google Cloud OAuth | OpenCLI | OAuth 需要 Cloud Project 与 HTTPS 回调 |
+| Kimi | 支持 | 暂无 | 暂无 | 支持中国大陆和国际 Endpoint |
+| DeepSeek | 支持 | 暂无 | OpenCLI、网页 Session | 生产页只展示官方 API Key，DS2API 仅 `lab` profile |
+| 豆包 | 支持 | 暂无 | 暂无 | 使用火山方舟 API Key |
+| Claude | 支持 | 暂无 | 暂无 | 使用 Anthropic API Key |
+| 千问 | 支持 | 暂无 | 暂无 | 支持多地域与 Workspace Endpoint |
+| Grok | 支持 | Grok Build ACP | 暂无 | 官方客户端优先使用稳定账号主体，缺失时采用设备级身份 |
 
 ## 普通用户使用流程
 
 1. 登录 TokHub，进入“个人空间 > AI 服务连接”。
-2. 选择 ChatGPT、Gemini、Kimi、DeepSeek、豆包、Claude 或千问。
-3. 选择官方 API Key、官方 OAuth、受控授权或“连接本机已登录网页”。
-4. 本机模式先完成一次性设备配对，并保持 Chrome 与连接器运行。
-5. TokHub 按连接方式验证账号身份和可用性；本机浏览器模式创建时执行 `whoami`，第一次中转请求完成真实生成链路验证。
-6. 连接可用后创建个人中转，设置模型、名称和额度。
-7. 创建 Gateway Key，把 Base URL 设置为 `https://<your-domain>/gateway/v1`。
-8. 在 OpenAI 兼容客户端、脚本或应用中使用该 Base URL 和 Gateway Key。
-
-授权过期、账号不一致或上游返回明确鉴权错误时，连接会进入 `reauth_required`。用户可以在原连接上重新授权，原中转配置和用量记录继续保留。
+2. 在“官方 API”“官方账号本地连接”“本机实验室”中选择入口。
+3. ChatGPT 或 Grok 用户先创建本机连接器，复制 10 分钟一次性配对命令。
+4. 在专用容器中执行 Device Auth，启动连接器并等待账号与模型检查通过。
+5. 创建官方客户端连接；TokHub 绑定账号指纹、设备、公有模型别名和风险窗口。
+6. 创建个人中转与 Gateway Key，把 Base URL 设置为 `https://<your-domain>/gateway/v1`。
+7. 首轮 Responses 请求返回 `resp_*`；后续请求使用 `previous_response_id` 延续会话。
+8. 401 后重新登录并验证原账号，再由用户手动恢复；安全挑战、身份变化或工具事件需要管理员检查。
 
 ## 应用场景
 
-| 场景 | 适合的用户 | 推荐组合 |
+| 场景 | 推荐组合 | 边界 |
 | --- | --- | --- |
-| AI API 状态与导航站 | 社区、媒体、模型服务运营者 | 公开状态页、供应商排行、精选推荐、只读 Open API |
-| 多上游容灾网关 | 企业研发团队、AI 应用团队 | 私有通道、L1/L2/L3 探测、延迟或成功率路由、熔断 |
-| 个人 AI 中转站 | 有多个 AI 账号或开发者 Key 的个人用户 | AI 服务连接、个人中转、独立 Gateway Key、用量审计 |
-| 本机网页账号实验 | 已在 Chrome 登录 ChatGPT、Gemini 或 DeepSeek 的个人用户 | OpenCLI 本机连接器、纯文本非流式个人中转、单并发保护 |
-| 室友或小团队共享 | 需要按成员控制额度的小团队 | 官方开发者凭据、工作区成员、成员 Gateway Key、QPS 和月配额 |
-| 中转站运营后台 | 提供 AI API 服务的运营团队 | 通道治理、推荐配置、成本估算、用量报表、告警和审计 |
-| 自托管授权实验室 | 需要验证 OAuth 或消费者协议适配的开发者 | 功能开关、独立协议桥、低频率限制、Prometheus 指标和紧急关闭 |
+| 个人会员账号中转 | ChatGPT Codex 或 Grok Build 官方客户端、个人 Gateway Key | 单设备、单连接、单并发、固定日限额 |
+| 个人开发者中转 | 官方 API Key、个人中转、独立 Gateway Key | 支持稳定自动化与密钥轮换 |
+| Google Cloud 个人项目 | Gemini OAuth、自动刷新、账号一致性检查 | 需要用户自己的 Cloud Project |
+| 室友或小团队共享 | 官方开发者 API、工作区成员、成员 Gateway Key | 官方客户端连接固定为连接持有人本人 |
+| 多上游容灾网关 | 私有通道、分层探测、路由和熔断 | 使用服务商开发者 API |
+| 协议研究实验室 | OpenCLI、DeepSeek Session、独立 lab profile | 无生产 Gateway Key，部署方承担实验风险 |
 
-ChatGPT Codex 和 DeepSeek 网页登录态固定用于连接持有人本人。室友或团队共享场景应使用服务商官方开发者凭据，并遵守对应服务商的账户条款和使用限制。
+官方客户端委托可以减少消费者 Cookie 与 Session 的集中保存，并通过低频、零重试、身份锁定和工具封禁降低自动化暴露面。服务商仍可依据条款、套餐、异常行为或安全策略限制账号，TokHub 不承诺零封号风险。
 
 ## 核心能力
 
@@ -210,10 +149,11 @@ ChatGPT Codex 和 DeepSeek 网页登录态固定用于连接持有人本人。�
 
 ### 个人 AI 账号和专属中转
 
-- 七家服务商统一使用 Provider Manifest，集中管理地域、Endpoint、协议、模型和验证方式。
-- API Key、OAuth 和实验授权连接都要通过真实最小生成验证。
+- 八家服务商统一使用 Provider Manifest，集中管理地域、Endpoint、协议、模型和验证方式。
+- API Key、OAuth 和官方客户端连接按各自协议完成真实可用性与身份验证。
 - OAuth 凭据支持后台刷新、退避、失效检测、账号一致性检查、重新授权、撤销和审计。
-- ChatGPT、Gemini 和 DeepSeek 的本机浏览器连接执行个人范围、单中转、低 QPS、单并发和安全挑战停止保护。
+- ChatGPT Codex 与 Grok Build 官方客户端连接执行个人范围、单连接、单并发、固定频率和风险熔断。
+- 本机实验室连接与生产 Gateway 隔离，旧消费者凭据在安全迁移中被擦除。
 - 连接验证通过后可以创建个人 OpenAI 兼容中转，并使用独立 Gateway Key。
 
 ### 平台管理后台

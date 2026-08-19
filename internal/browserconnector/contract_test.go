@@ -98,6 +98,34 @@ func TestPromptFromOpenAIRequestRejectsStreamingToolsAndImages(t *testing.T) {
 	}
 }
 
+func TestPromptFromOfficialClientRequestAllowsTextStreamingOnly(t *testing.T) {
+	payload := map[string]any{
+		"stream":   true,
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+	}
+	prompt, err := PromptFromOfficialClientRequest("chat", payload)
+	if err != nil || prompt != "User: hi" {
+		t.Fatalf("official streaming text request = %q, err=%v", prompt, err)
+	}
+	payload["tools"] = []any{map[string]any{"type": "function"}}
+	if _, err := PromptFromOfficialClientRequest("chat", payload); err == nil {
+		t.Fatal("official streaming request accepted a tool")
+	}
+	delete(payload, "tools")
+	for field, value := range map[string]any{
+		"audio":              map[string]any{"format": "wav"},
+		"images":             []any{"data:image/png;base64,AA"},
+		"web_search_options": map[string]any{"search_context_size": "low"},
+		"modalities":         []any{"text", "audio"},
+	} {
+		payload[field] = value
+		if _, err := PromptFromOfficialClientRequest("chat", payload); err == nil {
+			t.Fatalf("official streaming request accepted %s", field)
+		}
+		delete(payload, field)
+	}
+}
+
 func TestNormalizeOpenCLIResultDoesNotExposeRawSessionData(t *testing.T) {
 	raw, _ := json.Marshal(map[string]any{
 		"success": true,

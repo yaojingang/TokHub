@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("AI connection center exposes seven official developer products and a responsive setup flow", async ({ page }) => {
+test("AI connection center exposes eight official developer products and keeps lab sessions out of production", async ({ page }) => {
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   await page.goto("/login?next=%2Fconsole%2Fconnections");
   await page.getByRole("button", { name: "注册新账号", exact: true }).click();
@@ -10,13 +10,15 @@ test("AI connection center exposes seven official developer products and a respo
   await page.waitForURL((url) => url.pathname === "/console/connections");
 
   await expect(page.getByRole("heading", { name: "连接你的 AI 服务" })).toBeVisible();
-  await expect(page.locator(".ai-provider-item")).toHaveCount(7);
+  await expect(page.locator(".ai-provider-item")).toHaveCount(8);
   await expect(page.getByText(/连接固定保存在个人空间/)).toBeVisible();
-  await expect(page.getByText(/服务商密码、验证码、完整 Cookie、cf_clearance 与其他浏览器数据均不采集/)).toBeVisible();
+  await expect(page.getByText(/服务商密码、验证码、Cookie 与网页 Token 均不采集/)).toBeVisible();
+
+  await expect(page.getByRole("button", { name: /Grok \/ xAI/ })).toBeVisible();
 
   await page.getByRole("button", { name: /DeepSeek/ }).click();
   await expect(page.getByRole("radio", { name: /前往 DeepSeek 开放平台/ })).toBeEnabled();
-  await expect(page.getByRole("radio", { name: /登录 DeepSeek 网页账号/ })).toBeVisible();
+  await expect(page.getByRole("radio", { name: /登录 DeepSeek 网页账号/ })).toHaveCount(0);
 
   await page.getByRole("button", { name: /千问/ }).click();
   const setup = page.locator(".ai-setup-panel");
@@ -180,6 +182,7 @@ test("AI connection center renders Gemini OAuth, DeepSeek web login, guided key,
   await page.getByRole("button", { name: /DeepSeek/ }).click();
   const deepSeekConsumerLogin = page.getByRole("radio", { name: /登录 DeepSeek 网页账号/ });
   await expect(deepSeekConsumerLogin).toBeEnabled();
+  await deepSeekConsumerLogin.click();
   await expect(deepSeekConsumerLogin).toHaveAttribute("aria-checked", "true");
   await expect(deepSeekConsumerLogin).toContainText("实验");
   await expect(page.locator(".ai-risk-notice")).toContainText("DeepSeek 网页私有协议");
@@ -229,6 +232,117 @@ test("AI connection center renders Gemini OAuth, DeepSeek web login, guided key,
     "extension-token-value-for-deepseek-session"
   ]);
   expect(deepSeekStatusPolls).toBe(0);
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(375);
+});
+
+test("official client connector guides pairing and selects only a logged-in ChatGPT or Grok identity", async ({ page }) => {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const now = new Date().toISOString();
+  const providers = [
+    provider("openai", "ChatGPT / OpenAI", [
+      authMethod("api_key", "官方 API Key", "stable"),
+      authMethod("official_client", "Codex 官方客户端", "stable", "local_connector")
+    ]),
+    provider("grok", "Grok / xAI", [
+      authMethod("api_key", "官方 API Key", "stable"),
+      authMethod("official_client", "Grok Build 官方客户端", "stable", "local_connector")
+    ])
+  ];
+  const connectors = [
+    {
+      id: "aicc_waiting",
+      orgId: "org_test",
+      displayName: "等待登录的连接器",
+      status: "active",
+      online: true,
+      runtimeKind: "container",
+      connectorVersion: "2.0.0-rc.2",
+      codexVersion: "codex-cli 0.148.0",
+      grokVersion: "grok 1.0.5",
+      capabilities: ["chatgpt", "grok"],
+      identity: {
+        openai: { loggedIn: false },
+        grok: { loggedIn: false }
+      },
+      lastSeenAt: now,
+      pairedAt: now,
+      createdAt: now,
+      updatedAt: now
+    },
+    {
+      id: "aicc_ready",
+      orgId: "org_test",
+      displayName: "我的官方客户端",
+      status: "active",
+      online: true,
+      runtimeKind: "container",
+      connectorVersion: "2.0.0-rc.2",
+      codexVersion: "codex-cli 0.148.0",
+      grokVersion: "grok 1.0.5",
+      capabilities: ["chatgpt", "grok"],
+      identity: {
+        openai: { loggedIn: true, accountMask: "o***@example.test", identityAssurance: "account" },
+        grok: { loggedIn: true, accountMask: "Grok 设备身份", identityAssurance: "device" }
+      },
+      lastSeenAt: now,
+      pairedAt: now,
+      createdAt: now,
+      updatedAt: now
+    }
+  ];
+
+  await page.route("**/api/me/ai-connection-providers", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ items: providers, policyVersion: "provider-policy-2026-08-19", credentialPolicy: { accepted: [], rejected: [] } })
+    });
+  });
+  await page.route("**/api/me/ai-connections", async (route) => {
+    await route.fulfill({ contentType: "application/json", body: JSON.stringify({ items: [] }) });
+  });
+  await page.route("**/api/me/ai-client-connectors", async (route) => {
+    if (route.request().method() === "GET") {
+      await route.fulfill({ contentType: "application/json", body: JSON.stringify({ items: connectors }) });
+      return;
+    }
+    await route.fulfill({
+      status: 201,
+      contentType: "application/json",
+      body: JSON.stringify({
+        connector: { ...connectors[0], id: "aicc_pending", status: "pending", online: false },
+        pairingCode: "one-time-review-code",
+        pairCommand: "docker compose run --rm connector pair --server 'https://tokhub.example.test' --code 'one-time-review-code'",
+        expiresInSeconds: 600
+      })
+    });
+  });
+
+  await page.goto("/login?next=%2Fconsole%2Fconnections");
+  await page.getByRole("button", { name: "注册新账号", exact: true }).click();
+  await page.getByLabel("邮箱").fill(`ai-official-${suffix}@example.test`);
+  await page.getByLabel("设置密码").fill(`AIOfficial-${suffix}!`);
+  await page.getByRole("button", { name: "创建账号并进入控制台 →", exact: true }).click();
+  await page.waitForURL((url) => url.pathname === "/console/connections");
+
+  const connectorPanel = page.getByRole("region", { name: "连接 ChatGPT 或 Grok 官方客户端" });
+  await expect(connectorPanel).toContainText("我的官方客户端");
+  await expect(connectorPanel).toContainText("Connector 2.0.0-rc.2");
+  await connectorPanel.getByRole("button", { name: "＋ 添加官方连接器", exact: true }).click();
+  await expect(connectorPanel.getByText("10 分钟一次性配对命令")).toBeVisible();
+  await expect(connectorPanel).toContainText("login chatgpt");
+  await expect(connectorPanel).toContainText("login grok");
+
+  await page.getByRole("button", { name: /ChatGPT \/ OpenAI/ }).click();
+  await expect(page.getByRole("radio", { name: /Codex 官方客户端/ })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByLabel("官方客户端连接器")).toHaveValue("aicc_ready");
+  await expect(page.getByRole("region", { name: "ChatGPT / OpenAI 官方客户端连接步骤" })).toContainText("Codex Device Auth");
+
+  await page.getByRole("button", { name: /Grok \/ xAI/ }).click();
+  await expect(page.getByRole("radio", { name: /Grok Build 官方客户端/ })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByLabel("官方客户端连接器")).toHaveValue("aicc_ready");
+  await expect(page.getByRole("region", { name: "Grok / xAI 官方客户端连接步骤" })).toContainText("Grok 浏览器登录");
 
   await page.setViewportSize({ width: 375, height: 812 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBe(375);

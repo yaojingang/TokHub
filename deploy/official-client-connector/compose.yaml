@@ -1,0 +1,32 @@
+services:
+  official-client-connector:
+    build:
+      context: ../..
+      dockerfile: deploy/official-client-connector/Dockerfile
+    image: tokhub-client-connector:2.0.0-rc.2
+    restart: unless-stopped
+    read_only: true
+    user: "10001:10001"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+      - /workspace:rw,noexec,nosuid,nodev,size=16m
+    volumes:
+      - tokhub-codex-session:/data/codex
+      - tokhub-grok-session:/data/grok
+      - tokhub-connector-state:/data/connector
+    environment:
+      TOKHUB_CLIENT_CONNECTOR_HOME: /data/connector
+      TOKHUB_CONNECTOR_CONTAINER: "1"
+    init: false
+    privileged: false
+    stdin_open: true
+    tty: true
+
+volumes:
+  tokhub-codex-session:
+  tokhub-grok-session:
+  tokhub-connector-state:

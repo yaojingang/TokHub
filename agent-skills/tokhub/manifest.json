@@ -1,10 +1,10 @@
 {
   "name": "tokhub",
-  "version": "2.0.0-rc.1",
+  "version": "2.0.0-rc.2",
   "status": "active",
   "maturity_tier": "governed",
   "lifecycle": "governed",
-  "updated_at": "2026-07-29",
+  "updated_at": "2026-08-19",
   "context_budget_tier": "governed",
   "owner": "Yao Team",
   "review_cadence": "before external distribution and after TokHub API permission changes",

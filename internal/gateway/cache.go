@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -128,4 +129,74 @@ func (c *Cache) StoreRoutePlan(ctx context.Context, gatewayID string, channelIDs
 		return err
 	}
 	return c.client.Set(ctx, "gateway:"+gatewayID+":upstreams", payload, 30*time.Second).Err()
+}
+
+func (c *Cache) PutOfficialClientPayload(ctx context.Context, key string, payload []byte, ttl time.Duration) error {
+	if c == nil || c.client == nil {
+		return ErrUnavailable
+	}
+	key = strings.TrimSpace(key)
+	if key == "" || len(payload) == 0 {
+		return errors.New("official client payload is empty")
+	}
+	if ttl <= 0 || ttl > 10*time.Minute {
+		ttl = 3 * time.Minute
+	}
+	return c.client.Set(ctx, "official-client:payload:"+key, payload, ttl).Err()
+}
+
+func (c *Cache) OfficialClientPayload(ctx context.Context, key string) ([]byte, error) {
+	if c == nil || c.client == nil {
+		return nil, ErrUnavailable
+	}
+	return c.client.Get(ctx, "official-client:payload:"+strings.TrimSpace(key)).Bytes()
+}
+
+func (c *Cache) DeleteOfficialClientPayload(ctx context.Context, keys ...string) error {
+	if c == nil || c.client == nil {
+		return ErrUnavailable
+	}
+	redisKeys := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if key = strings.TrimSpace(key); key != "" {
+			redisKeys = append(redisKeys, "official-client:payload:"+key)
+		}
+	}
+	if len(redisKeys) == 0 {
+		return nil
+	}
+	return c.client.Del(ctx, redisKeys...).Err()
+}
+
+func (c *Cache) UseOfficialClientNonce(ctx context.Context, connectorID, nonce string, ttl time.Duration) (bool, error) {
+	if c == nil || c.client == nil {
+		return false, ErrUnavailable
+	}
+	connectorID, nonce = strings.TrimSpace(connectorID), strings.TrimSpace(nonce)
+	if connectorID == "" || nonce == "" {
+		return false, errors.New("official client nonce is invalid")
+	}
+	if ttl < 2*time.Minute {
+		ttl = 2 * time.Minute
+	}
+	return c.client.SetNX(ctx, "official-client:nonce:"+connectorID+":"+nonce, "1", ttl).Result()
+}
+
+func (c *Cache) CountOfficialClientPayloads(ctx context.Context) (int64, error) {
+	if c == nil || c.client == nil {
+		return 0, ErrUnavailable
+	}
+	var cursor uint64
+	var count int64
+	for {
+		keys, next, err := c.client.Scan(ctx, cursor, "official-client:payload:*", 100).Result()
+		if err != nil {
+			return 0, err
+		}
+		count += int64(len(keys))
+		cursor = next
+		if cursor == 0 {
+			return count, nil
+		}
+	}
 }

@@ -1,0 +1,8 @@
+{
+  "name": "tokhub-official-client-runtime",
+  "version": "2.0.0-rc.2",
+  "private": true,
+  "dependencies": {
+    "@openai/codex": "0.148.0"
+  }
+}

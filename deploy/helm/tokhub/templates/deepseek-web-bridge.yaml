@@ -1,4 +1,7 @@
 {{- if .Values.aiAuthorization.deepseekWeb.enabled }}
+{{- if not .Values.aiAuthorization.labMode }}
+{{- fail "aiAuthorization.labMode must be true when the DeepSeek web bridge is enabled" }}
+{{- end }}
 {{- if not .Values.aiAuthorization.enabled }}
 {{- fail "aiAuthorization.enabled must be true when the DeepSeek web bridge is enabled" }}
 {{- end }}

@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -109,6 +110,7 @@ func NewServer(cfg Config, repo *store.Repository, authSvc *auth.Service, probeR
 	s.backfillNotificationChannelTargets()
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
+	r.Use(captureOriginalPeerAddr)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 	r.Use(s.logRequests)
@@ -167,6 +169,14 @@ func NewServer(cfg Config, repo *store.Repository, authSvc *auth.Service, probeR
 			mr.Post("/ai-browser-connectors", s.createAIBrowserConnector)
 			mr.Delete("/ai-browser-connectors/{connectorID}", s.revokeAIBrowserConnector)
 			mr.Post("/ai-browser-connections", s.createAIBrowserConnection)
+			mr.Get("/ai-client-connectors", s.meAIClientConnectors)
+			mr.Post("/ai-client-connectors", s.createAIClientConnector)
+			mr.Delete("/ai-client-connectors/{connectorID}", s.revokeAIClientConnector)
+			mr.Post("/ai-client-connections", s.createAIClientConnection)
+			mr.Get("/ai-client-connections/{connectionID}/risk", s.meAIClientConnectionRisk)
+			mr.Post("/ai-client-connections/{connectionID}/pause", s.pauseAIClientConnection)
+			mr.Post("/ai-client-connections/{connectionID}/resume", s.resumeAIClientConnection)
+			mr.Delete("/ai-client-sessions/{responseID}", s.deleteAIClientSession)
 			mr.Get("/ai-connections/{connectionID}", s.meAIConnection)
 			mr.Post("/ai-connections/{connectionID}/validate", s.validateAIConnection)
 			mr.Get("/ai-connections/{connectionID}/browser-risk", s.meAIBrowserConnectionRisk)
@@ -184,6 +194,14 @@ func NewServer(cfg Config, repo *store.Repository, authSvc *auth.Service, probeR
 			br.Post("/heartbeat", s.heartbeatAIBrowserConnector)
 			br.Post("/tasks/claim", s.claimAIBrowserConnectorTask)
 			br.Post("/tasks/{taskID}/complete", s.completeAIBrowserConnectorTask)
+		})
+		api.Route("/ai-client-connectors", func(cr chi.Router) {
+			cr.Use(s.clientConnectorRateLimit)
+			cr.Post("/pair", s.pairAIClientConnector)
+			cr.Post("/heartbeat", s.heartbeatAIClientConnector)
+			cr.Post("/tasks/claim", s.claimAIClientConnectorTask)
+			cr.Post("/tasks/{taskID}/status", s.statusAIClientConnectorTask)
+			cr.Post("/tasks/{taskID}/complete", s.completeAIClientConnectorTask)
 		})
 		api.Route("/public", func(pr chi.Router) {
 			pr.Use(s.publicRateLimit)
@@ -435,7 +453,8 @@ func (s *Server) csrf(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		publicRecommendClick := r.Method == http.MethodPost && r.URL.Path == "/api/public/recommend/click"
 		localBrowserConnector := strings.HasPrefix(r.URL.Path, "/api/ai-browser-connectors/")
-		if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions || !strings.HasPrefix(r.URL.Path, "/api/") || publicRecommendClick || localBrowserConnector {
+		officialClientConnector := strings.HasPrefix(r.URL.Path, "/api/ai-client-connectors/")
+		if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions || !strings.HasPrefix(r.URL.Path, "/api/") || publicRecommendClick || localBrowserConnector || officialClientConnector {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -470,6 +489,16 @@ func (s *Server) browserConnectorRateLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.allowRate(s.authLimiter, "browser-connector-device:"+clientIP(r), 600, time.Minute) {
 			writeError(w, r, http.StatusTooManyRequests, "rate_limited", "Too many local browser connector requests")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) clientConnectorRateLimit(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.allowRate(s.authLimiter, "official-client-connector-device:"+clientIP(r), 600, time.Minute) {
+			writeError(w, r, http.StatusTooManyRequests, "rate_limited", "Too many official client connector requests")
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -580,6 +609,17 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	if authErr != nil {
 		s.logger.Warn("AI authorization metrics unavailable", "error", authErr)
 	}
+	clientSnapshot, clientErr := s.repo.AIClientMetrics(r.Context())
+	if clientErr != nil {
+		s.logger.Warn("official client metrics unavailable", "error", clientErr)
+	}
+	payloadCount, payloadErr := s.gatewayCache.CountOfficialClientPayloads(r.Context())
+	payloadAvailable := 1
+	if payloadErr != nil {
+		payloadAvailable = 0
+		payloadCount = 0
+		s.logger.Warn("official client payload metrics unavailable", "error", payloadErr)
+	}
 	var out strings.Builder
 	fmt.Fprintf(&out, "# HELP tokhub_build_info TokHub build info\n# TYPE tokhub_build_info gauge\ntokhub_build_info{role=%q} 1\n", s.cfg.Role)
 	fmt.Fprintf(&out, "# HELP tokhub_gateway_requests_total Gateway requests recorded\n# TYPE tokhub_gateway_requests_total counter\ntokhub_gateway_requests_total %d\n", snapshot.GatewayRequests)
@@ -616,6 +656,49 @@ func (s *Server) metrics(w http.ResponseWriter, r *http.Request) {
 	out.WriteString("# HELP tokhub_ai_oauth_refresh_failures_current Consecutive OAuth refresh failures on current credentials\n# TYPE tokhub_ai_oauth_refresh_failures_current gauge\n")
 	for _, item := range authSnapshot.RefreshFailures {
 		fmt.Fprintf(&out, "tokhub_ai_oauth_refresh_failures_current{provider=%q} %d\n", item.Provider, item.Count)
+	}
+	out.WriteString("# HELP tokhub_ai_client_connectors_online Official client connectors online by pinned client version\n# TYPE tokhub_ai_client_connectors_online gauge\n")
+	for _, item := range clientSnapshot.OnlineVersions {
+		fmt.Fprintf(&out, "tokhub_ai_client_connectors_online{connector_version=%q,codex_version=%q,grok_version=%q} %d\n",
+			item.ConnectorVersion, item.CodexVersion, item.GrokVersion, item.Count)
+	}
+	out.WriteString("# HELP tokhub_ai_client_tasks_total Official client tasks by provider, state, and bounded outcome\n# TYPE tokhub_ai_client_tasks_total counter\n")
+	for _, item := range clientSnapshot.Tasks {
+		fmt.Fprintf(&out, "tokhub_ai_client_tasks_total{provider=%q,status=%q,outcome=%q} %d\n", item.Provider, item.Status, item.ErrorCode, item.Count)
+	}
+	out.WriteString("# HELP tokhub_ai_client_sessions_total Official client response sessions by lifecycle state\n# TYPE tokhub_ai_client_sessions_total gauge\n")
+	for _, item := range clientSnapshot.Sessions {
+		fmt.Fprintf(&out, "tokhub_ai_client_sessions_total{provider=%q,status=%q,resumed=%q} %d\n", item.Provider, item.Status, strconv.FormatBool(item.Resumed), item.Count)
+	}
+	out.WriteString("# HELP tokhub_ai_client_risk_connections Official client connections by risk and identity assurance\n# TYPE tokhub_ai_client_risk_connections gauge\n")
+	out.WriteString("# HELP tokhub_ai_client_identity_changes_total Official client account identity changes\n# TYPE tokhub_ai_client_identity_changes_total counter\n")
+	for _, item := range clientSnapshot.Risks {
+		fmt.Fprintf(&out, "tokhub_ai_client_risk_connections{provider=%q,state=%q,identity_assurance=%q} %d\n", item.Provider, item.State, item.IdentityAssurance, item.Count)
+		fmt.Fprintf(&out, "tokhub_ai_client_identity_changes_total{provider=%q,state=%q,identity_assurance=%q} %d\n", item.Provider, item.State, item.IdentityAssurance, item.IdentityChanges)
+	}
+	fmt.Fprintf(&out, "# HELP tokhub_ai_client_payload_store_available Encrypted temporary payload store availability\n# TYPE tokhub_ai_client_payload_store_available gauge\ntokhub_ai_client_payload_store_available %d\n", payloadAvailable)
+	fmt.Fprintf(&out, "# HELP tokhub_ai_client_payloads_residual Encrypted temporary official client payloads currently retained\n# TYPE tokhub_ai_client_payloads_residual gauge\ntokhub_ai_client_payloads_residual %d\n", payloadCount)
+	out.WriteString("# HELP tokhub_ai_provider_policy_info Compiled provider policy review and terms digest state\n# TYPE tokhub_ai_provider_policy_info gauge\n")
+	out.WriteString("# HELP tokhub_ai_provider_kill_switch Provider delegated-account kill switch\n# TYPE tokhub_ai_provider_kill_switch gauge\n")
+	for _, policy := range connections.ProviderPolicies() {
+		reviewState := "expired"
+		if expiresAt, parseErr := time.Parse("2006-01-02", policy.ReviewExpiresAt); parseErr == nil && time.Now().Before(expiresAt.Add(24*time.Hour)) {
+			reviewState = "valid"
+		}
+		digestState := "release_reviewed"
+		if observed := strings.TrimSpace(s.cfg.AIProviderTermsDigests[policy.Provider]); observed != "" {
+			digestState = "matched"
+			if !strings.EqualFold(observed, policy.TermsDigest) {
+				digestState = "changed"
+			}
+		}
+		fmt.Fprintf(&out, "tokhub_ai_provider_policy_info{provider=%q,policy_version=%q,review_state=%q,review_expires_at=%q,terms_digest_state=%q} 1\n",
+			policy.Provider, connections.ProviderPolicyVersion, reviewState, policy.ReviewExpiresAt, digestState)
+		kill := 0
+		if s.cfg.AIProviderKillSwitches[policy.Provider] {
+			kill = 1
+		}
+		fmt.Fprintf(&out, "tokhub_ai_provider_kill_switch{provider=%q} %d\n", policy.Provider, kill)
 	}
 	_, _ = w.Write([]byte(out.String()))
 }

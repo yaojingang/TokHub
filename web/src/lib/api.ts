@@ -1006,6 +1006,59 @@ export type AIBrowserRiskState = {
   minimumIntervalSeconds: number;
 };
 
+export type AIClientConnector = {
+  id: string;
+  orgId: string;
+  displayName: string;
+  status: "pending" | "active" | "revoked" | string;
+  online: boolean;
+  tokenPrefix?: string;
+  runtimeKind: "container" | string;
+  connectorVersion?: string;
+  codexVersion?: string;
+  grokVersion?: string;
+  capabilities: string[];
+  identity?: Record<string, {
+    loggedIn?: boolean;
+    accountMask?: string;
+    identityAssurance?: string;
+    checkedAt?: string;
+  }>;
+  pairingExpiresAt?: string;
+  lastSeenAt?: string;
+  pairedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AIClientConnectorCreateResult = {
+  connector: AIClientConnector;
+  pairingCode: string;
+  pairCommand: string;
+  expiresInSeconds: number;
+};
+
+export type AIClientRiskState = {
+  connectionId: string;
+  provider: string;
+  identityAssurance: "account" | "device" | string;
+  state: "normal" | "cooldown" | "reauth_required" | "security_locked" | "policy_locked" | "manual_recovery" | "paused" | string;
+  cooldownUntil?: string;
+  requestsHour: number;
+  requestsDay: number;
+  rateLimitEvents: number;
+  identityChanges: number;
+  consecutiveFailures: number;
+  lastRequestAt?: string;
+  lastSuccessAt?: string;
+  lastErrorAt?: string;
+  lastErrorCode?: string;
+  updatedAt: string;
+  minimumIntervalSeconds: number;
+  hourlyLimit: number;
+  dailyLimit: number;
+};
+
 export type GatewayDebugResult = {
   ok: boolean;
   gatewayId: string;
@@ -1649,6 +1702,38 @@ export async function resumeAIBrowserConnection(connectionID: string): Promise<{
     `/api/me/ai-connections/${connectionID}/browser-risk/resume`,
     {}
   );
+}
+
+export async function aiClientConnectors(): Promise<{ items: AIClientConnector[] }> {
+  return readJSON<{ items: AIClientConnector[] }>("/api/me/ai-client-connectors", { credentials: "include", cache: "no-store" });
+}
+
+export async function createAIClientConnector(displayName: string): Promise<AIClientConnectorCreateResult> {
+  return writeJSONRequest<AIClientConnectorCreateResult>("/api/me/ai-client-connectors", { displayName });
+}
+
+export async function revokeAIClientConnector(connectorID: string): Promise<void> {
+  await writeJSONRequest(`/api/me/ai-client-connectors/${connectorID}`, {}, { method: "DELETE" });
+}
+
+export async function createAIClientConnection(input: {
+  connectorId: string;
+  provider: "openai" | "grok" | string;
+  displayName: string;
+}): Promise<{ connection: AIConnection; actualModels: string[] }> {
+  return writeJSONRequest<{ connection: AIConnection; actualModels: string[] }>("/api/me/ai-client-connections", input);
+}
+
+export async function aiClientConnectionRisk(connectionID: string): Promise<{ risk: AIClientRiskState }> {
+  return readJSON<{ risk: AIClientRiskState }>(`/api/me/ai-client-connections/${connectionID}/risk`, { credentials: "include", cache: "no-store" });
+}
+
+export async function pauseAIClientConnection(connectionID: string): Promise<{ risk: AIClientRiskState }> {
+  return writeJSONRequest<{ risk: AIClientRiskState }>(`/api/me/ai-client-connections/${connectionID}/pause`, {});
+}
+
+export async function resumeAIClientConnection(connectionID: string): Promise<{ risk: AIClientRiskState }> {
+  return writeJSONRequest<{ risk: AIClientRiskState }>(`/api/me/ai-client-connections/${connectionID}/resume`, {});
 }
 
 export async function createAIConnection(input: {

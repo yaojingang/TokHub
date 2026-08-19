@@ -1,238 +1,353 @@
 # AI 账号授权与个人中转运行手册
 
-## 发布边界
+本文适用于 TokHub `2.0.0-rc.2`。生产个人网关支持官方 API、Gemini Google Cloud OAuth、ChatGPT Codex 官方客户端和 Grok Build 官方客户端。本机实验室包含 OpenCLI、DeepSeek 网页 Session 与旧 Codex OAuth，实验连接无法生成生产 Gateway Key。
 
-功能总开关 `TOKHUB_AI_WEB_AUTH_ENABLED` 默认关闭。关闭时已有官方 API Key 连接保持原有行为，授权 API 返回 404，用户界面只展示 API Key 方式。
+## 支持边界
 
-当前适配器：
+| 平台 | 生产允许 | 实验室允许 | 生产模型入口 |
+| --- | --- | --- | --- |
+| ChatGPT | API Key、Codex 官方客户端 | OpenCLI、旧 Codex OAuth | API 模型或 `chatgpt-personal` |
+| Gemini | API Key、Google Cloud OAuth | OpenCLI | Gemini API 模型 |
+| DeepSeek | API Key | OpenCLI、网页 Session | DeepSeek API 模型 |
+| Grok | API Key、Grok Build 官方客户端 | 无网页 Cookie 模式 | API 模型或 `grok-personal` |
 
-| 适配器 | 开关 | 依赖 | 建议发布 |
-|---|---|---|---|
-| Gemini Google OAuth | `TOKHUB_AI_GEMINI_OAUTH_ENABLED` | Google OAuth Client、Cloud Project、HTTPS Public URL、Redis | 完成 Google 配置与回调验证后灰度 |
-| DeepSeek 开放平台引导 | `TOKHUB_AI_DEEPSEEK_GUIDED_ENABLED` | Redis、凭证密钥环 | 可先发布 |
-| DeepSeek 网页账号 | `TOKHUB_AI_DEEPSEEK_WEB_EXPERIMENTAL` | Redis、凭证密钥环、DS2API v4.6.1、固定风险确认值 | 仅个人实验 |
-| ChatGPT Codex OAuth | `TOKHUB_AI_CHATGPT_CODEX_EXPERIMENTAL` | Redis、凭证密钥环、固定风险确认值 | 仅自托管实验 |
-| OpenCLI 本机浏览器 | `TOKHUB_AI_OPENCLI_BROWSER_EXPERIMENTAL` | OpenCLI 1.8.6+、Chrome 扩展、凭证密钥环、固定风险确认值 | 仅本人低频文本实验 |
+Kimi、豆包、Claude 与千问继续使用官方 API Key。
 
-DeepSeek 官方 API 使用 API Key Bearer 认证。网页账号实验能力面向已登录的消费者账号，TokHub AI 登录助手可以在用户点击后读取 Local Storage `userToken.value`；手动导入继续作为故障兜底。TokHub 通过独立 DS2API 桥完成网页私有协议、PoW 和 OpenAI SSE 转换。该路径依赖平台私有协议，接口变化、风控升级和账号限制都可能导致中断。
+## RC2 安全迁移
 
-ChatGPT 实验开关还要求：
+迁移 `0051_provider_policy_safety.sql` 执行以下一次性处理：
+
+1. 将现有 `codex_oauth` 与 `deepseek_web_token` 连接改为 `disabled`。
+2. 清除 Access Token、Refresh Token、ID Token、`userToken` 和相关密文载荷。
+3. 保留连接名称、账号掩码、模型、审计和用量记录。
+4. 禁用这些连接生成的托管 Channel，保留 Gateway Key。
+5. 保留 `opencli_browser` 设备引用，并在生产 `/gateway/v1/*` 拒绝其任务。
+
+凭据清理无法通过代码回滚恢复。执行迁移前需要完成变更审批和数据库备份。备份仅用于灾难恢复，不用于把已清理的消费者 Token 重新投入生产。
+
+DS2API 已从默认 Compose 与生产 Helm 路径移除。只有显式 `lab` profile 或 `aiAuthorization.labMode=true` 且实验开关与风险确认同时满足时，部署系统才会创建桥服务。
+
+## Provider Policy
+
+代码内置策略包含允许的生产模式、实验模式、条款 URL、条款摘要、复核时间、身份要求和 Kill Switch。连接目录、新建连接、快速中转和网关执行都会检查同一策略。
+
+官方客户端策略每 90 天复核一次。RC2 的复核到期日为 `2026-11-17`。到期后官方客户端与消费者实验任务停止，官方 API Key 路径继续运行。
+
+运维系统可把最新条款摘要写入以下变量。值与代码内置摘要不一致时，委托账号模式立即停止：
 
 ```env
-TOKHUB_AI_EXPERIMENTAL_BRIDGE_ACK=I_ACCEPT_CHATGPT_CODEX_EXPERIMENTAL_RISK
+TOKHUB_AI_OPENAI_TERMS_DIGEST=
+TOKHUB_AI_GEMINI_TERMS_DIGEST=
+TOKHUB_AI_DEEPSEEK_TERMS_DIGEST=
+TOKHUB_AI_GROK_TERMS_DIGEST=
 ```
 
-DeepSeek 网页账号实验开关要求：
+紧急停止变量：
 
 ```env
-TOKHUB_AI_DEEPSEEK_WEB_EXPERIMENTAL=true
-TOKHUB_AI_DEEPSEEK_WEB_BRIDGE_URL=http://deepseek-web-bridge:5001
-TOKHUB_AI_DEEPSEEK_WEB_ACK=I_ACCEPT_DEEPSEEK_WEB_SESSION_EXPERIMENTAL_RISK
-TOKHUB_DEEPSEEK_WEB_BRIDGE_ADMIN_KEY=<至少 24 位随机值>
+TOKHUB_AI_OPENAI_KILL_SWITCH=false
+TOKHUB_AI_GEMINI_KILL_SWITCH=false
+TOKHUB_AI_DEEPSEEK_KILL_SWITCH=false
+TOKHUB_AI_GROK_KILL_SWITCH=false
 ```
 
-Compose 使用带多架构摘要的 `ghcr.io/cjackhwang/ds2api:v4.6.1` 镜像。桥服务没有宿主机端口，只加入 TokHub API/Gateway 专用网络，并使用只读根文件系统、临时数据目录、全部 capability 删除和 `no-new-privileges`。运行配置保持空账号池，TokHub 每次只以当前用户的 Token 进入 DS2API direct-token 模式。
+Kill Switch 关闭对应平台的委托账号、OAuth 或实验连接。该平台的官方 API Key 路径保持可用。
 
-Helm 部署在 `aiAuthorization.deepseekWeb.enabled=true` 且 `deployBridge=true` 时创建同一固定摘要的独立 Deployment、ClusterIP Service 和 NetworkPolicy。桥 Pod 使用非 root 用户、只读根文件系统与内存 `emptyDir`，入口只允许同一 Release 的 API/Gateway Pod。部署前必须设置 `aiAuthorization.enabled` 和精确的 `aiAuthorization.deepseekWeb.riskAcknowledgement`。生产环境优先把至少 24 位的随机管理密钥放入已有 Kubernetes Secret，并通过 `aiAuthorization.deepseekWeb.existingAdminSecret` 引用；`adminKey` 只适合受控测试环境。已有外部桥时可设置 `deployBridge=false` 并填写 HTTPS `bridgeUrl`。
+## 服务端配置
 
-## Gemini 配置
-
-1. 在 Google Cloud 创建 Web application OAuth Client。
-2. 配置回调地址：
-
-   `https://<TOKHUB_PUBLIC_URL>/api/me/ai-authorizations/google/callback`
-
-3. 配置以下密钥：
+生产启用官方客户端：
 
 ```env
+TOKHUB_AI_WEB_AUTH_ENABLED=true
+TOKHUB_AI_OFFICIAL_CLIENT_ENABLED=true
+TOKHUB_AI_OFFICIAL_CLIENT_TASK_TIMEOUT=3m
+TOKHUB_AI_LAB_MODE=false
+```
+
+依赖项：
+
+- PostgreSQL 已执行 `0051` 与 `0052` 迁移。
+- Redis 具备持久连接与受控内存，官方客户端载荷存储失败时任务安全关闭。
+- 凭据加密密钥环与指纹密钥环使用独立材料。
+- 生产 `TOKHUB_PUBLIC_URL` 使用 HTTPS。
+- 反向代理保留请求上下文，客户端断开时 Go 请求 Context 可以及时取消。
+
+Gemini OAuth 继续使用：
+
+```env
+TOKHUB_AI_GEMINI_OAUTH_ENABLED=true
 TOKHUB_GOOGLE_OAUTH_CLIENT_ID=
 TOKHUB_GOOGLE_OAUTH_CLIENT_SECRET=
 TOKHUB_GOOGLE_OAUTH_PROJECT_ID=
 ```
 
-用户在授权时填写自己的 Project ID，账号需要拥有该项目的 `serviceusage.services.use` 权限。Project ID 在打开 Google 授权页之前校验：长度 6–30 位、小写字母开头、只含小写字母、数字或连字符，并以字母或数字结尾。部署级 Project ID 可用于受控默认值和重新授权回退。TokHub 请求 Gemini 时固定使用 `https://generativelanguage.googleapis.com/v1beta`，认证头由适配器生成。
-
-Gemini 生产授权使用 Google 为 Gemini API 提供的官方 OAuth 路径。Google OAuth Client ID、Client Secret 或公开 HTTPS 回调地址缺失时，普通用户页面会显示具体待配置原因，入口保持关闭。独立的 OpenCLI 实验模式可以操作 OpenCLI 已连接 Chrome Profile 中的 Gemini 网页，登录态留在本机。
-
-Google Cloud OAuth 客户端的 Authorized redirect URI 必须和下列地址逐字符一致：
+Google Cloud OAuth 回调地址固定为：
 
 `https://<TOKHUB_PUBLIC_URL>/api/me/ai-authorizations/google/callback`
 
-开启入口前至少完成一次测试账号授权、最小生成、流式生成、Refresh Token 续期、重新授权账号一致性和撤销测试。
+## 官方客户端镜像
 
-## OpenCLI 本机浏览器连接器
-
-部署开关：
-
-```env
-TOKHUB_AI_OPENCLI_BROWSER_EXPERIMENTAL=true
-TOKHUB_AI_OPENCLI_BROWSER_ACK=I_ACCEPT_OPENCLI_PERSONAL_BROWSER_EXPERIMENTAL_RISK
-TOKHUB_AI_OPENCLI_BROWSER_TASK_TIMEOUT=2m
-TOKHUB_AI_OPENCLI_CHATGPT_ENABLED=true
-TOKHUB_AI_OPENCLI_GEMINI_ENABLED=true
-TOKHUB_AI_OPENCLI_DEEPSEEK_ENABLED=true
-TOKHUB_AI_OPENCLI_CHATGPT_MIN_INTERVAL=10s
-TOKHUB_AI_OPENCLI_GEMINI_MIN_INTERVAL=10s
-TOKHUB_AI_OPENCLI_DEEPSEEK_MIN_INTERVAL=15s
-TOKHUB_AI_OPENCLI_CHATGPT_HOURLY_LIMIT=30
-TOKHUB_AI_OPENCLI_GEMINI_HOURLY_LIMIT=30
-TOKHUB_AI_OPENCLI_DEEPSEEK_HOURLY_LIMIT=20
-TOKHUB_AI_OPENCLI_CHATGPT_DAILY_LIMIT=120
-TOKHUB_AI_OPENCLI_GEMINI_DAILY_LIMIT=120
-TOKHUB_AI_OPENCLI_DEEPSEEK_DAILY_LIMIT=80
-```
-
-用户设备要求：
-
-1. 安装 [OpenCLI](https://github.com/jackwener/OpenCLI) `1.8.6` 或更高版本：`npm install -g @jackwener/opencli`。
-2. 在常用 Chrome Profile 中安装并连接 OpenCLI 扩展。
-3. 打开 ChatGPT、Gemini 或 DeepSeek，确认网页可以正常发送一条对话。
-4. 在 TokHub “AI 服务连接”页面创建本机连接器，复制一次性配对命令。
-5. 构建并运行 TokHub 连接器：
+构建镜像：
 
 ```bash
-go build -o ./bin/tokhub-opencli-connector ./cmd/tokhub-opencli-connector
-./bin/tokhub-opencli-connector pair --server https://tokhub.example.com --code <pairing-code>
-./bin/tokhub-opencli-connector doctor
-./bin/tokhub-opencli-connector run
+docker build -t tokhub-client-connector:2.0.0-rc.2 \
+  -f deploy/official-client-connector/Dockerfile .
 ```
 
-运行边界：
+镜像依赖：
 
-- 服务端任务类型固定为 `status` 与 `ask`，服务商固定为 `openai`、`gemini`、`deepseek`。
-- 本机进程使用 `exec.CommandContext` 参数数组调用 OpenCLI，不经过 shell。
-- 服务端不会调用 OpenCLI daemon 的 `19825` 端口，也不会下发通用 `eval`、Cookie、网络、截图或脚本命令。
-- `whoami` 返回的账号标识在本机转换为设备令牌派生的 HMAC-SHA-256 指纹，服务端只保存指纹和脱敏展示名。每次 `ask` 前会重新执行 `whoami` 并做常量时间比对，账号变化返回 `identity_mismatch`，不会发送模型请求。
-- OpenCLI 1.8.6 的 ChatGPT 与 DeepSeek `whoami` 提供用户 ID，Gemini 当前只提供脱敏后的展示名；两个 Gemini 账号使用完全相同展示名时无法仅凭该合同区分，因此 Gemini 本机模式继续保持实验级。
-- 设备令牌只在配对响应出现一次，本机配置文件权限为 `0600`，服务端保存 SHA-256 哈希。
-- 配对码 10 分钟失效且只能使用一次；任务领取使用一次性租约，完成后清除请求正文。
-- 任务提示词和回答只在任务执行期间暂存；调用方取走结果后立即清除，监控保留状态、耗时和错误分类。
-- 每台设备同一时间最多一个活动任务。浏览器个人中转强制单并发、单中转；瞬时 QPS 使用 Redis 保护，Redis 不可用时安全关闭。
-- 每位 TokHub 用户对每家服务商最多保留一个本机网页连接。最小间隔、小时额度和每日额度按用户与服务商持久化，重新配对设备或重建连接不会重置保护窗口；该连接的多个 Gateway Key 和多个中转共享额度。
-- DeepSeek 默认 15 秒最小间隔、每小时 20 次、每日 80 次；ChatGPT 与 Gemini 默认 10 秒、每小时 30 次、每日 120 次。
-- 网关接受 OpenAI Chat Completions 与 Responses 的纯文本非流式子集。流式、工具、图片与 Anthropic Messages 返回明确的 422。
-- 登录失效和账号变化进入 `reauth_required`；验证码进入 `security_locked` 并等待用户处理；403 进入至少 24 小时的 `security_locked`；429 进入 30 分钟冷却，同一用户与服务商 24 小时内连续 3 次 429 会冷却 24 小时。
-- 冷却与锁定状态不能通过暂停、恢复、重建连接或重新配对设备提前解除。403 锁定窗口结束后仍需重新识别成功才能恢复。
-- 网页选择器或响应结构不兼容时进入 `adapter_blocked`；更新 OpenCLI 并重新识别成功后恢复。
-- 连接详情提供账号保护状态、本小时与近 24 小时用量、冷却时间、最近安全验证、重新识别、立即暂停和恢复操作。
-- 撤销连接器会清空设备令牌、取消活动任务，并停用所有引用该设备的浏览器连接。
+- `@openai/codex@0.148.0`，由 npm 锁文件固定。
+- Grok Build `1.0.5`，由 xAI 官方下载地址与架构 SHA256 固定。
 
-连接器在线状态由 15 秒心跳维护，45 秒未收到心跳即显示离线。建议把本机进程交给操作系统的用户级服务管理，并避免使用 root 账户运行。
+xAI 当前公共 npm Registry 没有可验证的 `@xai-official/grok@0.1.4`。RC2 采用 xAI 官方二进制分发，AMD64 与 ARM64 摘要记录在 `deploy/official-client-connector/checksums.txt`。
 
-本机连接器降低网页登录凭据集中保存的风险。消费者网页接口与账号仍受服务商协议、自动化规则和风控策略约束，系统不提供账号安全或持续可用性保证。
+Compose 安全合同：
 
-保护窗口覆盖同一 TokHub 用户的单家服务商。多个 TokHub 用户共同使用同一个消费者账号超出支持范围，系统不会跨用户关联账号指纹；部署方应通过使用条款和异常用量监控禁止这种共享方式。
+- `read_only: true`
+- `user: 10001:10001`
+- `cap_drop: [ALL]`
+- `no-new-privileges:true`
+- `/tmp` 与 `/workspace` 使用 `noexec,nosuid,nodev` tmpfs
+- 只挂载 Codex、Grok、Connector 三个命名卷
+- 禁止 `$HOME`、Chrome Profile、项目目录和 Docker Socket 挂载
 
-## 数据与安全
+运行 `docker inspect` 或 `podman inspect` 时，Mounts 列表应只包含这三个命名卷。
 
-- 授权事务和二次验证 grant 保存在 Redis，默认 10 分钟过期并单次消费。
-- state、PKCE verifier、nonce 与当前用户和登录 Session 绑定。
-- OIDC ID Token 使用服务商 discovery 和 JWKS 完成 RS256 签名校验，再校验 issuer、audience、authorized party、subject、expiry 和 Google nonce。Google 文档列出的 `https://accounts.google.com` 与 `accounts.google.com` 均可识别。
-- OAuth bundle 使用版本化 AES-256-GCM 密钥环加密。
-- 服务端日志、审计和指标不记录 Token、Cookie、授权 code、密码或完整账号。DeepSeek `userToken` 只在请求内存、AES-256-GCM 密文和发往内部桥的 Authorization Header 中出现。
-- 出站请求只能使用适配器固定 endpoint 与允许的认证头。
-- 重新授权会锁定原 `provider subject`；ChatGPT 同时锁定原 `account id`。账号不一致时记录 `identity_mismatch` 并保留原连接。Gemini 未明确提交新 Project ID 时沿用原项目。
-- 删除受管授权连接需要再次验证当前 TokHub 登录密码。本地路由与凭证会先停用和擦除，再尝试调用服务商撤销接口，避免撤销接口故障延长本地暴露窗口。
-- ChatGPT Codex OAuth、Gemini 官方 OAuth 和 DeepSeek `userToken` 受管路径必须通过真实最小生成验证后才会创建连接；失败事务不会落库凭证或创建个人中转。
-- OpenCLI 浏览器连接在创建时执行 `whoami` 登录状态识别；模型请求只通过短期任务队列传递纯文本输入与结果。
-- 页面分别提供服务商登录入口和当前账号识别入口；已有登录态的用户可以直接执行识别。
-- worker 每分钟处理超时任务，并清除完成超过 10 分钟仍未被调用方消费的提示词与回答。
-- 本机连接器启动、`doctor` 命令和运行期健康检查都会执行 `opencli doctor`；Chrome Bridge 未连接时不会领取新任务，也不会继续刷新在线心跳，服务端会在 45 秒内转为离线。网页生成期间服务端心跳独立运行，长耗时任务不会误报离线。多 Chrome 档案环境需要先用 `opencli profile use` 固定档案。
+## 用户配对与登录
 
-## 刷新与故障状态
+1. 用户进入“个人空间 > AI 服务连接 > 官方账号本地连接”。
+2. 点击“添加官方客户端”，获得 10 分钟一次性配对码。
+3. 在专用容器中执行配对：
 
-后台运行时每分钟扫描即将到期的 OAuth 凭证。刷新使用 Redis 分布式锁和数据库版本条件更新，避免多实例重复覆盖。全局 worker、单服务商并发、单服务商 QPS 和单次刷新超时分别由以下变量控制：
-
-```env
-TOKHUB_AI_OAUTH_REFRESH_WORKERS=8
-TOKHUB_AI_OAUTH_PROVIDER_CONCURRENCY=4
-TOKHUB_AI_OAUTH_PROVIDER_QPS=2
-TOKHUB_AI_OAUTH_REFRESH_ATTEMPT_TIMEOUT=20s
+```bash
+cd deploy/official-client-connector
+docker compose run --rm connector pair \
+  --server https://tokhub.example.com \
+  --code <pairing-code>
 ```
 
-服务商级门控可以降低一批凭证同时到期时触发 429 或放大上游故障的概率。单次刷新超时结束后会按临时错误进入退避。
+4. 登录 ChatGPT：
 
-退避时间依次为 1、5、15、60 分钟。`invalid_grant`、`invalid_refresh_token`、`token_expired`、`app_session_terminated`、`refresh_token_reused`、`refresh_token_invalidated`、缺少 Refresh Token 或明确撤销会进入 `reauth_required`。错误码可以来自 OAuth 标准字符串或服务商嵌套错误对象，错误详情不会写入用户响应和日志。临时网络错误保留当前凭证并进入下一次退避。
+```bash
+docker compose run --rm connector login chatgpt
+```
 
-网关在发送响应前收到 401 时会执行一次受锁保护的刷新和一次重试。流式响应写出首字节后不会重放。
+该命令执行 Codex Device Auth。用户在官方页面完成登录。
 
-DeepSeek `userToken` 没有公开 Refresh Token。创建时会执行真实最小生成验证，运行期的首个 401 会将连接标记为 `reauth_required`，后续请求停止转发。用户在连接详情中重新登录 DeepSeek 并导入新 Token 后恢复。桥不可达或 5xx 会记录临时上游错误，当前 Token 密文保持不变。
+5. 登录 Grok：
 
-## DeepSeek 网页账号保护
+```bash
+docker compose run --rm connector login grok
+```
 
-- 仅接受 `userToken.value`，输入字符和长度使用严格允许列表。
-- Cookie、账号密码、验证码、`cf_clearance` 和完整 Local Storage 对象会被拒绝。
-- 每个连接最多创建一个 active 或 paused 中转。
-- 网关 QPS 强制为 1，Redis 并发槽强制为 1。
-- 桥接 endpoint 由部署配置固定。HTTP 只允许回环、私有 IP 或单标签容器服务名；其他地址要求 HTTPS。
-- Token 验证失败时授权事务进入 failed，连接和密文均不会创建。
-- DS2API 远端会话使用 `auto_delete: single`，临时数据保存在容器 tmpfs。
-- 紧急关闭时设置 `TOKHUB_AI_DEEPSEEK_WEB_EXPERIMENTAL=false` 并重启 TokHub。已有连接会因为适配器不可用而停止转发。
+Grok 官方 CLI 负责登录流程。当前官方命令为 `grok login`。
 
-## ChatGPT 实验保护
+6. 诊断与持续运行：
 
-- 浏览器登录完成后会落到 `http://localhost:1455/auth/callback`。TokHub AI 登录助手在用户点击后读取该页的一次性 `code` 与 `state`，提交成功后不保存回调地址。手动粘贴完整回调地址保留为兜底。
-- 扩展的 localhost 权限只用于识别端口 `1455`、路径 `/auth/callback` 且同时包含 `code` 与 `state` 的 URL，并按当前授权事务 ID 排除历史回调；服务端继续校验授权事务 ID、常量时间 state 比较、当前用户和登录 Session。
-- 扩展不访问 ChatGPT Cookie、Local Storage、网页 Token 或密码。
-- 个人范围，无法切换到共享工作区。
-- 每个 Codex OAuth 连接最多创建一个 active 或 paused 中转。
-- 网关 QPS 在服务端强制设为 1。
-- Redis 并发槽上限为 2，槽保护不可用时返回 503。
-- 私有接口固定为 `https://chatgpt.com/backend-api/codex/responses`。
-- 出站请求固定发送配套的 `User-Agent`、`Originator`、`Version` 与 `OpenAI-Beta`，当前桥接版本为 `0.146.0`。
-- Chat Completions 文本与 function tool 子集会转换为 Responses 请求。
-- tool result、`tool_choice`、并行工具开关、函数调用结果和函数参数增量均进入协议转换。
-- Responses SSE 可直通；Chat Completions SSE 会转换为标准 chunk，并保持函数 item 与 call 使用同一工具索引。
-- 服务商接口或条款变化时，先关闭实验开关。已有连接会因为适配器不可用而停止刷新和转发。
+```bash
+docker compose run --rm connector doctor
+docker compose up -d connector
+docker compose logs -f connector
+```
 
-## 个人中转协议与超时
+7. 返回 TokHub，选择在线连接器并创建 ChatGPT 或 Grok 官方客户端连接。
 
-- Gemini 流式请求固定调用 `streamGenerateContent?alt=sse`，服务端将 Gemini chunk、结束原因和 `usageMetadata` 转换为 OpenAI Chat Completions 或 Responses SSE。
-- Responses 流包含 created、output item、content part、text delta、done 与 completed 生命周期事件。
-- 上游响应头采用允许列表，只转发内容类型、请求 ID、限流和重试信息。`Set-Cookie`、`WWW-Authenticate` 与服务端指纹头会被丢弃。
-- OAuth 个人中转单次请求默认上限为 300 秒，服务端写响应上限为 310 秒。客户端断开会立即取消上游请求。
+连接器支持：
 
-## 监控
+```text
+doctor
+pair
+login chatgpt|grok
+run
+logout chatgpt|grok|all
+sessions clean
+```
 
-Prometheus 指标：
+`sessions clean` 只删除超过 24 小时的 Codex 与 Grok 会话文件，不删除认证文件。`run` 在启动时和每 24 小时自动执行同一清理。
 
-- `tokhub_ai_authorization_attempts{provider,method,status}`
-- `tokhub_ai_oauth_connections{provider,method,auth_status}`
-- `tokhub_ai_oauth_refresh_failures_current{provider}`
-- `tokhub_ai_connections_active`
-- `tokhub_ai_connections_attention`
-- `tokhub_ai_quick_relays_total`
-- `tokhub_ai_browser_connectors_online`
-- `tokhub_ai_browser_tasks_completed_total`
-- `tokhub_ai_browser_tasks_failed_total`
-- `tokhub_ai_browser_tasks_expired_total`
-- `tokhub_ai_browser_security_challenges_total`
-- `tokhub_ai_browser_accounts_cooling`
-- `tokhub_ai_browser_accounts_locked`
-- `tokhub_ai_browser_accounts_reauth`
-- `tokhub_ai_browser_accounts_paused`
-- `tokhub_ai_browser_adapters_blocked`
-- `tokhub_ai_browser_rate_limit_events_current`
+## 设备签名
+
+首次配对在容器的 Connector 命名卷生成 Ed25519 密钥。服务端保存设备公钥和 Token 摘要，私钥与设备 Token 保持在权限 `0600` 的容器卷文件中。
+
+签名正文包含：
+
+```text
+HTTP method
+request path
+SHA256(body)
+unix timestamp
+random nonce
+```
+
+服务端拒绝以下请求：
+
+- 时间偏差超过 60 秒。
+- Nonce 已在 Redis 中出现。
+- Body、方法或路径与签名不一致。
+- 设备已撤销或工作区成员关系失效。
+- 生产环境使用 HTTP。
+
+开发环境只允许 loopback HTTP。
+
+## Codex 驱动
+
+连接器通过 Codex JSON-RPC 调用：
+
+- `initialize`
+- `account/read`
+- `model/list`
+- `thread/start`
+- `thread/resume`
+- `turn/start`
+
+`clientInfo.name` 固定为 `tokhub_official_connector`。工作目录为空目录，sandbox 固定为只读，Approval Policy 固定为 `never`。连接器关闭 Web Search、Apps、Browser、Computer、Shell 和统一执行能力。
+
+`account/read` 当前协议提供 ChatGPT 邮箱与套餐信息。TokHub 将邮箱转换为加密指纹并只展示脱敏值。协议缺少稳定账号 ID 时，账号保证级别仍标记为账户级，后续登录需要匹配同一指纹。
+
+## Grok 驱动
+
+连接器通过 Grok Build ACP 调用：
+
+- `initialize`
+- `authenticate`，方法固定为 `cached_token`
+- `session/new`
+- `session/load`
+- `session/prompt`
+- `session/cancel`
+
+MCP Server 列表为空。`/etc/grok/requirements.toml` 由 root 拥有，配置 `deny = ["*"]`，同时关闭 Subagent、Memory、Web Search、自动更新、遥测、反馈、LSP 和代码索引。
+
+ACP 返回稳定账号主体时，TokHub 使用账户级身份。协议缺少稳定主体时，连接采用设备级身份；账号切换后需要重新配对。
+
+## 任务与会话
+
+数据库表 `ai_client_tasks` 只保存设备、连接、平台、动作、状态、租约摘要、错误分类和有效期。Prompt 与结果使用 AES-256-GCM 加密后写入 Redis：
+
+1. TokHub 创建任务元数据与 Redis 加密载荷。
+2. 连接器领取任务后，Prompt 从 Redis 删除。
+3. 连接器执行官方客户端调用。
+4. 成功结果加密写入 Redis。
+5. 调用方读取结果后立即删除。
+6. 超时载荷依靠短 TTL 清理。
+
+Redis 不可用时任务创建、领取或完成安全关闭。监控中的 `tokhub_ai_client_payloads_residual` 正常值为 0。
+
+`/v1/responses` 多轮规则：
+
+- 首次响应返回 TokHub `resp_*` ID。
+- 后续请求用 `previous_response_id` 恢复同一官方客户端会话。
+- Response ID 绑定相同用户、Gateway Key、连接和模型。
+- 跨用户、跨 Key、跨连接或跨模型引用返回 404。
+- 过期会话返回 `409 session_expired`。
+- 空闲 24 小时清理，创建 7 天后强制清理。
+- 服务端只保存设备密封后的会话引用、所有权和有效期。
+- Chat Completions 继续要求调用方提交完整 `messages`。
+- 客户端断开时，服务端取消任务，连接器终止官方客户端进程；未完成结果无法成为后续会话节点。
+
+支持文本流式与非流式响应。图片、音频、工具、函数调用和 Anthropic Messages 返回 `422 unsupported_capability`。
+
+## 账号保护状态机
+
+固定额度：
+
+- 每个用户工作区一个活动连接器。
+- 每个平台一个官方客户端连接。
+- 每个连接器一个活动任务。
+- 最小请求间隔 15 秒。
+- 每小时最多 20 次。
+- 近 24 小时最多 80 次。
+- TokHub 零重试。
+
+系统不执行多账号池、账号轮换、代理切换和备用账号接管。
+
+| 事件 | 状态 | 恢复方式 |
+| --- | --- | --- |
+| 401、登录失效 | `reauth_required` | 官方客户端重新登录，验证原账号，再由用户手动恢复 |
+| 403、安全挑战 | `security_locked` | 无限期锁定，管理员审查 |
+| 身份变化 | `security_locked` | 无限期锁定，禁止自动迁移到新账号 |
+| 首次 429 | `cooldown` | 等待 `max(Retry-After, 1 小时)` |
+| 24 小时内第二次 429 | `manual_recovery` | 人工确认后恢复 |
+| 超时或 5xx | `cooldown` | 5 分钟后自动恢复 |
+| 工具、文件或命令事件 | `policy_locked` | 管理员审查客户端与策略 |
+
+暂停只允许从正常状态进入 `paused`。用户恢复可以解除 `paused` 与人工确认后的 `manual_recovery`，无法解除 `security_locked` 和 `policy_locked`。
+
+这些控制降低高频自动化、异常切换与重试放大的暴露面。服务商可以依据条款、套餐、异常行为与安全策略限制账号，系统不提供零封号风险承诺。
+
+## 监控与告警
+
+新增 Prometheus 指标：
+
+- `tokhub_ai_client_connectors_online{connector_version,codex_version,grok_version}`
+- `tokhub_ai_client_tasks_total{provider,status,outcome}`
+- `tokhub_ai_client_sessions_total{provider,status,resumed}`
+- `tokhub_ai_client_risk_connections{provider,state,identity_assurance}`
+- `tokhub_ai_client_identity_changes_total{provider,state,identity_assurance}`
+- `tokhub_ai_client_payload_store_available`
+- `tokhub_ai_client_payloads_residual`
+- `tokhub_ai_provider_policy_info{provider,policy_version,review_state,review_expires_at,terms_digest_state}`
+- `tokhub_ai_provider_kill_switch{provider}`
+
+指标与日志不包含 Prompt、回答、Token、Cookie、账号主体和完整 IP。
 
 建议告警：
 
-- `reauth_required` 连接数量持续增长 15 分钟。
-- `identity_mismatch` 授权失败出现时通知连接所有者检查供应商登录账号。
-- 任一 provider 的连续刷新失败数大于 3。
-- 授权 `failed / (completed + failed)` 在 15 分钟窗口超过 30%。
-- ChatGPT 实验网关出现持续 401、403、404 或协议解析错误。
-- DeepSeek 网页账号授权失败率超过 30%、桥 `/healthz` 不可用或 `reauth_required` 数量持续增长。
-- 本机连接器离线超过 5 分钟、任务超时率超过 20%、`security_challenge` 连续出现或同一连接持续进入 `reauth_required`。
+- 加密临时载荷存储不可用超过 1 分钟。
+- `tokhub_ai_client_payloads_residual > 0` 持续 5 分钟。
+- 策略 `review_state="expired"` 或 `terms_digest_state="changed"`。
+- 任一平台出现 403、安全挑战、身份变化或工具拦截。
+- 同一平台 429 在 24 小时内重复出现。
+- 连接器离线超过 5 分钟或版本偏离固定镜像。
+- `security_locked`、`policy_locked`、`reauth_required` 持续增长。
 
-## 发布检查
+## 实验室
 
-1. 数据库迁移 `0047_ai_web_authorization.sql`、`0048_deepseek_web_session.sql`、`0049_opencli_browser_connector.sql` 和 `0050_opencli_browser_risk_controls.sql` 已完成。
-2. Redis 可用，`/readyz` 返回 ready。
-3. 加密密钥环和指纹密钥环使用独立材料。
-4. `TOKHUB_PUBLIC_URL` 使用 HTTPS，Google 回调精确匹配。
-5. 先开启全局开关和 DeepSeek 开放平台引导，观察授权状态指标。
-6. DeepSeek 网页账号在测试用户完成登录、Token 验证、非流式、流式、401 失效和重新授权验证后再灰度。
-7. Gemini 在测试用户验证 Project 权限、授权、非流式、流式、刷新、重新授权和删除后再扩大范围。
-8. ChatGPT 在测试用户验证扩展识别、手动回调兜底、非流式、流式、刷新和 401 重新授权后再启用。
-9. ChatGPT 和 DeepSeek 网页实验能力在完成风险确认、自托管环境和紧急关闭演练后启用。
-10. OpenCLI 模式分别用 ChatGPT、Gemini、DeepSeek 测试账号完成配对、登录识别、纯文本调用、超时、离线、验证码停止、撤销和重新识别演练。
+实验室需要同时设置：
+
+```env
+TOKHUB_AI_LAB_MODE=true
+```
+
+OpenCLI 和 DeepSeek 网页 Session 还需要各自的实验开关与精确风险确认。实验连接在 Provider Policy 中拥有独立白名单，生产 Gateway 执行层始终拒绝 `opencli_browser`、`deepseek_web_token` 和旧 `codex_oauth`。
+
+DS2API Compose 使用：
+
+```bash
+docker compose --profile lab up deepseek-web-bridge
+```
+
+Helm 需要 `aiAuthorization.labMode=true`、`deepseekWeb.enabled=true` 与 `deployBridge=true`。生产 values 保持三者关闭。
+
+## 发布验收
+
+自动质量门：
+
+```bash
+go test -count=1 ./...
+npm run typecheck
+npm run build
+./deploy/scripts/security-scan.sh
+./deploy/scripts/preflight.sh
+./deploy/scripts/version-check.sh
+docker compose config
+docker compose -f deploy/official-client-connector/compose.yaml config
+helm template tokhub deploy/helm/tokhub
+```
+
+真实账号验收需要一个可用 ChatGPT Codex 套餐账号、一个可用 Grok Build 账号以及 Docker Desktop 或 Podman。依次验证：
+
+1. 配对与 Device Auth。
+2. 账号识别与模型检查。
+3. 非流式文本。
+4. 流式文本。
+5. 连续三轮 Responses。
+6. 连接器重启后的会话恢复。
+7. 登出后的 401 与重新登录流程。
+8. 会话删除、24 小时空闲过期与 7 天强制过期。
+9. 客户端断开后的 Turn 中断。
+10. 安全挑战后零重试、零账号切换。
+11. 容器 Mounts 中不存在宿主机目录。
+
+## 回滚
+
+三个交付阶段应保持独立提交：安全收敛、ChatGPT 官方客户端、Grok 与产品化。代码和部署可以按阶段回滚。`0051` 已擦除的消费者 Token 不会恢复。回滚后，用户需要重新建立符合当前生产策略的连接。

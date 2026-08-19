@@ -28,6 +28,7 @@ type ProviderManifest struct {
 	RecommendedModels []string             `json:"recommendedModels"`
 	DocsURL           string               `json:"docsUrl"`
 	AuthMethods       []AuthMethodManifest `json:"authMethods"`
+	Policy            *ProviderPolicy      `json:"policy,omitempty"`
 }
 
 type ResolveProviderInput struct {
@@ -80,6 +81,13 @@ func ProviderRegistry() []ProviderManifest {
 			DocsURL: "https://api-docs.deepseek.com/",
 		},
 		{
+			Code: "grok", Name: "Grok / xAI", ProductLine: "xAI Console",
+			Protocol: "openai_compatible", Type: "openai-compatible", AuthMethod: "api_key", CredentialLabel: "xAI API Key",
+			DefaultRegion: "global", Regions: []ProviderRegion{{Code: "global", Name: "Global", Endpoint: "https://api.x.ai/v1"}},
+			ValidationMode: "models_then_generation", GenerationKind: "responses", RecommendedModels: []string{"grok-4.6"},
+			DocsURL: "https://docs.x.ai/docs/overview",
+		},
+		{
 			Code: "doubao", Name: "豆包", ProductLine: "火山方舟按量调用",
 			Protocol: "openai_compatible", Type: "openai-compatible", AuthMethod: "api_key", CredentialLabel: "ARK API Key",
 			DefaultRegion: "cn-beijing", Regions: []ProviderRegion{{Code: "cn-beijing", Name: "华北 2（北京）", Endpoint: "https://ark.cn-beijing.volces.com/api/v3"}},
@@ -107,6 +115,17 @@ func ProviderRegistry() []ProviderManifest {
 			DocsURL: "https://help.aliyun.com/en/model-studio/base-url",
 		},
 	}
+}
+
+func ProviderRegistryWithPolicies() []ProviderManifest {
+	items := ProviderRegistry()
+	for index := range items {
+		if policy, ok := ProviderPolicyFor(items[index].Code); ok {
+			copy := policy
+			items[index].Policy = &copy
+		}
+	}
+	return items
 }
 
 func ResolveProvider(input ResolveProviderInput) (ResolvedProvider, error) {

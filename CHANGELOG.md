@@ -2,6 +2,33 @@
 
 TokHub 从 `v2.0.0-rc.1` 开始使用语义化版本。2.0 代表第二代产品架构，覆盖公开监控、工作区、专属网关和个人 AI 账号授权。
 
+## [2.0.0-rc.2] - 2026-08-19
+
+### Breaking Changes
+
+1. **消费者连接安全收敛**：旧 `codex_oauth` 与 `deepseek_web_token` 连接停用并擦除 Token 密文；相关托管通道同步停用。
+2. **实验室隔离**：OpenCLI 与 DeepSeek 网页 Session 无法进入生产 Gateway；DS2API 只保留显式 `lab` 部署。
+3. **个人客户端模型别名**：ChatGPT 与 Grok 官方客户端分别对外暴露 `chatgpt-personal` 和 `grok-personal`。
+
+### New Features
+
+1. **官方客户端连接器**：新增容器化 `tokhub-client-connector`，支持诊断、配对、登录、运行、登出与会话清理。
+2. **ChatGPT Codex 委托**：通过官方 Codex `app-server` 完成账号识别、模型检查、多轮文本与流式 Responses。
+3. **Grok Build 委托**：通过官方 Grok Build ACP 完成设备认证、会话创建、恢复和文本生成。
+4. **多轮 Responses**：`previous_response_id` 绑定用户、Gateway Key、连接与模型，支持 24 小时空闲和 7 天绝对有效期。
+5. **Provider Policy**：生产与实验模式白名单、90 天复核、条款摘要检查和 Kill Switch 在四层执行。
+6. **风险与监控**：新增个人客户端状态机、版本分布、任务结果、会话生命周期、身份变化和 Redis 残留指标。
+
+### Security
+
+1. **设备签名**：Ed25519 签名覆盖方法、路径、Body Hash、时间戳和 Nonce，拒绝过期请求与重放。
+2. **临时载荷**：Prompt、结果和密封会话引用使用加密 Redis 临时载荷，数据库只保存任务元数据。
+3. **容器隔离**：只读根文件系统、非 root 用户、全部 capabilities 删除、命名卷隔离、禁止宿主目录挂载。
+4. **工具封禁**：Codex 关闭网络与执行能力；Grok 使用 root 拥有的 requirements policy 拒绝全部工具。
+5. **账号保护**：单设备、单连接、单并发、15 秒最小间隔、20 次/小时、80 次/日、TokHub 零重试。
+
+[2.0.0-rc.2]: https://github.com/yaojingang/TokHub/releases/tag/v2.0.0-rc.2
+
 ## [2.0.0-rc.1] - 2026-07-29
 
 ### Breaking Changes
